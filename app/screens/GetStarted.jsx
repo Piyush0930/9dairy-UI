@@ -24,3 +24,15 @@ const styles = StyleSheet.create({
   button: { backgroundColor: '#4CAF50', padding: 12, borderRadius: 8 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });
+Radius: 4.65,
+  },
+  buttonText: {
+    color: '#ffffffff',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    // top:30,
+  },
+});
+
+export default DairyOScreen;
