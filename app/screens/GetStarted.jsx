@@ -174,16 +174,7 @@ const styles = StyleSheet.create({
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-  },
-  buttonText: {
-    color: '#ffffffff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    // top:30,
-  },
+    sha},
 });
 
 export default DairyOScreen;Radius: 4.65,
@@ -194,7 +185,18 @@ export default DairyOScreen;Radius: 4.65,
     fontWeight: '700',
     letterSpacing: 1.5,
     // top:30,
+ export default DairyOScreen;Radius: 4.65,
   },
+  buttonText: {
+    color: '#ffffffff',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    // top:30,
+  },
+});
+
+ },
 });
 
 export default DairyOScreen;
