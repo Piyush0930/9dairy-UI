@@ -29,35 +29,35 @@ const storeCards = [
     id: 1,
     title: 'Fresh Dairy',
     subtitle: 'Milk, butter, cheese,\nfresh paneer...',
-    image: 'https://images.unsplash.com/photo-1563636619-e9143da7973b?w=300',
+    image: require('../../assets/images/banner1.jpg'),
     color: '#E3F2FD',
   },
   {
     id: 2,
     title: 'Ice Cream Store',
     subtitle: 'Vanilla, chocolate,\nstrawberry, mango...',
-    image: 'https://images.unsplash.com/photo-1497034825429-c343d7c6a68f?w=300',
+    image: require('../../assets/images/banner2.jpg'),
     color: '#FFE4E1',
   },
   {
     id: 3,
     title: 'Ghee & Butter',
     subtitle: 'Pure cow ghee,\nsalted & unsalted butter...',
-    image: 'https://images.unsplash.com/photo-1619108224582-b8b4c3f6e83d?w=300',
+    image: require('../../assets/images/banner3.jpg'),
     color: '#FFF8DC',
   },
   {
     id: 4,
     title: 'Organic Produce',
     subtitle: 'Fresh vegetables,\nfruits & greens...',
-    image: 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=300',
+    image: require('../../assets/images/banner4.jpg'),
     color: '#E8F5E9',
   },
   {
     id: 5,
     title: 'Bakery Items',
     subtitle: 'Fresh bread, cakes,\npastries & cookies...',
-    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=300',
+    image: require('../../assets/images/banner5.jpg'),
     color: '#FFF3E0',
   },
 ];
@@ -216,31 +216,14 @@ export default function HomeScreen() {
               {infiniteStoreCards.map((store, index) => (
                 <TouchableOpacity
                   key={`${store.id}-${index}`}
-                  style={[
-                    styles.storeCard,
-                    { backgroundColor: store.color },
-                  ]}
+                  style={styles.storeCard}
                   onPress={() => {
                     console.log(`Navigating to ${store.title}`);
                     router.push('/categories');
                   }}
                   activeOpacity={0.9}
                 >
-                  <View style={styles.storeContent}>
-                    <Text style={styles.storeTitle}>{store.title}</Text>
-                    <Text style={styles.storeSubtext}>{store.subtitle}</Text>
-                    <TouchableOpacity
-                      style={styles.shopNowButton}
-                      onPress={() => {
-                        console.log(`Shop now clicked for ${store.title}`);
-                        router.push('/categories');
-                      }}
-                    >
-                      <Text style={styles.shopNowText}>Shop Now</Text>
-                      <Feather name="chevron-right" size={14} color="#1A1A1A" />
-                    </TouchableOpacity>
-                  </View>
-                  <Image source={{ uri: store.image }} style={styles.storeImage} />
+                  <Image source={store.image} style={styles.storeImageFull} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -462,15 +445,16 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 9,
     marginRight: CARD_SPACING,
     borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
+  },
+  storeImageFull: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
   storeContent: {
     flex: 1,

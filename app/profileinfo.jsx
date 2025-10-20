@@ -51,14 +51,12 @@ export default function BasicInfoScreen() {
       {/* Logo with subtle animation */}
       <Animated.View style={[styles.logoContainer, { opacity: fadeAnim }]}>
         <Image
-          source={require('../assets/images/icon.png')} // Local Dairy Nine logo
+          source={require('../assets/images/logo.jpeg')} // Local Dairy Nine logo
           style={styles.logo}
         />
       </Animated.View>
 
-      <Animated.Text style={[styles.brand, { opacity: fadeAnim }]}>
-        Dairy Nine
-      </Animated.Text>
+ 
       <Animated.Text style={[styles.title, { opacity: fadeAnim }]}>
         Your Profile
       </Animated.Text>
