@@ -19,9 +19,18 @@ export default function Login() {
   const router = useRouter();
 
   const handleContinue = () => {
-    if (mobile.length !== 10) return alert('Enter valid mobile number');
+    if (mobile.length !== 10) {
+      return alert('Enter valid mobile number');
+    }
+
+   if (mobile === '7057241350') {
+    // Go to admin dashboard
+    router.push('/(admin)'); 
+  } else {
+    // Normal users go to OTP
     router.push('/Otp');
-  };
+  }
+};
 
   return (
     <View style={styles.container}>
@@ -42,13 +51,12 @@ export default function Login() {
         contentContainerStyle={styles.keyboardAwareContent}
         enableOnAndroid={true}
         keyboardShouldPersistTaps="handled"
-        extraScrollHeight={80} // Precise positioning above keyboard
-        keyboardOpeningTime={200} // Smooth animation duration
+        extraScrollHeight={80}
+        keyboardOpeningTime={200}
         enableAutomaticScroll={true}
         showsVerticalScrollIndicator={false}
-        resetScrollToCoords={{ x: 0, y: 0 }}
         scrollEnabled={true}
-        getTextInputRefs={() => [mobile]} // Track input field for scrolling
+        getTextInputRefs={() => [mobile]}
       >
         <View style={styles.spacer} />
         <View style={styles.bottomCard}>
@@ -104,11 +112,11 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f9ff', // Fallback background
+    backgroundColor: '#f0f9ff',
   },
   imageContainer: {
     width: '100%',
-    height: height * 0.5, // Image covers top half
+    height: height * 0.5,
     position: 'absolute',
     top: 0,
   },
@@ -122,13 +130,13 @@ const styles = StyleSheet.create({
   },
   keyboardAwareContent: {
     flexGrow: 1,
-    justifyContent: 'flex-end', // Anchor card at bottom when keyboard is not active
+    justifyContent: 'flex-end',
   },
   spacer: {
-    height: height * 0.48, // Slightly less than image height for overlap
+    height: height * 0.48,
   },
   bottomCard: {
-    backgroundColor: '#ffffff', // Solid white for contrast
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
@@ -139,7 +147,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,
-    minHeight: height * 0.52, // Slightly more to compensate for overlap
+    minHeight: height * 0.52,
   },
   logoContainer: {
     marginBottom: 12,
