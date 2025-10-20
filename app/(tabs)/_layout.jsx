@@ -4,6 +4,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { useCart } from "@/contexts/CartContext";
 import { router } from "expo-router";
+import { usePathname } from "expo-router";
 
 function WalletBadge() {
   return (
@@ -16,6 +17,7 @@ function WalletBadge() {
 export default function TabLayout() {
   const { getTotalItems } = useCart();
   const cartCount = getTotalItems();
+  const pathname = usePathname();
 
   return (
     <View style={{ flex: 1 }}>
@@ -125,7 +127,7 @@ export default function TabLayout() {
         />
       </Tabs>
 
-      {cartCount > 0 && (
+      {cartCount > 0 && (pathname === "/" || pathname === "/categories") && (
         <TouchableOpacity
           style={styles.miniCart}
           onPress={() => router.push('/cart')}

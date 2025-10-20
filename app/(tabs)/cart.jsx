@@ -1,33 +1,26 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  Alert,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, Feather, MaterialIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { useCart } from "@/contexts/CartContext";
+import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import {
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function CartScreen() {
   const { items, addToCart, removeFromCart, getTotalPrice, clearCart } =
     useCart();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const handleCheckout = () => {
-    Alert.alert(
-      "Order Placed!",
-      `Your order of ₹${getTotalPrice()} has been placed successfully.`,
-      [
-        {
-          text: "OK",
-          onPress: () => clearCart(),
-        },
-      ]
-    );
+    router.push('/checkout');
   };
 
   if (items.length === 0) {

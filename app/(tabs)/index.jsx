@@ -3,7 +3,7 @@ import ProductCard from '@/components/ProductCard';
 import Colors from '@/constants/colors';
 import { useCart } from '@/contexts/CartContext';
 import { categories, popularProducts } from '@/mocks/products';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -185,7 +185,7 @@ export default function HomeScreen() {
             {cartCount > 0 && (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>
-                  ₹{totalPrice > 999 ? '999+' : totalPrice.toFixed(0)}
+                  {cartCount > 99 ? '99+' : cartCount}
                 </Text>
               </View>
             )}
@@ -574,59 +574,5 @@ const styles = StyleSheet.create({
   fireEmoji: {
     fontSize: 18,
   },
-  miniCart: {
-    position: 'absolute',
-    bottom: 80,
-    left: 16,
-    right: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  miniCartContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  miniCartLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  miniCartBadge: {
-    backgroundColor: '#EF4444',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  miniCartBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  miniCartText: {
-    color: '#1A1A1A',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  miniCartRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  miniCartLabel: {
-    color: '#1A1A1A',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+
 });

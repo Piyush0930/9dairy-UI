@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MaterialIcons, FontAwesome, Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { orders } from "@/mocks/orders";
+import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function getStatusIcon(status) {
   switch (status) {
