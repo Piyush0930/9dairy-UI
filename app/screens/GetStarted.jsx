@@ -1,23 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
+  Animated,
   Image,
-  TouchableOpacity,
-  StyleSheet,
   SafeAreaView,
   StatusBar,
-  Animated,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 const router = useRouter();
-
 
 const DairyOScreen = () => {
   const [currentProductIndex, setCurrentProductIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
-  // Array of dairy products - replace with your actual product images
   const dairyProducts = [
     { id: 1, name: 'Fresh Milk', image: require('../../assets/images/milk.png') },
     { id: 2, name: 'Butter', image: require('../../assets/images/butter.png') },
@@ -28,25 +26,19 @@ const DairyOScreen = () => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      // Fade out animation
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 300,
         useNativeDriver: true,
       }).start(() => {
-        // Change product
-        setCurrentProductIndex((prevIndex) => 
-          (prevIndex + 1) % dairyProducts.length
-        );
-        
-        // Fade in animation
+        setCurrentProductIndex((prevIndex) => (prevIndex + 1) % dairyProducts.length);
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 300,
           useNativeDriver: true,
         }).start();
       });
-    }, 1000); // Change every 1 second
+    }, 1000);
 
     return () => clearInterval(interval);
   }, []);
@@ -54,9 +46,8 @@ const DairyOScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
+
       <View style={styles.content}>
-        {/* Logo */}
         <View style={styles.logoContainer}>
           <Image
             source={require('../../assets/images/logo.jpeg')}
@@ -64,14 +55,11 @@ const DairyOScreen = () => {
             resizeMode="contain"
           />
         </View>
-        
-        {/* Main Heading */}
-        {/* <Text style={styles.heading}>Taste of Awesomenss</Text> */}
-        
-        {/* Subheading */}
-        <Text style={styles.subheading}>Fresh dairy products delivered to your door</Text>
-        
-        {/* Animated Product Showcase */}
+
+        <Text style={styles.subheading}>
+          Fresh dairy products delivered to your door
+        </Text>
+
         <View style={styles.productContainer}>
           <Animated.View style={[styles.productWrapper, { opacity: fadeAnim }]}>
             <Image
@@ -84,17 +72,13 @@ const DairyOScreen = () => {
             </Text>
           </Animated.View>
         </View>
-        
-        {/* Get Started Button */}
-    
-      <TouchableOpacity
+
+        <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/screens/Login')} // ✅ route path
+          onPress={() => router.push('/screens/Login')}
         >
           <Text style={styles.buttonText}>Get Started</Text>
         </TouchableOpacity>
-    
-
       </View>
     </SafeAreaView>
   );
@@ -103,7 +87,7 @@ const DairyOScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffffff',
+    backgroundColor: '#fff',
   },
   content: {
     flex: 1,
@@ -118,39 +102,27 @@ const styles = StyleSheet.create({
   logo: {
     width: 300,
     height: 290,
-    top: 0,
-  },
-  heading: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: '#1E3A5F',
-    textAlign: 'center',
-    marginBottom: 12,
-    letterSpacing: 0.5,
-    top: -50,
   },
   subheading: {
+    top: -100,
     fontSize: 15,
     color: '#5A6B7D',
     textAlign: 'center',
     marginBottom: 30,
-    fontWeight: '400',
-    top: -90,
   },
   productContainer: {
+    top: -80,
     height: 180,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
-    top: -50,
   },
   productWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   productImage: {
-    top: -20,
     width: 140,
     height: 140,
     marginBottom: 8,
@@ -160,10 +132,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E3A5F',
     textAlign: 'center',
-    top: -30,
   },
   button: {
-    top: -30,
     backgroundColor: '#004494',
     paddingVertical: 16,
     paddingHorizontal: 60,
@@ -174,44 +144,15 @@ const styles = StyleSheet.create({
       width: 0,
       height: 2,
     },
-<<<<<<< HEAD
     shadowOpacity: 0.3,
     shadowRadius: 4.65,
   },
   buttonText: {
-    color: '#ffffffff',
+    color: '#fff',
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 1.5,
-    // top:30,
   },
 });
 
-=======
-    sha},
-});
-
-export default DairyOScreen;Radius: 4.65,
-  },
-  buttonText: {
-    color: '#ffffffff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    // top:30,
- export default DairyOScreen;Radius: 4.65,
-  },
-  buttonText: {
-    color: '#ffffffff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    // top:30,
-  },
-});
-
- },
-});
-
->>>>>>> master
 export default DairyOScreen;
