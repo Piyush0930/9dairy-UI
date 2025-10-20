@@ -1,17 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
+  Image,
+  Platform,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  Image,
-  Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 const { height } = Dimensions.get('window');
 
@@ -46,7 +46,7 @@ export default function OtpScreen() {
   const handleVerify = () => {
     const otpCode = otp.join('');
     if (otpCode.length !== 4) return alert('Enter valid 4-digit OTP');
-    router.push('/(tabs)'); // Navigate to Signup
+    router.push('/profileinfo'); // Navigate to Signup
   };
 
   const handleResend = () => {
