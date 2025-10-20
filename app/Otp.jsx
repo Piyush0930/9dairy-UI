@@ -1,173 +1,128 @@
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
-  Image,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
+  Image,
+  Platform,
 } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { Ionicons } from '@expo/vector-icons';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
-export default function Otp() {
+// Hide default header/navigation bar
+export const options = {
+  headerShown: false,
+};
+
+export default function OtpScreen() {
+  const [otp, setOtp] = useState(['', '', '', '']);
+  const [timer, setTimer] = useState(30);
   const router = useRouter();
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [timer, setTimer] = useState(26); // 00:26 countdown
-  const [resendEnabled, setResendEnabled] = useState(false);
-  const [termsChecked, setTermsChecked] = useState(false);
-  const [whatsappChecked, setWhatsappChecked] = useState(false);
+  const inputsRef = useRef([]);
 
+  // Timer countdown
   useEffect(() => {
-    let interval = setInterval(() => {
-      setTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setResendEnabled(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    if (timer === 0) return;
+    const interval = setInterval(() => setTimer((prev) => prev - 1), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [timer]);
 
-  const handleOtpChange = (text, index) => {
-    const newOtp = [...otp];
-    newOtp[index] = text;
-    setOtp(newOtp);
-
-    // Move focus to next input
-    if (text && index < 5) {
-      refs[index + 1].current.focus();
+  const handleChange = (text, index) => {
+    if (/^\d*$/.test(text)) {
+      const newOtp = [...otp];
+      newOtp[index] = text;
+      setOtp(newOtp);
+      if (text && index < otp.length - 1) inputsRef.current[index + 1].focus();
+      if (!text && index > 0) inputsRef.current[index - 1].focus();
     }
   };
 
-  const refs = otp.map(() => useRef(null));
-
   const handleVerify = () => {
-    if (otp.join('').length === 6) {
-      router.push('/(tabs)'); // Navigate to homepage (tabs layout) after successful OTP verification
-    } else {
-      alert('Please enter a valid 6-digit OTP');
-    }
+    const otpCode = otp.join('');
+    if (otpCode.length !== 4) return alert('Enter valid 4-digit OTP');
+    router.push('/(tabs)'); // Navigate to Signup
   };
 
   const handleResend = () => {
-    if (resendEnabled) {
-      setTimer(26);
-      setResendEnabled(false);
-      // Add resend logic here
-    }
+    setOtp(['', '', '', '']);
+    setTimer(30);
+    inputsRef.current[0].focus();
+    alert('OTP resent successfully');
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      
-      {/* Top Half Image Section */}
-      <View style={styles.imageContainer}>
-        <Image
-          source={{ uri: 'https://images.unsplash.com/photo-1628088062854-d1870b4553da?w=800&q=80' }}
-          style={styles.backgroundImage}
-          resizeMode="cover"
-        />
-      </View>
+      <StatusBar
+        barStyle={Platform.OS === 'ios' ? 'dark-content' : 'dark-content'}
+        backgroundColor="#ffffff"
+      />
 
-      {/* Bottom White Card Section with KeyboardAwareScrollView */}
-      <KeyboardAwareScrollView
-        style={styles.keyboardAwareContainer}
-        contentContainerStyle={styles.keyboardAwareContent}
-        enableOnAndroid={true}
-        keyboardShouldPersistTaps="handled"
-        extraScrollHeight={80} // Precise positioning above keyboard
-        keyboardOpeningTime={200} // Smooth animation duration
-        enableAutomaticScroll={true}
-        showsVerticalScrollIndicator={false}
-        resetScrollToCoords={{ x: 0, y: 0 }}
-        scrollEnabled={true}
-        getTextInputRefs={() => refs} // Track OTP input fields for scrolling
-      >
-        <View style={styles.spacer} />
-        <View style={styles.bottomCard}>
-          {/* Back Arrow */}
-          <TouchableWithoutFeedback onPress={() => router.back()}>
-            <Text style={styles.backArrow}>&lt;</Text>
-          </TouchableWithoutFeedback>
+      {/* Back Button */}
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <Ionicons name="arrow-back" size={24} color="#0f172a" />
+      </TouchableOpacity>
 
-          {/* Title */}
-          <Text style={styles.title}>Enter verification code</Text>
+      <View style={styles.contentWrapper}>
+        {/* Logo Placeholder */}
+        <View style={styles.logoContainer}>
+          <Image
+            source={{ uri: 'https://via.placeholder.com/100?text=Logo' }}
+            style={styles.logo}
+          />
+        </View>
 
-          {/* OTP Message */}
+        {/* Top Section */}
+        <View style={styles.topSection}>
+          <Text style={styles.brand}>Dairy Nine</Text>
+          <Text style={styles.title}>OTP Verification</Text>
           <Text style={styles.subtitle}>
-            6 digit OTP has been sent to 7666325259
+            Enter the 4-digit code sent to your mobile number
           </Text>
+        </View>
 
-          {/* OTP Input Boxes */}
-          <View style={styles.otpContainer}>
-            {otp.map((digit, index) => (
-              <TextInput
-                key={index}
-                ref={refs[index]}
-                style={styles.otpInput}
-                value={digit}
-                onChangeText={(text) => handleOtpChange(text, index)}
-                keyboardType="numeric"
-                maxLength={1}
-                textAlign="center"
-              />
-            ))}
-          </View>
+        {/* OTP Inputs */}
+        <View style={styles.otpContainer}>
+          {otp.map((value, index) => (
+            <TextInput
+              key={index}
+              ref={(ref) => (inputsRef.current[index] = ref)}
+              style={[styles.otpInput, value ? styles.otpInputActive : null]}
+              keyboardType="number-pad"
+              maxLength={1}
+              value={value}
+              onChangeText={(text) => handleChange(text, index)}
+              autoFocus={index === 0}
+              textAlign="center"
+            />
+          ))}
+        </View>
 
-          {/* Timer and Resend */}
-          <View style={styles.timerContainer}>
-            <Text style={styles.timer}>
-              {`00:${timer < 10 ? `0${timer}` : timer}`}
-            </Text>
-            <TouchableOpacity
-              onPress={handleResend}
-              disabled={!resendEnabled}
-              style={styles.resend}
+        {/* Verify Button */}
+        <TouchableOpacity style={styles.verifyButton} onPress={handleVerify}>
+          <Text style={styles.verifyText}>Verify & Continue</Text>
+        </TouchableOpacity>
+
+        {/* Resend OTP */}
+        <View style={styles.resendContainer}>
+          <Text style={styles.resendText}>Didn't receive OTP?</Text>
+          <TouchableOpacity disabled={timer !== 0} onPress={handleResend}>
+            <Text
+              style={[
+                styles.resendLink,
+                timer !== 0 && styles.resendDisabled,
+              ]}
             >
-              <Text style={[styles.resendText, resendEnabled && styles.resendTextEnabled]}>
-                Resend now
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Checkboxes */}
-          <View style={styles.checkboxContainer}>
-            <TouchableWithoutFeedback onPress={() => setTermsChecked(!termsChecked)}>
-              <View style={styles.checkbox}>
-                {termsChecked && <View style={styles.checkboxCheck} />}
-              </View>
-            </TouchableWithoutFeedback>
-            <Text style={styles.checkboxLabel}>
-              I agree to Hyperpure terms & conditions
+              {timer === 0 ? 'Resend' : `Resend in ${timer}s`}
             </Text>
-          </View>
-          <View style={styles.checkboxContainer}>
-            <TouchableWithoutFeedback onPress={() => setWhatsappChecked(!whatsappChecked)}>
-              <View style={styles.checkbox}>
-                {whatsappChecked && <View style={styles.checkboxCheck} />}
-              </View>
-            </TouchableWithoutFeedback>
-            <Text style={styles.checkboxLabel}>
-              Send me offers and updates on WhatsApp
-            </Text>
-          </View>
-
-          {/* Verify Button */}
-          <TouchableOpacity style={styles.verifyButton} onPress={handleVerify}>
-            <Text style={styles.verifyText}>Verify</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAwareScrollView>
+      </View>
     </View>
   );
 }
@@ -175,143 +130,116 @@ export default function Otp() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f9ff', // Consistent with login page
+    backgroundColor: '#ffffff', // White background
   },
-  imageContainer: {
-    width: '100%',
-    height: height * 0.5, // Image covers top half
-    position: 'absolute',
-    top: 0,
-  },
-  backgroundImage: {
-    width: '100%',
-    height: '100%',
-  },
-  keyboardAwareContainer: {
-    width: '100%',
+  contentWrapper: {
     flex: 1,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 32,
+    paddingTop: 60,
   },
-  keyboardAwareContent: {
-    flexGrow: 1,
-    justifyContent: 'flex-end', // Anchor card at bottom
+  backButton: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    zIndex: 10,
   },
-  spacer: {
-    height: height * 0.48, // Slight overlap for rounded corners
-  },
-  bottomCard: {
-    backgroundColor: '#ffffff', // Consistent with login page
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingVertical: 24,
+  logoContainer: {
+    marginBottom: 20,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 10,
-    minHeight: height * 0.52, // Ensures card extends to bottom
   },
-  backArrow: {
-    fontSize: 20,
-    color: '#1e293b',
-    alignSelf: 'flex-start',
-    marginBottom: 16,
+  logo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  topSection: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  brand: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   title: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '600',
     color: '#0f172a',
-    textAlign: 'center',
-    marginBottom: 10,
-    lineHeight: 28,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 16,
     color: '#64748b',
     textAlign: 'center',
-    marginBottom: 20,
-    fontWeight: '400',
   },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: '60%',
-    marginBottom: 20,
+    marginBottom: 30,
+    marginHorizontal: 10,
   },
   otpInput: {
-    width: 40,
-    height: 40,
+    width: 60,
+    height: 60,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    textAlign: 'center',
-    fontSize: 18,
-  },
-  timerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '60%',
-    marginBottom: 20,
-  },
-  timer: {
-    fontSize: 14,
-    color: '#1e293b',
-    fontWeight: '600',
-  },
-  resend: {
-    opacity: 0.5,
-  },
-  resendText: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  resendTextEnabled: {
-    color: '#3b82f6',
-    opacity: 1,
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderWidth: 1,
-    borderColor: '#ef4444', // Red border consistent with image
-    borderRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  checkboxCheck: {
-    width: 10,
-    height: 10,
-    backgroundColor: '#ef4444', // Red checkmark
-  },
-  checkboxLabel: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  verifyButton: {
-    backgroundColor: '#3b82f6', // Consistent with login page
+    borderColor: '#e2e8f0',
     borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    shadowColor: '#3b82f6',
+    fontSize: 20,
+    fontWeight: '600',
+    backgroundColor: '#f8fafc',
+    color: '#0f172a',
+    textAlign: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  otpInputActive: {
+    borderColor: '#bfdbfe',
+    shadowColor: '#bfdbfe',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
-    marginTop: 12,
+  },
+  verifyButton: {
+    backgroundColor: '#bfdbfe', // Light blue button
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginHorizontal: 10,
+    marginBottom: 30,
+    shadowColor: '#bfdbfe',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
   },
   verifyText: {
-    color: '#ffffff',
-    fontSize: 15,
+    color: '#0f172a',
     fontWeight: '700',
-    letterSpacing: 0.5,
+    fontSize: 18,
+  },
+  resendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resendText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginRight: 6,
+  },
+  resendLink: {
+    fontSize: 14,
+    color: '#bfdbfe', // Light blue link
+    fontWeight: '700',
+  },
+  resendDisabled: {
+    color: '#94a3b8',
   },
 });
