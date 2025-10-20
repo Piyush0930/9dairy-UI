@@ -1,6 +1,6 @@
-import React from 'react';
-import AppNavigator from './src/navigation/AppNavigator';
+import { registerRootComponent } from 'expo';
+import { ExpoRoot } from 'expo-router';
 
 export default function App() {
-  return <AppNavigator />;
+  return <ExpoRoot />;
 }
