@@ -10,7 +10,7 @@ export default function GetStarted() {
       <Text style={styles.title}>Welcome to Dairy App</Text>
       <TouchableOpacity
         style={styles.button}
-        onPress={() => router.push('screens/Login')}
+        onPress={() => router.push('/Login')}
       >
         <Text style={styles.buttonText}>Get Started</Text>
       </TouchableOpacity>

@@ -1,10 +1,9 @@
-import CartToast from '@/components/CartToast';
 import CategoryTile from '@/components/CategoryTile';
 import ProductCard from '@/components/ProductCard';
 import Colors from '@/constants/colors';
 import { useCart } from '@/contexts/CartContext';
 import { categories, popularProducts } from '@/mocks/products';
-import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -20,6 +19,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
+const CARD_WIDTH = width - 64;
+const CARD_SPACING = 16;
+const POPULAR_CARD_WIDTH = 165;
+const POPULAR_CARD_SPACING = 12;
 
 const storeCards = [
   {
@@ -43,34 +46,123 @@ const storeCards = [
     image: 'https://images.unsplash.com/photo-1619108224582-b8b4c3f6e83d?w=300',
     color: '#FFF8DC',
   },
+  {
+    id: 4,
+    title: 'Organic Produce',
+    subtitle: 'Fresh vegetables,\nfruits & greens...',
+    image: 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=300',
+    color: '#E8F5E9',
+  },
+  {
+    id: 5,
+    title: 'Bakery Items',
+    subtitle: 'Fresh bread, cakes,\npastries & cookies...',
+    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=300',
+    color: '#FFF3E0',
+  },
 ];
 
 export default function HomeScreen() {
-  const { getTotalItems, addToCart } = useCart();
+  const { getTotalItems, getTotalPrice, addToCart } = useCart();
   const cartCount = getTotalItems();
+  const totalPrice = getTotalPrice();
   const insets = useSafeAreaInsets();
   const storeScrollRef = useRef(null);
   const popularScrollRef = useRef(null);
   const [currentStoreIndex, setCurrentStoreIndex] = useState(0);
+  const [currentPopularIndex, setCurrentPopularIndex] = useState(0);
+  const isStoreScrolling = useRef(false);
+  const isPopularScrolling = useRef(false);
+
+  // Create infinite loop arrays by multiplying the cards
+  const infiniteStoreCards = [...storeCards, ...storeCards, ...storeCards];
+  const infinitePopularProducts = [...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts];
+
+  useEffect(() => {
+    // Set initial position to middle set of cards
+    setTimeout(() => {
+      storeScrollRef.current?.scrollTo({
+        x: storeCards.length * (CARD_WIDTH + CARD_SPACING),
+        animated: false,
+      });
+      popularScrollRef.current?.scrollTo({
+        x: popularProducts.length * (POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING),
+        animated: false,
+      });
+    }, 100);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentStoreIndex((prevIndex) => {
-        const nextIndex = (prevIndex + 1) % storeCards.length;
-        storeScrollRef.current?.scrollTo({
-          x: nextIndex * (width - 44),
-          animated: true,
+      if (!isStoreScrolling.current) {
+        setCurrentStoreIndex((prevIndex) => {
+          const nextIndex = prevIndex + 1;
+          const scrollX = (storeCards.length + (nextIndex % storeCards.length)) * (CARD_WIDTH + CARD_SPACING);
+          storeScrollRef.current?.scrollTo({
+            x: scrollX,
+            animated: true,
+          });
+          return nextIndex % storeCards.length;
         });
-        return nextIndex;
-      });
-    }, 3000);
+      }
+    }, 3500);
 
     return () => clearInterval(interval);
   }, []);
 
+
+
+  const handleStoreScroll = (event) => {
+    const scrollX = event.nativeEvent.contentOffset.x;
+    const cardTotalWidth = CARD_WIDTH + CARD_SPACING;
+    const totalWidth = storeCards.length * cardTotalWidth;
+
+    // Reset to middle set if we've scrolled too far in either direction
+    if (scrollX <= 0) {
+      storeScrollRef.current?.scrollTo({
+        x: totalWidth,
+        animated: false,
+      });
+    } else if (scrollX >= totalWidth * 2) {
+      storeScrollRef.current?.scrollTo({
+        x: totalWidth,
+        animated: false,
+      });
+    }
+  };
+
+  const handlePopularScroll = (event) => {
+    const scrollX = event.nativeEvent.contentOffset.x;
+    const cardTotalWidth = POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING;
+    const totalWidth = popularProducts.length * cardTotalWidth;
+    const totalScrollWidth = infinitePopularProducts.length * cardTotalWidth;
+
+    // Seamless infinite loop: when reaching the end of first set, jump to start of second set
+    if (scrollX >= totalWidth * 2) {
+      popularScrollRef.current?.scrollTo({
+        x: totalWidth,
+        animated: false,
+      });
+    }
+    // When reaching the start of second set, jump to end of first set
+    else if (scrollX <= totalWidth - cardTotalWidth) {
+      popularScrollRef.current?.scrollTo({
+        x: totalWidth * 2 - cardTotalWidth,
+        animated: false,
+      });
+    }
+  };
+
+  const handleAddToCart = (product) => {
+    addToCart(product);
+  };
+
+  const handleMiniCartPress = () => {
+    router.push('/cart');
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <CartToast />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -85,9 +177,6 @@ export default function HomeScreen() {
               placeholderTextColor="#BDBDBD"
             />
           </View>
-          <TouchableOpacity style={styles.iconButton}>
-            <MaterialIcons name="qr-code-scanner" size={22} color="#EF4444" />
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconButton}
             onPress={() => router.push('/cart')}
@@ -95,7 +184,9 @@ export default function HomeScreen() {
             <Ionicons name="cart-outline" size={22} color="#1A1A1A" />
             {cartCount > 0 && (
               <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{cartCount}</Text>
+                <Text style={styles.cartBadgeText}>
+                  ₹{totalPrice > 999 ? '999+' : totalPrice.toFixed(0)}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
@@ -108,53 +199,51 @@ export default function HomeScreen() {
               <Text style={styles.newBadgeText}>NEW</Text>
             </View>
           </View>
-          <ScrollView
-            ref={storeScrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={width - 44}
-            decelerationRate="fast"
-            pagingEnabled
-            contentContainerStyle={styles.storesScroll}
-          >
-            {storeCards.map((store) => (
-              <TouchableOpacity
-                key={store.id}
-                style={[styles.storeCard, { backgroundColor: store.color }]}
-                onPress={() => {
-                  console.log(`Navigating to ${store.title}`);
-                  router.push('/categories');
-                }}
-                activeOpacity={0.9}
-              >
-                <View style={styles.storeContent}>
-                  <Text style={styles.storeTitle}>{store.title}</Text>
-                  <Text style={styles.storeSubtext}>{store.subtitle}</Text>
-                  <TouchableOpacity
-                    style={styles.shopNowButton}
-                    onPress={() => {
-                      console.log(`Shop now clicked for ${store.title}`);
-                      router.push('/categories');
-                    }}
-                  >
-                    <Text style={styles.shopNowText}>Shop Now</Text>
-                    <Feather name="chevron-right" size={14} color="#1A1A1A" />
-                  </TouchableOpacity>
-                </View>
-                <Image source={{ uri: store.image }} style={styles.storeImage} />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View style={styles.storeIndicators}>
-            {storeCards.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.indicator,
-                  currentStoreIndex === index && styles.indicatorActive,
-                ]}
-              />
-            ))}
+          <View style={styles.storesContainer}>
+            <ScrollView
+              ref={storeScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={CARD_WIDTH + CARD_SPACING}
+              decelerationRate="fast"
+              contentContainerStyle={styles.storesScroll}
+              style={styles.storesScrollContainer}
+              onScroll={handleStoreScroll}
+              scrollEventThrottle={16}
+              onScrollBeginDrag={() => { isStoreScrolling.current = true; }}
+              onScrollEndDrag={() => { isStoreScrolling.current = false; }}
+            >
+              {infiniteStoreCards.map((store, index) => (
+                <TouchableOpacity
+                  key={`${store.id}-${index}`}
+                  style={[
+                    styles.storeCard,
+                    { backgroundColor: store.color },
+                  ]}
+                  onPress={() => {
+                    console.log(`Navigating to ${store.title}`);
+                    router.push('/categories');
+                  }}
+                  activeOpacity={0.9}
+                >
+                  <View style={styles.storeContent}>
+                    <Text style={styles.storeTitle}>{store.title}</Text>
+                    <Text style={styles.storeSubtext}>{store.subtitle}</Text>
+                    <TouchableOpacity
+                      style={styles.shopNowButton}
+                      onPress={() => {
+                        console.log(`Shop now clicked for ${store.title}`);
+                        router.push('/categories');
+                      }}
+                    >
+                      <Text style={styles.shopNowText}>Shop Now</Text>
+                      <Feather name="chevron-right" size={14} color="#1A1A1A" />
+                    </TouchableOpacity>
+                  </View>
+                  <Image source={{ uri: store.image }} style={styles.storeImage} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
 
@@ -184,21 +273,30 @@ export default function HomeScreen() {
             </View>
           </View>
           <Text style={styles.popularSubtext}>Most frequently bought</Text>
-          <ScrollView
-            ref={popularScrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.popularScroll}
-            decelerationRate="normal"
-          >
-            {popularProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onAddToCart={addToCart}
-              />
-            ))}
-          </ScrollView>
+          <View style={styles.popularContainer}>
+            <ScrollView
+              ref={popularScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.popularScroll}
+              snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
+              decelerationRate="fast"
+              style={styles.popularScrollContainer}
+              onScroll={handlePopularScroll}
+              scrollEventThrottle={16}
+              onScrollBeginDrag={() => { isPopularScrolling.current = true; }}
+              onScrollEndDrag={() => { isPopularScrolling.current = false; }}
+            >
+              {infinitePopularProducts.map((product, index) => (
+                <View key={`${product.id}-${index}`} style={styles.productCardWrapper}>
+                  <ProductCard
+                    product={product}
+                    onAddToCart={handleAddToCart}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
         </View>
 
         <View style={[styles.section, { marginBottom: 100 }]}>
@@ -251,6 +349,8 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+
     </View>
   );
 }
@@ -309,15 +409,15 @@ const styles = StyleSheet.create({
     right: 8,
     backgroundColor: Colors.light.tint,
     borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    minWidth: 45,
+    height: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 5,
+    paddingHorizontal: 8,
   },
   cartBadgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
   section: {
@@ -347,27 +447,35 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  storesContainer: {
+    marginHorizontal: -16,
+  },
+  storesScrollContainer: {
+    overflow: 'visible',
+  },
   storesScroll: {
-    paddingRight: 16,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
   },
   storeCard: {
-    width: width - 44,
-    marginRight: 12,
+    width: CARD_WIDTH,
+    aspectRatio: 16 / 9,
+    marginRight: CARD_SPACING,
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    height: 160,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
   storeContent: {
     flex: 1,
     justifyContent: 'center',
+    paddingRight: 8,
   },
   storeTitle: {
     fontSize: 20,
@@ -403,25 +511,9 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
   },
   storeImage: {
-    width: 110,
-    height: 110,
-    borderRadius: 16,
-  },
-  storeIndicators: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-  },
-  indicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#E0E0E0',
-  },
-  indicatorActive: {
-    backgroundColor: Colors.light.tint,
-    width: 24,
+    width: '42%',
+    height: '75%',
+    borderRadius: 12,
   },
   quickLinksRow: {
     flexDirection: 'row',
@@ -449,21 +541,6 @@ const styles = StyleSheet.create({
   quickLinkEmoji: {
     fontSize: 36,
   },
-  justInBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#EF4444',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  justInBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
   quickLinkTitle: {
     fontSize: 15,
     fontWeight: '700',
@@ -474,87 +551,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9E9E9E',
     fontWeight: '400',
-  },
-  exploreHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  pageIndicator: {
-    backgroundColor: '#1A1A1A',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  pageIndicatorText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  exploreScroll: {
-    paddingRight: 16,
-  },
-  promoCard: {
-    backgroundColor: '#7C3AED',
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: 324,
-    height: 200,
-    marginRight: 12,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  promoContent: {
-    flex: 1,
-    zIndex: 2,
-  },
-  promoTitle: {
-    fontSize: 19,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 8,
-    lineHeight: 24,
-  },
-  promoDescription: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    lineHeight: 20,
-    marginBottom: 16,
-    fontWeight: '400',
-  },
-  orderNowButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A1A1A',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    gap: 4,
-  },
-  orderNowText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  promoImage: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 80,
-    height: 140,
-    borderRadius: 8,
-  },
-  promoImageSmall: {
-    position: 'absolute',
-    right: 110,
-    bottom: 20,
-    width: 60,
-    height: 120,
-    borderRadius: 8,
   },
   categoriesGrid: {
     flexDirection: 'row',
@@ -569,8 +565,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontWeight: '400',
   },
+  popularContainer: {
+    marginHorizontal: -16,
+  },
+  popularScrollContainer: {
+    overflow: 'visible',
+  },
   popularScroll: {
-    paddingRight: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  productCardWrapper: {
+    width: POPULAR_CARD_WIDTH,
+    marginRight: POPULAR_CARD_SPACING,
   },
   fireIcon: {
     width: 32,
@@ -582,5 +589,60 @@ const styles = StyleSheet.create({
   },
   fireEmoji: {
     fontSize: 18,
+  },
+  miniCart: {
+    position: 'absolute',
+    bottom: 80,
+    left: 16,
+    right: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  miniCartContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  miniCartLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  miniCartBadge: {
+    backgroundColor: '#EF4444',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  miniCartBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  miniCartText: {
+    color: '#1A1A1A',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  miniCartRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  miniCartLabel: {
+    color: '#1A1A1A',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

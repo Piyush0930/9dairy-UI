@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   Image,
@@ -48,11 +48,11 @@ export default function Otp() {
     }
   };
 
-  const refs = otp.map(() => useState(null)[1]);
+  const refs = otp.map(() => useRef(null));
 
   const handleVerify = () => {
     if (otp.join('').length === 6) {
-      router.push('screens/Success'); // Replace with your success page
+      router.push('/(tabs)'); // Navigate to homepage (tabs layout) after successful OTP verification
     } else {
       alert('Please enter a valid 6-digit OTP');
     }

@@ -20,7 +20,7 @@ export default function Login() {
 
   const handleContinue = () => {
     if (mobile.length !== 10) return alert('Enter valid mobile number');
-    router.push('screens/Otp');
+    router.push('/Otp');
   };
 
   return (
