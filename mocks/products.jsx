@@ -1,5 +1,4 @@
 // Correct import
-
 const products = [
   {
     id: "1",
@@ -12,6 +11,8 @@ const products = [
     inStock: true,
     rating: 4.9,
     reviews: 633,
+    recentBuyers: 1900,
+    bulkPrices: { 6: 240, 15: 570 },
   },
   {
     id: "2",
@@ -24,6 +25,8 @@ const products = [
     inStock: true,
     rating: 4.8,
     reviews: 1250,
+    recentBuyers: 2500,
+    bulkPrices: { 6: 60, 15: 150 },
   },
   {
     id: "3",
@@ -227,73 +230,73 @@ const categories = [
   {
     id: "milk",
     name: "Milk",
-    icon: "🥛",
+    image: "MilkCategory.png",
     color: "#E3F2FD",
   },
   {
     id: "butter",
     name: "Butter",
-    icon: "🧈",
+    image: "ButterCategoryCategory.png",
     color: "#FFF8DC",
   },
   {
     id: "cheese",
     name: "Cheese",
-    icon: "🧀",
+    image: "CheeseCategory.jpg",
     color: "#FFF4E6",
   },
   {
     id: "paneer",
     name: "Paneer",
-    icon: "🍥",
+    image: "Paneer.png",
     color: "#F0F8FF",
   },
   {
     id: "curd",
     name: "Curd & Yogurt",
-    icon: "🥣",
+    image: "DahiCategory.png",
     color: "#FFFACD",
   },
   {
     id: "icecream",
     name: "Ice Cream",
-    icon: "🍦",
+    image: "IcecreamCategory.jpg",
     color: "#FFE4E1",
   },
   {
     id: "ghee",
     name: "Ghee",
-    icon: "🫙",
+    image: "GheeCategory.png",
     color: "#FFF9C4",
   },
   {
     id: "cream",
     name: "Cream",
-    icon: "🍶",
+    image: "CreamCategory.png",
     color: "#F5F5DC",
   },
   {
     id: "buttermilk",
     name: "Buttermilk",
-    icon: "🥤",
+    image: "buttermilk.png",
     color: "#E8F5E9",
   },
   {
     id: "lassi",
     name: "Lassi",
-    icon: "🧃",
+    image: "LassiCategory.png",
     color: "#FCE4EC",
   },
   {
     id: "flavored-milk",
     name: "Flavored Milk",
-    icon: "🥛",
+    image: "flavored-milk.png",
     color: "#FFE0B2",
   },
   {
     id: "dairy-sweets",
     name: "Dairy Sweets",
-    icon: "🍰",
+    image: "Dairy-SweetCategory.png",
     color: "#F3E5F5",
   },
 ];

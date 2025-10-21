@@ -5,14 +5,36 @@ import { Feather, FontAwesome, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
+  Dimensions,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const getImageSource = (imageName) => {
+  const imageMap = {
+    "MilkCategory.png": require("../../assets/images/MilkCategory.png"),
+    "ButterCategoryCategory.png": require("../../assets/images/ButterCategoryCategory.png"),
+    "CheeseCategory.jpg": require("../../assets/images/CheeseCategory.jpg"),
+    "Paneer.png": require("../../assets/images/Paneer.png"),
+    "DahiCategory.png": require("../../assets/images/DahiCategory.png"),
+    "IcecreamCategory.jpg": require("../../assets/images/IcecreamCategory.jpg"),
+    "GheeCategory.png": require("../../assets/images/GheeCategory.png"),
+    "CreamCategory.png": require("../../assets/images/CreamCategory.png"),
+    "buttermilk.png": require("../../assets/images/butter.png"),
+    "LassiCategory.png": require("../../assets/images/LassiCategory.png"),
+    "flavored-milk.png": require("../../assets/images/milk.png"),
+    "Dairy-SweetCategory.png": require("../../assets/images/Dairy-SweetCategory.png"),
+  };
+  return imageMap[imageName] || require("../../assets/images/MilkCategory.png"); // fallback
+};
+
+const { width } = Dimensions.get('window');
 
 export default function CategoriesScreen() {
   const [selectedCategory, setSelectedCategory] = useState("milk");
@@ -158,7 +180,11 @@ export default function CategoriesScreen() {
                     { backgroundColor: category.color },
                   ]}
                 >
-                  <Text style={styles.categoryIcon}>{category.icon}</Text>
+                  <Image
+                    source={getImageSource(category.image)}
+                    style={styles.categoryImage}
+                    resizeMode="cover"
+                  />
                 </View>
                 <Text
                   style={[
@@ -182,11 +208,16 @@ export default function CategoriesScreen() {
             {filteredProducts.length > 0 ? (
               filteredProducts.map((product) => (
                 <View key={product.id} style={styles.productCard}>
+                  <TouchableOpacity
+                    style={styles.heartButton}
+                    onPress={() => {
+                      console.log(`${product.name} added to favorites`);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <FontAwesome name="heart" size={20} color="#EF4444" />
+                  </TouchableOpacity>
                   <View style={styles.productHeader}>
-                    <View style={styles.buyersInfo}>
-                      <Text style={styles.buyersIcon}>🛒</Text>
-                      <Text style={styles.buyersText}>1900+ recent buyers</Text>
-                    </View>
                     <View style={styles.offerBadge}>
                       <Text style={styles.offerBadgeText}>12% OFF MRP</Text>
                     </View>
@@ -196,7 +227,7 @@ export default function CategoriesScreen() {
                     <View style={styles.productInfo}>
                       <Text style={styles.productName}>{product.name}</Text>
                       <Text style={styles.productUnit}>{product.unit}</Text>
-                      
+
                       {product.rating && (
                         <View style={styles.ratingRow}>
                           <View style={styles.ratingBadge}>
@@ -211,36 +242,37 @@ export default function CategoriesScreen() {
                         </View>
                       )}
 
-                      <Text style={styles.vegIcon}>🟢</Text>
-
                       <View style={styles.priceRow}>
-                        <Text style={styles.price}>₹{product.price}</Text>
-                        <Text style={styles.priceOriginal}>
-                          ₹{Math.round(product.price * 1.14)}
-                        </Text>
+                        <View style={styles.priceContainer}>
+                          <Text style={styles.price}>₹{product.price}</Text>
+                          <Text style={styles.priceOriginal}>
+                            ₹{Math.round(product.price * 1.14)}
+                          </Text>
+                        </View>
+                        {(product.bulkPrices && (product.bulkPrices[6] || product.bulkPrices[15])) && (
+                          <>
+                            <View style={styles.priceSeparator} />
+                            <View style={styles.bulkContainer}>
+                              {product.bulkPrices[6] && (
+                                <Text style={styles.bulkPrice}>
+                                  6+ @ ₹{product.bulkPrices[6]}
+                                </Text>
+                              )}
+                              {product.bulkPrices[15] && (
+                                <Text style={styles.bulkPrice}>
+                                  15+ @ ₹{product.bulkPrices[15]}
+                                </Text>
+                              )}
+                            </View>
+                          </>
+                        )}
                       </View>
-
-                      <Text style={styles.bulkPrice}>
-                        ₹{Math.round(product.price * 0.996)}/pc for 6 pcs+
-                      </Text>
-                      <Text style={styles.bulkPrice}>
-                        ₹{Math.round(product.price * 0.98)}/pc for 15 pcs+
-                      </Text>
                     </View>
 
                     <View style={styles.productRight}>
                       <View style={styles.productImagePlaceholder}>
                         <Text style={styles.productImageText}>📦</Text>
                       </View>
-                      <TouchableOpacity
-                        style={styles.heartButton}
-                        onPress={() => {
-                          console.log(`${product.name} added to favorites`);
-                        }}
-                        activeOpacity={0.6}
-                      >
-                        <FontAwesome name="heart" size={20} color="#EF4444" />
-                      </TouchableOpacity>
                     </View>
                   </View>
 
@@ -590,6 +622,11 @@ const styles = StyleSheet.create({
   categoryIcon: {
     fontSize: 24,
   },
+  categoryImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+  },
   categoryName: {
     fontSize: 10,
     fontWeight: "500",
@@ -618,6 +655,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
+    position: 'relative',
   },
   productHeader: {
     flexDirection: "row",
@@ -702,9 +740,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginBottom: 8,
+    marginTop: 10,
   },
   price: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
     color: Colors.light.text,
   },
@@ -713,11 +752,25 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     textDecorationLine: "line-through",
   },
+  priceContainer: {
+    alignItems: "flex-start",
+    minWidth: 100,
+  },
+  priceSeparator: {
+    width: 1,
+    height: 40,
+    backgroundColor: "#E8E8E8",
+    marginHorizontal: 4,
+  },
+  bulkContainer: {
+    alignItems: "flex-start",
+    gap: 4,
+  },
   bulkPrice: {
-    fontSize: 13,
-    color: "#3B82F6",
-    fontWeight: "600",
-    marginBottom: 4,
+    fontSize: 14,
+    color: "#1E40AF",
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   productRight: {
     alignItems: "center",
@@ -735,14 +788,18 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
   heartButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
     width: 36,
     height: 36,
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 1,
   },
   productActions: {
     flexDirection: "row",
-    gap: 8,
+    gap: width < 400 ? 4 : 8,
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
@@ -756,8 +813,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.light.tint,
     borderRadius: 8,
-    paddingVertical: 10,
-    gap: 4,
+    paddingVertical: width < 400 ? 6 : 10,
+    gap: 2,
   },
   qtyBtn: {
     padding: 4,
@@ -770,17 +827,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   addButtonText: {
-    fontSize: 15,
+    fontSize: width < 400 ? 14 : 16,
     fontWeight: "700",
     color: Colors.light.tint,
   },
   addButtonPlus: {
-    fontSize: 18,
+    fontSize: width < 400 ? 14 : 16,
     fontWeight: "700",
     color: Colors.light.tint,
   },
   bulkAction: {
-    paddingHorizontal: 16,
+    paddingHorizontal: width < 400 ? 8 : 16,
     paddingVertical: 10,
     justifyContent: "center",
     alignItems: "center",

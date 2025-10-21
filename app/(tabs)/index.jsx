@@ -237,7 +237,7 @@ export default function HomeScreen() {
               <CategoryTile
                 key={category.id}
                 name={category.name}
-                icon={category.icon}
+                image={category.image}
                 color={category.color}
                 onPress={() => {
                   console.log(`Category ${category.name} clicked`);

@@ -1,16 +1,38 @@
 import Colors from "@/constants/colors";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View, Image } from "react-native";
+
+const getImageSource = (imageName) => {
+  const imageMap = {
+    "MilkCategory.png": require("../assets/images/MilkCategory.png"),
+    "ButterCategoryCategory.png": require("../assets/images/ButterCategoryCategory.png"),
+    "CheeseCategory.jpg": require("../assets/images/CheeseCategory.jpg"),
+    "Paneer.png": require("../assets/images/Paneer.png"),
+    "DahiCategory.png": require("../assets/images/DahiCategory.png"),
+    "IcecreamCategory.jpg": require("../assets/images/IcecreamCategory.jpg"),
+    "GheeCategory.png": require("../assets/images/GheeCategory.png"),
+    "CreamCategory.png": require("../assets/images/CreamCategory.png"),
+    "buttermilk.png": require("../assets/images/butter.png"),
+    "LassiCategory.png": require("../assets/images/LassiCategory.png"),
+    "flavored-milk.png": require("../assets/images/milk.png"),
+    "Dairy-SweetCategory.png": require("../assets/images/Dairy-SweetCategory.png"),
+  };
+  return imageMap[imageName] || require("../assets/images/MilkCategory.png"); // fallback
+};
 
 export default function CategoryTile({
   name,
-  icon,
+  image,
   color,
   onPress,
 }) {
   return (
     <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.card, { backgroundColor: color }]}>
-        <Text style={styles.icon}>{icon}</Text>
+        <Image
+          source={getImageSource(image)}
+          style={styles.image}
+          resizeMode="cover"
+        />
       </View>
       <Text style={styles.name} numberOfLines={2}>
         {name}
@@ -38,8 +60,10 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  icon: {
-    fontSize: 40,
+  image: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 16,
   },
   name: {
     fontSize: 12,
