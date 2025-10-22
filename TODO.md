@@ -1,11 +1,5 @@
-# TODO: Replace Category Icons with Images
-
-## Tasks
-- [x] Update categories array in mocks/products.jsx to include image paths
-- [x] Modify CategoryTile component to display images instead of emoji icons
-- [x] Update categories page sidebar to use images instead of emoji icons
-- [ ] Test image loading and display
-
-## Followup Steps
-- Add JPG images to assets/images/ folder with reference names (milk.jpg, butter.jpg, cheese.jpg, paneer.jpg, curd.jpg, icecream.jpg, buttermilk.jpg, lassi.jpg, flavored-milk.jpg, dairy-sweets.jpg)
-- Verify images display correctly on home screen and categories page
+- [x] Modify Signup.jsx: Update handleVerify to always navigate to dashboard after OTP entry (remove OTP validation for testing).
+- [x] Modify Login.jsx: Update handleVerify to always navigate to dashboard after OTP entry (remove OTP validation for testing).
+- [x] Delete app/profileinfo.jsx as user info is collected in signup.
+- [x] Verify no references to profileinfo.jsx in the codebase.
+- [x] Test signup and login flows to ensure direct navigation to dashboard after OTP.

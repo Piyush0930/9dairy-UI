@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Dimensions,
   Image,
@@ -16,17 +16,45 @@ const { width, height } = Dimensions.get('window');
 
 export default function Login() {
   const [mobile, setMobile] = useState('');
+  const [otp, setOtp] = useState(['', '', '', '']);
+  const [otpShown, setOtpShown] = useState(false);
   const router = useRouter();
+  const otpRefs = useRef([]);
 
   const handleContinue = () => {
     if (mobile.length !== 10) return alert('Enter valid mobile number');
-    router.push('/Otp');
+    setOtpShown(true);
+    alert('OTP sent to your mobile number');
+  };
+
+  const handleOtpChange = (text, index) => {
+    if (/^\d*$/.test(text)) {
+      const newOtp = [...otp];
+      newOtp[index] = text;
+      setOtp(newOtp);
+      if (text && index < otp.length - 1) {
+        otpRefs.current[index + 1]?.focus();
+      }
+      if (!text && index > 0) {
+        otpRefs.current[index - 1]?.focus();
+      }
+    }
+  };
+
+  const handleVerify = () => {
+    const otpCode = otp.join('');
+    if (otpCode.length !== 4) {
+      alert('Enter valid 4-digit OTP');
+      return;
+    }
+    // For testing: Always navigate to dashboard after OTP entry
+    router.push('/(tabs)');
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      
+
       {/* Top Half Image Section */}
       <View style={styles.imageContainer}>
         <Image
@@ -82,19 +110,69 @@ export default function Login() {
             />
           </View>
 
-          {/* Continue Button */}
-          <TouchableOpacity 
-            style={styles.continueButton}
-            onPress={handleContinue}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.buttonText}>Continue</Text>
-          </TouchableOpacity>
+          {!otpShown ? (
+            <>
+              {/* Continue Button */}
+              <TouchableOpacity
+                style={styles.continueButton}
+                onPress={handleContinue}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.buttonText}>Continue</Text>
+              </TouchableOpacity>
 
-          {/* Footer Text */}
-          <Text style={styles.footerText}>
-            By continuing, you agree to our Terms & Privacy Policy
-          </Text>
+              {/* Create Account Link */}
+              <TouchableOpacity onPress={() => router.push('/Signup')}>
+                <Text style={styles.createAccountText}>
+                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                </Text>
+              </TouchableOpacity>
+
+              {/* Footer Text */}
+              <Text style={styles.footerText}>
+                By continuing, you agree to our Terms & Privacy Policy
+              </Text>
+            </>
+          ) : (
+            <>
+              {/* OTP Section */}
+              <Text style={styles.otpTitle}>Enter 4-digit OTP</Text>
+              <View style={styles.otpContainer}>
+                {otp.map((value, index) => (
+                  <TextInput
+                    key={index}
+                    ref={(ref) => (otpRefs.current[index] = ref)}
+                    style={[styles.otpInput, value ? styles.otpInputActive : null]}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    value={value}
+                    onChangeText={(text) => handleOtpChange(text, index)}
+                    textAlign="center"
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={styles.continueButton}
+                onPress={handleVerify}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.buttonText}>Verify & Sign In</Text>
+              </TouchableOpacity>
+
+              {/* Create Account Link */}
+              <TouchableOpacity onPress={() => router.push('/Signup')}>
+                <Text style={styles.createAccountText}>
+                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                </Text>
+              </TouchableOpacity>
+
+              {/* Footer Text */}
+              <Text style={styles.footerText}>
+                By continuing, you agree to our Terms & Privacy Policy
+              </Text>
+            </>
+          )}
         </View>
       </KeyboardAwareScrollView>
     </View>
@@ -221,11 +299,59 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  createAccountText: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  createAccountLink: {
+    color: '#3b82f6',
+    fontWeight: '600',
+  },
   footerText: {
     fontSize: 10,
     color: '#94a3b8',
     textAlign: 'center',
     lineHeight: 14,
     paddingHorizontal: 16,
+  },
+  otpTitle: {
+    fontSize: 18,
+    color: '#0f172a',
+    marginBottom: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  otpInput: {
+    width: 60,
+    height: 60,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    fontSize: 24,
+    fontWeight: '700',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    textAlign: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  otpInputActive: {
+    borderColor: '#3b82f6',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
   },
 });
