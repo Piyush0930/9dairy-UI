@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import Colors from '@/constants/colors';
 import { useCart } from '@/contexts/CartContext';
 import { mockAddresses } from '@/mocks/addresses';
-import Colors from '@/constants/colors';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const API_BASE_URL = 'http://10.55.13.5:5000/api';
 
 export default function CheckoutScreen() {
   const router = useRouter();
@@ -14,9 +17,72 @@ export default function CheckoutScreen() {
   const [selectedAddress, setSelectedAddress] = useState(mockAddresses[0].id);
   const [selectedPayment, setSelectedPayment] = useState('upi');
 
-  const handlePlaceOrder = () => {
-    clearCart();
-    router.push('/order-success');
+  const handlePlaceOrder = async () => {
+    try {
+      // Get auth token from storage
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'Please login to place order');
+        router.push('/Login');
+        return;
+      }
+
+      // Get user data to check customer profile
+      const userData = await AsyncStorage.getItem('userData');
+      if (!userData) {
+        Alert.alert('Error', 'User data not found. Please login again.');
+        router.push('/Login');
+        return;
+      }
+
+      const user = JSON.parse(userData);
+
+      // Prepare order data according to backend schema
+      const orderData = {
+        items: items.map(item => ({
+          productId: item.product.id, // Assuming product has id field
+          quantity: item.quantity
+        })),
+        deliveryAddress: {
+          // You might want to get this from user profile or let user enter
+          addressLine1: "Customer Address", // This should come from user profile
+          city: "City",
+          state: "State",
+          pincode: "000000"
+        },
+        deliveryTime: "Morning", // Default or from user preferences
+        paymentMethod: selectedPayment === 'cod' ? 'cash' : selectedPayment, // Map to backend values
+        specialInstructions: "" // Can be made editable
+      };
+
+      const response = await fetch(`${API_BASE_URL}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(orderData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create order');
+      }
+
+      if (data.success) {
+        clearCart();
+        router.push('/order-success');
+      } else {
+        throw new Error(data.message || 'Failed to create order');
+      }
+    } catch (error) {
+      console.error('Checkout Error:', error);
+      Alert.alert(
+        'Order Failed',
+        error.message || 'Failed to place order. Please try again.'
+      );
+    }
   };
 
   return (

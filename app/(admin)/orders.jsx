@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MaterialIcons, FontAwesome, Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
-import { orders } from "@/mocks/orders";
+import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function getStatusIcon(status) {
   switch (status) {
@@ -43,14 +44,113 @@ function getStatusColor(status) {
   }
 }
 
+const API_BASE_URL = 'http://10.55.13.5:5000/api';
+
 export default function AdminOrders() {
   const insets = useSafeAreaInsets();
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchOrders = async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'Authentication required');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/orders/admin`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch orders');
+      }
+
+      if (data.success) {
+        setOrders(data.orders || []);
+      } else {
+        throw new Error(data.message || 'Failed to fetch orders');
+      }
+    } catch (error) {
+      console.error('Fetch Orders Error:', error);
+      Alert.alert('Error', error.message || 'Failed to fetch orders');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const updateOrderStatus = async (orderId, newStatus) => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'Authentication required');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update order status');
+      }
+
+      if (data.success) {
+        Alert.alert('Success', 'Order status updated successfully');
+        fetchOrders(); // Refresh orders
+      } else {
+        throw new Error(data.message || 'Failed to update order status');
+      }
+    } catch (error) {
+      console.error('Update Order Status Error:', error);
+      Alert.alert('Error', error.message || 'Failed to update order status');
+    }
+  };
+
+  const handleStatusChange = (orderId, currentStatus) => {
+    const statuses = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered'];
+    const currentIndex = statuses.indexOf(currentStatus);
+    const nextStatus = statuses[currentIndex + 1];
+
+    if (nextStatus) {
+      Alert.alert(
+        'Update Order Status',
+        `Change status to ${getStatusText(nextStatus)}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Update', onPress: () => updateOrderStatus(orderId, nextStatus) },
+        ]
+      );
+    } else {
+      Alert.alert('Info', 'Order is already delivered');
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
 
   const orderStats = {
     total: orders.length,
-    pending: orders.filter(o => o.status === 'pending').length,
-    delivered: orders.filter(o => o.status === 'delivered').length,
-    outForDelivery: orders.filter(o => o.status === 'out_for_delivery').length,
+    pending: orders.filter(o => o.orderStatus === 'pending').length,
+    delivered: orders.filter(o => o.orderStatus === 'delivered').length,
+    outForDelivery: orders.filter(o => o.orderStatus === 'out_for_delivery').length,
   };
 
   return (
@@ -85,63 +185,80 @@ export default function AdminOrders() {
 
         <View style={styles.ordersContainer}>
           <Text style={styles.sectionTitle}>All Orders</Text>
-          {orders.map((order) => (
-            <TouchableOpacity key={order.id} style={styles.orderCard}>
-              <View style={styles.orderHeader}>
-                <View style={styles.orderIdSection}>
-                  <MaterialIcons name="inventory" size={18} color={Colors.light.text} />
-                  <Text style={styles.orderId}>{order.id}</Text>
-                </View>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: `${getStatusColor(order.status)}20` },
-                  ]}
-                >
-                  {getStatusIcon(order.status)}
-                  <Text
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.light.accent} />
+              <Text style={styles.loadingText}>Loading orders...</Text>
+            </View>
+          ) : orders.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <MaterialIcons name="inventory" size={48} color={Colors.light.textSecondary} />
+              <Text style={styles.emptyText}>No orders found</Text>
+            </View>
+          ) : (
+            orders.map((order) => (
+              <TouchableOpacity key={order._id} style={styles.orderCard}>
+                <View style={styles.orderHeader}>
+                  <View style={styles.orderIdSection}>
+                    <MaterialIcons name="inventory" size={18} color={Colors.light.text} />
+                    <Text style={styles.orderId}>{order.orderId}</Text>
+                  </View>
+                  <View
                     style={[
-                      styles.statusText,
-                      { color: getStatusColor(order.status) },
+                      styles.statusBadge,
+                      { backgroundColor: `${getStatusColor(order.orderStatus)}20` },
                     ]}
                   >
-                    {getStatusText(order.status)}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.orderItems}>
-                {order.items.map((item, index) => (
-                  <Text key={index} style={styles.itemText}>
-                    {item.quantity}x {item.productName}
-                  </Text>
-                ))}
-              </View>
-
-              <View style={styles.orderFooter}>
-                <View>
-                  <Text style={styles.orderDate}>
-                    {new Date(order.date).toLocaleDateString("en-IN", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </Text>
-                  <Text style={styles.customerInfo}>Customer: {order.customerName || 'N/A'}</Text>
-                </View>
-                <View style={styles.amountSection}>
-                  <Text style={styles.orderTotal}>₹{order.total}</Text>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <Text style={styles.actionButtonText}>
-                      {order.status === 'pending' ? 'Process' : 'View Details'}
+                    {getStatusIcon(order.orderStatus)}
+                    <Text
+                      style={[
+                        styles.statusText,
+                        { color: getStatusColor(order.orderStatus) },
+                      ]}
+                    >
+                      {getStatusText(order.orderStatus)}
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
-          ))}
+
+                <View style={styles.divider} />
+
+                <View style={styles.orderItems}>
+                  {order.items.map((item, index) => (
+                    <Text key={index} style={styles.itemText}>
+                      {item.quantity}x {item.product?.name || 'Unknown Product'}
+                    </Text>
+                  ))}
+                </View>
+
+                <View style={styles.orderFooter}>
+                  <View>
+                    <Text style={styles.orderDate}>
+                      {new Date(order.createdAt).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </Text>
+                    <Text style={styles.customerInfo}>
+                      Customer: {order.customer?.fullName || 'N/A'}
+                    </Text>
+                  </View>
+                  <View style={styles.amountSection}>
+                    <Text style={styles.orderTotal}>₹{order.finalAmount || order.totalAmount}</Text>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => handleStatusChange(order._id, order.orderStatus)}
+                    >
+                      <Text style={styles.actionButtonText}>
+                        {order.orderStatus === 'pending' ? 'Process' : 'Update Status'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </ScrollView>
     </View>
@@ -279,5 +396,25 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: 12,
     fontWeight: "600",
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.light.textSecondary,
   },
 });

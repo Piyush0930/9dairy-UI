@@ -1,6 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   StatusBar,
@@ -8,23 +11,93 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 
 const { width, height } = Dimensions.get('window');
 
+const API_BASE_URL = 'http://10.55.13.5:5000/api/auth';
+
 export default function Login() {
   const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '']);
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpShown, setOtpShown] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const router = useRouter();
   const otpRefs = useRef([]);
 
-  const handleContinue = () => {
-    if (mobile.length !== 10) return alert('Enter valid mobile number');
-    setOtpShown(true);
-    alert('OTP sent to your mobile number');
+  const showAlert = (title, message) => {
+    Alert.alert(title, message, [{ text: 'OK' }]);
+  };
+
+  const handleContinue = async () => {
+    if (!mobile || mobile.length !== 10 || !/^\d+$/.test(mobile)) {
+      showAlert('Validation Error', 'Please enter a valid 10-digit mobile number');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/send-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone: mobile }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to send OTP');
+      }
+
+      setOtpShown(true);
+      showAlert('Success', 'OTP sent successfully to your mobile number');
+    } catch (error) {
+      console.error('Login Error:', error);
+      if (error.message === 'Network request failed') {
+        showAlert('Network Error', 'Please check your internet connection and try again.');
+      } else {
+        showAlert('Error', error.message || 'Failed to send OTP. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setResendLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/send-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone: mobile }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to resend OTP');
+      }
+
+      showAlert('Success', 'OTP resent successfully!');
+    } catch (error) {
+      console.error('Resend OTP Error:', error);
+      if (error.message === 'Network request failed') {
+        showAlert('Network Error', 'Please check your internet connection and try again.');
+      } else {
+        showAlert('Error', error.message || 'Failed to resend OTP. Please try again.');
+      }
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const handleOtpChange = (text, index) => {
@@ -32,28 +105,83 @@ export default function Login() {
       const newOtp = [...otp];
       newOtp[index] = text;
       setOtp(newOtp);
+      
+      // Auto-focus next input
       if (text && index < otp.length - 1) {
         otpRefs.current[index + 1]?.focus();
       }
+      
+      // Auto-focus previous input on backspace
       if (!text && index > 0) {
         otpRefs.current[index - 1]?.focus();
       }
     }
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const otpCode = otp.join('');
-    if (otpCode.length !== 4) {
-      alert('Enter valid 4-digit OTP');
+    if (otpCode.length !== 6) {
+      showAlert('Validation Error', 'Please enter complete 6-digit OTP');
       return;
     }
-    // For testing: Always navigate to dashboard after OTP entry
-    router.push('/(tabs)');
+
+    setLoading(true);
+
+    try {
+      const verifyData = {
+        phone: mobile,
+        otp: otpCode
+      };
+
+      const response = await fetch(`${API_BASE_URL}/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(verifyData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'OTP verification failed');
+      }
+
+      // Store token and user data securely
+      if (data.token) {
+        await AsyncStorage.setItem('authToken', data.token);
+        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+      }
+
+      showAlert('Success', 'Login successful!');
+
+      // Navigate based on role from response
+      const userRole = data.user?.role || 'customer';
+      if (userRole === 'customer') {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(admin)');
+      }
+    } catch (error) {
+      console.error('Verification Error:', error);
+      if (error.message === 'Network request failed') {
+        showAlert('Network Error', 'Please check your internet connection and try again.');
+      } else {
+        showAlert('Error', error.message || 'Failed to verify OTP. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditNumber = () => {
+    setOtpShown(false);
+    setOtp(['', '', '', '', '', '']);
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor="#1e40af" />
 
       {/* Top Half Image Section */}
       <View style={styles.imageContainer}>
@@ -62,6 +190,14 @@ export default function Login() {
           style={styles.backgroundImage}
           resizeMode="cover"
         />
+        {/* Overlay for better text readability */}
+        <View style={styles.imageOverlay} />
+        
+        {/* Header Text on Image */}
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>Welcome Back</Text>
+          <Text style={styles.headerSubtitle}>Fresh dairy delivered daily</Text>
+        </View>
       </View>
 
       {/* Bottom White Card Section with KeyboardAwareScrollView */}
@@ -70,13 +206,12 @@ export default function Login() {
         contentContainerStyle={styles.keyboardAwareContent}
         enableOnAndroid={true}
         keyboardShouldPersistTaps="handled"
-        extraScrollHeight={80} // Precise positioning above keyboard
-        keyboardOpeningTime={200} // Smooth animation duration
+        extraScrollHeight={80}
+        keyboardOpeningTime={200}
         enableAutomaticScroll={true}
         showsVerticalScrollIndicator={false}
         resetScrollToCoords={{ x: 0, y: 0 }}
         scrollEnabled={true}
-        getTextInputRefs={() => [mobile]} // Track input field for scrolling
       >
         <View style={styles.spacer} />
         <View style={styles.bottomCard}>
@@ -86,43 +221,56 @@ export default function Login() {
           </View>
 
           <Text style={styles.title}>
-            Fresh dairy delivered daily
+            {otpShown ? 'Enter OTP' : 'Sign In'}
           </Text>
 
           <Text style={styles.subtitle}>
-            Sign in with your mobile number
+            {otpShown 
+              ? `Enter OTP sent to +91 ${mobile}`
+              : 'Sign in with your mobile number'
+            }
           </Text>
-
-          {/* Phone Input Field */}
-          <View style={styles.inputContainer}>
-            <View style={styles.flagContainer}>
-              <Text style={styles.flag}>🇮🇳</Text>
-              <Text style={styles.countryCode}>+91</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter mobile number"
-              placeholderTextColor="#94a3b8"
-              keyboardType="phone-pad"
-              maxLength={10}
-              value={mobile}
-              onChangeText={setMobile}
-            />
-          </View>
 
           {!otpShown ? (
             <>
+              {/* Phone Input Field */}
+              <View style={styles.inputContainer}>
+                <View style={styles.flagContainer}>
+                  <Text style={styles.flag}>🇮🇳</Text>
+                  <Text style={styles.countryCode}>+91</Text>
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter mobile number"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  value={mobile}
+                  onChangeText={setMobile}
+                  editable={!loading}
+                  returnKeyType="done"
+                />
+              </View>
+
               {/* Continue Button */}
               <TouchableOpacity
-                style={styles.continueButton}
+                style={[styles.continueButton, loading && styles.buttonDisabled]}
                 onPress={handleContinue}
                 activeOpacity={0.8}
+                disabled={loading}
               >
-                <Text style={styles.buttonText}>Continue</Text>
+                {loading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.buttonText}>Continue</Text>
+                )}
               </TouchableOpacity>
 
               {/* Create Account Link */}
-              <TouchableOpacity onPress={() => router.push('/Signup')}>
+              <TouchableOpacity 
+                onPress={() => router.push('/Signup')}
+                disabled={loading}
+              >
                 <Text style={styles.createAccountText}>
                   New user? <Text style={styles.createAccountLink}>Create Account</Text>
                 </Text>
@@ -136,32 +284,68 @@ export default function Login() {
           ) : (
             <>
               {/* OTP Section */}
-              <Text style={styles.otpTitle}>Enter 4-digit OTP</Text>
               <View style={styles.otpContainer}>
                 {otp.map((value, index) => (
                   <TextInput
                     key={index}
                     ref={(ref) => (otpRefs.current[index] = ref)}
-                    style={[styles.otpInput, value ? styles.otpInputActive : null]}
+                    style={[styles.otpInput, value && styles.otpInputActive]}
                     keyboardType="number-pad"
                     maxLength={1}
                     value={value}
                     onChangeText={(text) => handleOtpChange(text, index)}
                     textAlign="center"
+                    editable={!loading}
+                    selectTextOnFocus
                   />
                 ))}
               </View>
 
+              {/* Resend OTP Option */}
+              <TouchableOpacity 
+                style={styles.resendContainer}
+                onPress={handleResendOtp}
+                disabled={resendLoading}
+              >
+                {resendLoading ? (
+                  <ActivityIndicator color="#3b82f6" size="small" />
+                ) : (
+                  <Text style={styles.resendText}>
+                    Didn't receive OTP? <Text style={styles.resendTextBold}>Resend</Text>
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Verify Button */}
               <TouchableOpacity
-                style={styles.continueButton}
+                style={[styles.continueButton, loading && styles.buttonDisabled]}
                 onPress={handleVerify}
                 activeOpacity={0.8}
+                disabled={loading}
               >
-                <Text style={styles.buttonText}>Verify & Sign In</Text>
+                {loading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.buttonText}>Verify & Sign In</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Edit Number Option */}
+              <TouchableOpacity 
+                style={styles.editNumberContainer}
+                onPress={handleEditNumber}
+                disabled={loading}
+              >
+                <Text style={styles.editNumberText}>
+                  Wrong number? <Text style={styles.editNumberTextBold}>Edit</Text>
+                </Text>
               </TouchableOpacity>
 
               {/* Create Account Link */}
-              <TouchableOpacity onPress={() => router.push('/Signup')}>
+              <TouchableOpacity 
+                onPress={() => router.push('/Signup')}
+                disabled={loading}
+              >
                 <Text style={styles.createAccountText}>
                   New user? <Text style={styles.createAccountLink}>Create Account</Text>
                 </Text>
@@ -182,11 +366,11 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f9ff', // Fallback background
+    backgroundColor: '#f0f9ff',
   },
   imageContainer: {
     width: '100%',
-    height: height * 0.5, // Image covers top half
+    height: height * 0.5,
     position: 'absolute',
     top: 0,
   },
@@ -194,33 +378,64 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  imageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  headerTextContainer: {
+    position: 'absolute',
+    top: '30%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 4,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: '#f8fafc',
+    textAlign: 'center',
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 4,
+  },
   keyboardAwareContainer: {
     width: '100%',
     flex: 1,
   },
   keyboardAwareContent: {
     flexGrow: 1,
-    justifyContent: 'flex-end', // Anchor card at bottom when keyboard is not active
+    justifyContent: 'flex-end',
   },
   spacer: {
-    height: height * 0.48, // Slightly less than image height for overlap
+    height: height * 0.48,
   },
   bottomCard: {
-    backgroundColor: '#ffffff', // Solid white for contrast
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
-    paddingVertical: 24,
+    paddingVertical: 32,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
+    shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 10,
-    minHeight: height * 0.52, // Slightly more to compensate for overlap
+    shadowRadius: 16,
+    elevation: 12,
+    minHeight: height * 0.52,
   },
   logoContainer: {
-    marginBottom: 12,
+    marginBottom: 16,
   },
   logoText: {
     fontSize: 28,
@@ -229,19 +444,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: '#0f172a',
     textAlign: 'center',
-    marginBottom: 10,
-    lineHeight: 28,
+    marginBottom: 8,
+    lineHeight: 32,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#64748b',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
     fontWeight: '400',
+    lineHeight: 20,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -251,9 +467,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    marginBottom: 12,
+    marginBottom: 20,
     backgroundColor: '#f8fafc',
     width: '100%',
+    minHeight: 56,
   },
   flagContainer: {
     flexDirection: 'row',
@@ -273,7 +490,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
     color: '#1e293b',
     paddingLeft: 12,
     paddingVertical: 12,
@@ -282,7 +499,7 @@ const styles = StyleSheet.create({
   continueButton: {
     backgroundColor: '#3b82f6',
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
@@ -291,11 +508,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+  buttonDisabled: {
+    backgroundColor: '#9ca3af',
+    shadowColor: '#9ca3af',
   },
   buttonText: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
@@ -303,7 +524,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748b',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   createAccountLink: {
     color: '#3b82f6',
@@ -316,26 +537,20 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     paddingHorizontal: 16,
   },
-  otpTitle: {
-    fontSize: 18,
-    color: '#0f172a',
-    marginBottom: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
-    paddingHorizontal: 20,
+    marginBottom: 16,
+    paddingHorizontal: 10,
+    width: '100%',
   },
   otpInput: {
-    width: 60,
-    height: 60,
+    width: 48,
+    height: 48,
     borderWidth: 2,
     borderColor: '#e2e8f0',
-    borderRadius: 12,
-    fontSize: 24,
+    borderRadius: 10,
+    fontSize: 20,
     fontWeight: '700',
     backgroundColor: '#ffffff',
     color: '#0f172a',
@@ -348,10 +563,37 @@ const styles = StyleSheet.create({
   },
   otpInputActive: {
     borderColor: '#3b82f6',
+    backgroundColor: '#f0f9ff',
     shadowColor: '#3b82f6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 5,
+  },
+  resendContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingVertical: 8,
+  },
+  resendText: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  resendTextBold: {
+    color: '#3b82f6',
+    fontWeight: '600',
+  },
+  editNumberContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 8,
+  },
+  editNumberText: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  editNumberTextBold: {
+    color: '#ef4444',
+    fontWeight: '600',
   },
 });
