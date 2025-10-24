@@ -2,11 +2,12 @@ import CategoryTile from '@/components/CategoryTile';
 import ProductCard from '@/components/ProductCard';
 import Colors from '@/constants/colors';
 import { useCart } from '@/contexts/CartContext';
-import { categories, popularProducts } from '@/mocks/products';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   ScrollView,
@@ -14,7 +15,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -74,9 +75,64 @@ export default function HomeScreen() {
   const isStoreScrolling = useRef(false);
   const isPopularScrolling = useRef(false);
 
+  // State for dynamic data
+  const [categories, setCategories] = useState([]);
+  const [popularProducts, setPopularProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   // Create infinite loop arrays by multiplying the cards
   const infiniteStoreCards = [...storeCards, ...storeCards, ...storeCards];
   const infinitePopularProducts = [...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts];
+
+  // API Base URL
+  const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
+
+  // Fetch categories from API
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/catalog/categories`);
+      const data = await response.json();
+
+      if (data.success !== false) {
+        setCategories(data);
+      } else {
+        setCategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      Alert.alert('Error', 'Failed to load categories');
+      setCategories([]);
+    }
+  };
+
+  // Fetch popular products from API
+  const fetchPopularProducts = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/catalog/products/featured`);
+      const data = await response.json();
+
+      if (data.success !== false) {
+        setPopularProducts(data.products || []);
+      } else {
+        setPopularProducts([]);
+      }
+    } catch (error) {
+      console.error('Error fetching popular products:', error);
+      Alert.alert('Error', 'Failed to load popular products');
+      setPopularProducts([]);
+    }
+  };
+
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      await Promise.all([fetchCategories(), fetchPopularProducts()]);
+      setLoading(false);
+    };
+
+    fetchData();
+  }, []);
 
   useEffect(() => {
     // Set initial position to middle set of cards
@@ -232,20 +288,27 @@ export default function HomeScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Shop by category</Text>
-          <View style={styles.categoriesGrid}>
-            {categories.map((category) => (
-              <CategoryTile
-                key={category.id}
-                name={category.name}
-                image={category.image}
-                color={category.color}
-                onPress={() => {
-                  console.log(`Category ${category.name} clicked`);
-                  router.push('/categories');
-                }}
-              />
-            ))}
-          </View>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.light.tint} />
+              <Text style={styles.loadingText}>Loading categories...</Text>
+            </View>
+          ) : (
+            <View style={styles.categoriesGrid}>
+              {categories.map((category) => (
+                <CategoryTile
+                  key={category._id || category.id}
+                  name={category.name}
+                  image={category.image}
+                  color={category.color || '#E3F2FD'}
+                  onPress={() => {
+                    console.log(`Category ${category.name} clicked`);
+                    router.push('/categories');
+                  }}
+                />
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -573,6 +636,16 @@ const styles = StyleSheet.create({
   },
   fireEmoji: {
     fontSize: 18,
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: Colors.light.textSecondary,
   },
 
 });

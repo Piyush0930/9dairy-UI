@@ -37,18 +37,20 @@ export default function CheckoutScreen() {
 
       const user = JSON.parse(userData);
 
+      // Get selected address details
+      const selectedAddressData = mockAddresses.find(addr => addr.id === selectedAddress);
+
       // Prepare order data according to backend schema
       const orderData = {
         items: items.map(item => ({
-          productId: item.product.id, // Assuming product has id field
+          productId: item.product._id, // Use _id for MongoDB ObjectId
           quantity: item.quantity
         })),
         deliveryAddress: {
-          // You might want to get this from user profile or let user enter
-          addressLine1: "Customer Address", // This should come from user profile
-          city: "City",
-          state: "State",
-          pincode: "000000"
+          addressLine1: selectedAddressData.addressLine,
+          city: selectedAddressData.city,
+          state: selectedAddressData.state,
+          pincode: selectedAddressData.pincode
         },
         deliveryTime: "Morning", // Default or from user preferences
         paymentMethod: selectedPayment === 'cod' ? 'cash' : selectedPayment, // Map to backend values
@@ -89,7 +91,13 @@ export default function CheckoutScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Delivery Address</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Delivery Address</Text>
+            <TouchableOpacity style={styles.addButton}>
+              <Ionicons name="add" size={20} color={Colors.light.tint} />
+              <Text style={styles.addButtonText}>Add New</Text>
+            </TouchableOpacity>
+          </View>
           {mockAddresses.map((address) => (
             <TouchableOpacity
               key={address.id}
@@ -226,11 +234,26 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.light.text,
-    marginBottom: 12,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.tint,
   },
   addressCard: {
     backgroundColor: Colors.light.white,

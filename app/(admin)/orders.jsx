@@ -49,6 +49,13 @@ const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 export default function AdminOrders() {
   const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState([]);
+  const [orderStats, setOrderStats] = useState({
+    total: 0,
+    pending: 0,
+    delivered: 0,
+    outForDelivery: 0,
+    cancelled: 0
+  });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -60,7 +67,7 @@ export default function AdminOrders() {
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/orders/admin`, {
+      const response = await fetch(`${API_BASE_URL}/admin/orders`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -76,6 +83,9 @@ export default function AdminOrders() {
 
       if (data.success) {
         setOrders(data.orders || []);
+        if (data.orderStats) {
+          setOrderStats(data.orderStats);
+        }
       } else {
         throw new Error(data.message || 'Failed to fetch orders');
       }
@@ -146,11 +156,12 @@ export default function AdminOrders() {
     fetchOrders();
   }, []);
 
-  const orderStats = {
-    total: orders.length,
-    pending: orders.filter(o => o.orderStatus === 'pending').length,
-    delivered: orders.filter(o => o.orderStatus === 'delivered').length,
-    outForDelivery: orders.filter(o => o.orderStatus === 'out_for_delivery').length,
+  // Use orderStats from state, fallback to calculated values
+  const displayStats = {
+    total: orderStats.total || orders.length,
+    pending: orderStats.pending || orders.filter(o => o.orderStatus === 'pending').length,
+    delivered: orderStats.delivered || orders.filter(o => o.orderStatus === 'delivered').length,
+    outForDelivery: orderStats.outForDelivery || orders.filter(o => o.orderStatus === 'out_for_delivery').length,
   };
 
   return (
@@ -161,24 +172,24 @@ export default function AdminOrders() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
+          <View key="total" style={styles.statCard}>
             <MaterialIcons name="list-alt" size={32} color="#2196F3" />
-            <Text style={styles.statValue}>{orderStats.total}</Text>
+            <Text style={styles.statValue}>{displayStats.total}</Text>
             <Text style={styles.statLabel}>Total Orders</Text>
           </View>
-          <View style={styles.statCard}>
+          <View key="pending" style={styles.statCard}>
             <Ionicons name="time-outline" size={32} color="#FF9800" />
-            <Text style={styles.statValue}>{orderStats.pending}</Text>
+            <Text style={styles.statValue}>{displayStats.pending}</Text>
             <Text style={styles.statLabel}>Pending</Text>
           </View>
-          <View style={styles.statCard}>
+          <View key="outForDelivery" style={styles.statCard}>
             <MaterialIcons name="local-shipping" size={32} color={Colors.light.accent} />
-            <Text style={styles.statValue}>{orderStats.outForDelivery}</Text>
+            <Text style={styles.statValue}>{displayStats.outForDelivery}</Text>
             <Text style={styles.statLabel}>Out for Delivery</Text>
           </View>
-          <View style={styles.statCard}>
+          <View key="delivered" style={styles.statCard}>
             <FontAwesome name="check-circle" size={28} color="#4CAF50" />
-            <Text style={styles.statValue}>{orderStats.delivered}</Text>
+            <Text style={styles.statValue}>{displayStats.delivered}</Text>
             <Text style={styles.statLabel}>Delivered</Text>
           </View>
         </View>
@@ -225,8 +236,8 @@ export default function AdminOrders() {
 
                 <View style={styles.orderItems}>
                   {order.items.map((item, index) => (
-                    <Text key={index} style={styles.itemText}>
-                      {item.quantity}x {item.product?.name || 'Unknown Product'}
+                    <Text key={`${order._id}-item-${index}`} style={styles.itemText}>
+                      {item.product?.name || 'Product'} - {item.quantity}x {item.unit || 'unit'} @ ₹{item.price || 'N/A'} = ₹{(item.quantity * (item.price || 0)).toFixed(2)}
                     </Text>
                   ))}
                 </View>
@@ -241,14 +252,24 @@ export default function AdminOrders() {
                       })}
                     </Text>
                     <Text style={styles.customerInfo}>
-                      Customer: {order.customer?.fullName || 'N/A'}
+                      Customer: {order.customerName || order.customer?.personalInfo?.fullName || 'N/A'}
+                    </Text>
+                    <Text style={styles.deliveryInfo}>
+                      Delivery: {order.deliveryTime || 'N/A'} - {new Date(order.deliveryDate).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
                     </Text>
                   </View>
                   <View style={styles.amountSection}>
-                    <Text style={styles.orderTotal}>₹{order.finalAmount || order.totalAmount}</Text>
+                    <Text style={styles.orderTotal}>₹{order.finalAmount}</Text>
+                    {order.discount > 0 && (
+                      <Text style={styles.discountText}>Discount: ₹{order.discount}</Text>
+                    )}
                     <TouchableOpacity
                       style={styles.actionButton}
-                      onPress={() => handleStatusChange(order._id, order.orderStatus)}
+                      onPress={() => handleStatusChange(order.orderId, order.orderStatus)}
                     >
                       <Text style={styles.actionButtonText}>
                         {order.orderStatus === 'pending' ? 'Process' : 'Update Status'}
@@ -375,6 +396,16 @@ const styles = StyleSheet.create({
   customerInfo: {
     fontSize: 12,
     color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  deliveryInfo: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  discountText: {
+    fontSize: 12,
+    color: Colors.light.accent,
     marginTop: 2,
   },
   amountSection: {

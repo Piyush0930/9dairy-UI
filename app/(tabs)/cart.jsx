@@ -5,7 +5,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -236,16 +235,12 @@ export default function CartScreen() {
           <Text style={styles.footerLabel}>Total</Text>
           <Text style={styles.footerTotal}>₹{getTotalPrice()}</Text>
         </View>
-        <TouchableOpacity 
-          style={[styles.checkoutButton, loading && styles.buttonDisabled]} 
-          onPress={handleCheckout}
+        <TouchableOpacity
+          style={[styles.checkoutButton, loading && styles.buttonDisabled]}
+          onPress={() => router.push('/checkout')}
           disabled={loading}
         >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" size="small" />
-          ) : (
-            <Text style={styles.checkoutButtonText}>Place Order</Text>
-          )}
+          <Text style={styles.checkoutButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
     </View>
