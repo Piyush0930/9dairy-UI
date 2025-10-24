@@ -44,7 +44,7 @@ function getStatusColor(status) {
   }
 }
 
-const API_BASE_URL = 'http://10.55.13.5:5000/api';
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
 export default function AdminOrders() {
   const insets = useSafeAreaInsets();

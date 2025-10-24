@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const API_BASE_URL = 'http://10.55.13.5:5000/api';
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
 export default function CheckoutScreen() {
   const router = useRouter();

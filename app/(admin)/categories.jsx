@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const API_BASE_URL = 'http://10.55.13.5:5000/api/catalog'; // Adjust this to your backend URL
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/catalog`; // Adjust this to your backend URL
 
 export default function CategoriesManagement() {
   const insets = useSafeAreaInsets();

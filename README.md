@@ -1,4 +1,64 @@
-# Welcome to your Expo app 👋
+# Dairy-9 Mobile App 👋
+
+A modern React Native mobile application for dairy product management and ordering, built with Expo. This app provides a seamless experience for customers to browse, order, and track dairy products while offering admin capabilities for managing inventory, categories, and orders.
+
+## Features
+
+### Customer Features
+- Browse dairy products by categories (Milk, Cheese, Ghee, Yogurt, etc.)
+- Add products to cart and manage quantities
+- Secure checkout process
+- Order tracking and history
+- User authentication and profile management
+- Wallet integration for quick payments
+
+### Admin Features
+- Product management (CRUD operations)
+- Category management
+- Order management and status updates
+- Inventory tracking
+- Sales analytics and reporting
+
+## Environment Configuration
+
+The app uses environment variables for API configuration to support different deployment environments:
+
+### Required Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```env
+EXPO_PUBLIC_API_URL=http://your-api-endpoint:port
+```
+
+**Example for development:**
+```env
+EXPO_PUBLIC_API_URL=http://10.55.13.5:5000
+```
+
+**Example for production:**
+```env
+EXPO_PUBLIC_API_URL=https://api.yourdomain.com
+```
+
+### API Endpoints
+
+The app communicates with a backend API that provides the following endpoints:
+
+- `/api/catalog/products` - Product management
+- `/api/catalog/categories` - Category management
+- `/api/orders` - Order management
+- `/api/auth` - Authentication
+
+## Tech Stack
+
+- **Framework:** React Native with Expo
+- **Navigation:** Expo Router (file-based routing)
+- **State Management:** React Context API
+- **Styling:** React Native StyleSheet
+- **Icons:** Expo Vector Icons
+- **HTTP Client:** Fetch API
+- **Storage:** AsyncStorage for local data persistence
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 

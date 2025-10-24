@@ -17,7 +17,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 
 const { width, height } = Dimensions.get('window');
 
-const API_BASE_URL = 'http://10.55.13.5:5000/api/auth';
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
 export default function Login() {
   const [mobile, setMobile] = useState('');

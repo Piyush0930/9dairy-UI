@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   Image,
@@ -10,14 +11,13 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
-  ActivityIndicator
+  View
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 
 const { width, height } = Dimensions.get('window');
 
-const API_BASE_URL = 'http://10.55.13.5:5000/api/auth';
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
 export default function Signup() {
   const [userType, setUserType] = useState('customer');
