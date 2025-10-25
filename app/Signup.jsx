@@ -14,6 +14,7 @@ import {
   View
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import LocationPicker from '../components/LocationPicker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -209,11 +210,7 @@ export default function Signup() {
       enableOnAndroid={true}
       keyboardShouldPersistTaps="handled"
       extraScrollHeight={20}
-      keyboardOpeningTime={200}
-      enableAutomaticScroll={true}
       showsVerticalScrollIndicator={false}
-      resetScrollToCoords={{ x: 0, y: 0 }}
-      scrollEnabled={true}
     >
       <View>
         <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
@@ -509,10 +506,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#1e293b',
-    paddingLeft: 12,
     paddingVertical: 8,
     fontWeight: '500',
-    textAlignVertical: 'top',
+  },
+  locationContainer: {
+    marginBottom: 16,
+  },
+  locationLabel: {
+    fontSize: 16,
+    color: '#1e293b',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  locationPicker: {
+    zIndex: 1000,
   },
   otpTitle: {
     fontSize: 18,
