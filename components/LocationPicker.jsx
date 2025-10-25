@@ -1,3 +1,5 @@
+// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\components\LocationPicker.jsx
+
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -5,10 +7,10 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
   Alert,
-  Dimensions
+  Dimensions,
+  ScrollView
 } from 'react-native';
 import { LocationService } from '../services/locationService';
 
@@ -24,13 +26,39 @@ export default function LocationPicker({
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState(null);
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [currentCoords, setCurrentCoords] = useState(null);
   const debounceRef = useRef(null);
 
-  // Debounced search function
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
+  // Get current location on component mount for location bias
+  useEffect(() => {
+    const getInitialLocation = async () => {
+      try {
+        const location = await LocationService.getCurrentLocation();
+        setCurrentCoords({
+          latitude: location.latitude,
+          longitude: location.longitude
+        });
+      } catch (error) {
+        console.log('⚠️ Could not get initial location for bias:', error.message);
+      }
+    };
+
+    getInitialLocation();
+  }, []);
+
+  // Dynamic search with debouncing
   const searchPlaces = async (searchText) => {
-    if (searchText.length < 3) {
+    if (!searchText || searchText.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -38,12 +66,14 @@ export default function LocationPicker({
 
     setLoading(true);
     try {
-      const results = await LocationService.getPlaceSuggestions(searchText, currentLocation);
+      const results = await LocationService.getPlaceSuggestions(searchText, currentCoords);
       setSuggestions(results);
-      setShowSuggestions(true);
+      setShowSuggestions(results.length > 0);
     } catch (error) {
       console.error('Search error:', error);
-      Alert.alert('Error', 'Failed to search places. Please try again.');
+      Alert.alert('Search Error', error.message);
+      setSuggestions([]);
+      setShowSuggestions(false);
     } finally {
       setLoading(false);
     }
@@ -58,10 +88,10 @@ export default function LocationPicker({
       clearTimeout(debounceRef.current);
     }
 
-    // Set new timeout
+    // Debounce search to avoid too many API calls
     debounceRef.current = setTimeout(() => {
       searchPlaces(text);
-    }, 500);
+    }, 400);
   };
 
   // Handle suggestion selection
@@ -79,13 +109,22 @@ export default function LocationPicker({
           longitude: details.longitude
         },
         formattedAddress: details.formattedAddress,
-        placeId: details.placeId
+        placeId: details.placeId,
+        addressComponents: details.addressComponents
       };
 
       onLocationSelect(locationData);
     } catch (error) {
       console.error('Error getting place details:', error);
-      Alert.alert('Error', 'Failed to get place details. Please try again.');
+      Alert.alert('Error', 'Failed to get location details. Please try again.');
+      
+      // Use the suggestion text as fallback
+      const fallbackData = {
+        coordinates: null,
+        formattedAddress: suggestion.description,
+        placeId: suggestion.placeId
+      };
+      onLocationSelect(fallbackData);
     } finally {
       setLoading(false);
     }
@@ -96,32 +135,27 @@ export default function LocationPicker({
     setGettingLocation(true);
     try {
       const location = await LocationService.getLocationWithFallback();
-      setCurrentLocation(location.coordinates);
       setInput(location.formattedAddress);
+      setCurrentCoords(location.coordinates);
       onLocationSelect(location);
+      setShowSuggestions(false);
     } catch (error) {
       console.error('Error getting current location:', error);
       Alert.alert(
         'Location Error', 
-        'Unable to get your current location. Please enable location services or enter your address manually.'
+        error.message || 'Unable to get your current location. Please check your location settings and try again.'
       );
     } finally {
       setGettingLocation(false);
     }
   };
 
-  // Render suggestion item
-  const renderSuggestion = ({ item }) => (
-    <TouchableOpacity
-      style={styles.suggestionItem}
-      onPress={() => handleSuggestionSelect(item)}
-    >
-      <Text style={styles.suggestionMainText}>{item.mainText}</Text>
-      {item.secondaryText && (
-        <Text style={styles.suggestionSecondaryText}>{item.secondaryText}</Text>
-      )}
-    </TouchableOpacity>
-  );
+  // Clear input
+  const handleClearInput = () => {
+    setInput('');
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
 
   return (
     <View style={[styles.container, style]}>
@@ -133,15 +167,21 @@ export default function LocationPicker({
           value={input}
           onChangeText={handleInputChange}
           onFocus={() => {
-            if (suggestions.length > 0) {
+            if (input.length >= 2 && suggestions.length > 0) {
               setShowSuggestions(true);
             }
           }}
           onBlur={() => {
-            // Delay hiding suggestions to allow selection
-            setTimeout(() => setShowSuggestions(false), 200);
+            setTimeout(() => setShowSuggestions(false), 300);
           }}
+          editable={!gettingLocation}
         />
+        
+        {input.length > 0 && (
+          <TouchableOpacity onPress={handleClearInput} style={styles.clearButton}>
+            <Text style={styles.clearText}>✕</Text>
+          </TouchableOpacity>
+        )}
         
         {loading && (
           <ActivityIndicator 
@@ -154,28 +194,45 @@ export default function LocationPicker({
 
       {showCurrentLocation && (
         <TouchableOpacity
-          style={styles.currentLocationButton}
+          style={[styles.currentLocationButton, gettingLocation && styles.buttonDisabled]}
           onPress={handleGetCurrentLocation}
           disabled={gettingLocation}
         >
           {gettingLocation ? (
-            <ActivityIndicator size="small" color="#3b82f6" />
+            <>
+              <ActivityIndicator size="small" color="#3b82f6" />
+              <Text style={styles.currentLocationText}>Getting Location...</Text>
+            </>
           ) : (
-            <Text style={styles.currentLocationText}>📍 Use Current Location</Text>
+            <>
+              <Text style={styles.locationIcon}>📍</Text>
+              <Text style={styles.currentLocationText}>Use Current Location</Text>
+            </>
           )}
         </TouchableOpacity>
       )}
 
       {showSuggestions && suggestions.length > 0 && (
         <View style={styles.suggestionsContainer}>
-          <FlatList
-            data={suggestions}
-            renderItem={renderSuggestion}
-            keyExtractor={(item) => item.placeId}
+          <ScrollView 
             style={styles.suggestionsList}
-            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
+            keyboardShouldPersistTaps="always"
             showsVerticalScrollIndicator={false}
-          />
+          >
+            {suggestions.map((suggestion) => (
+              <TouchableOpacity
+                key={suggestion.placeId}
+                style={styles.suggestionItem}
+                onPress={() => handleSuggestionSelect(suggestion)}
+              >
+                <Text style={styles.suggestionMainText}>{suggestion.mainText}</Text>
+                {suggestion.secondaryText && (
+                  <Text style={styles.suggestionSecondaryText}>{suggestion.secondaryText}</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
       )}
     </View>
@@ -205,6 +262,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontWeight: '500',
   },
+  clearButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  clearText: {
+    fontSize: 16,
+    color: '#64748b',
+    fontWeight: 'bold',
+  },
   loadingIndicator: {
     marginLeft: 8,
   },
@@ -213,18 +279,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    paddingVertical: 8,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: '#f0f9ff',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e0f2fe',
+    gap: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  locationIcon: {
+    fontSize: 16,
   },
   currentLocationText: {
     fontSize: 14,
     color: '#3b82f6',
-    fontWeight: '500',
-    marginLeft: 4,
+    fontWeight: '600',
   },
   suggestionsContainer: {
     position: 'absolute',
