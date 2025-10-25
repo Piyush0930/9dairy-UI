@@ -1,5 +1,4 @@
-// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\Signup.jsx
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -21,36 +20,6 @@ const { width, height } = Dimensions.get('window');
 
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
-// Simple storage helper (replace with SecureStore if needed)
-const storage = {
-  async setItem(key, value) {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(key, JSON.stringify(value));
-      }
-      // For React Native, you might want to use AsyncStorage or SecureStore
-      // await AsyncStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.warn('Storage error:', error);
-    }
-  },
-  async getItem(key) {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const value = window.localStorage.getItem(key);
-        return value ? JSON.parse(value) : null;
-      }
-      // For React Native
-      // const value = await AsyncStorage.getItem(key);
-      // return value ? JSON.parse(value) : null;
-      return null;
-    } catch (error) {
-      console.warn('Storage error:', error);
-      return null;
-    }
-  }
-};
-
 export default function Signup() {
   const [userType, setUserType] = useState('customer');
   const [fullName, setFullName] = useState('');
@@ -62,7 +31,6 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [userId, setUserId] = useState(null);
-  const [locationData, setLocationData] = useState(null);
   const router = useRouter();
   const otpRefs = useRef([]);
 
@@ -112,13 +80,6 @@ export default function Signup() {
     return true;
   };
 
-  const handleLocationSelect = (location) => {
-    setLocationData(location);
-    if (location.formattedAddress) {
-      setAddress(location.formattedAddress);
-    }
-  };
-
   const handleGetOtp = async (isResend = false) => {
     if (!validateForm()) return;
 
@@ -132,11 +93,7 @@ export default function Signup() {
         address,
         contactNo,
         userType,
-        ...(userType === 'admin' && { shopName }),
-        ...(locationData && {
-          coordinates: locationData.coordinates,
-          formattedAddress: locationData.formattedAddress
-        })
+        ...(userType === 'admin' && { shopName })
       };
 
       const response = await fetch(`${API_BASE_URL}/signup`, {
@@ -204,10 +161,10 @@ export default function Signup() {
         throw new Error(data.message || 'OTP verification failed');
       }
 
-      // Store token and user data
+      // Store token and user data securely
       if (data.token) {
-        await storage.setItem('authToken', data.token);
-        await storage.setItem('userData', JSON.stringify(data.user));
+        await AsyncStorage.setItem('authToken', data.token);
+        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
       }
 
       showAlert('Success', 'Account verified successfully!');
@@ -244,7 +201,6 @@ export default function Signup() {
     setOtp(['', '', '', '', '', '']);
     setOtpShown(false);
     setUserId(null);
-    setLocationData(null);
   };
 
   return (
@@ -275,7 +231,7 @@ export default function Signup() {
           <View style={styles.toggleContainer}>
             <TouchableOpacity
               style={[styles.toggleButton, userType === 'customer' && styles.toggleButtonActive]}
-              onPress={() => setUserType('customer')}
+              onPress={() => resetForm()}
               disabled={loading}
             >
               <Text style={[styles.toggleText, userType === 'customer' && styles.toggleTextActive]}>
@@ -284,7 +240,16 @@ export default function Signup() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.toggleButton, userType === 'admin' && styles.toggleButtonActive]}
-              onPress={() => setUserType('admin')}
+              onPress={() => {
+                setUserType('admin');
+                setFullName('');
+                setAddress('');
+                setContactNo('');
+                setShopName('');
+                setOtp(['', '', '', '', '', '']);
+                setOtpShown(false);
+                setUserId(null);
+              }}
               disabled={loading}
             >
               <Text style={[styles.toggleText, userType === 'admin' && styles.toggleTextActive]}>
@@ -307,13 +272,17 @@ export default function Signup() {
               />
             </View>
 
-            <View style={styles.locationContainer}>
-              <Text style={styles.locationLabel}>Address *</Text>
-              <LocationPicker
-                onLocationSelect={handleLocationSelect}
-                placeholder="Enter your address"
-                showCurrentLocation={true}
-                style={styles.locationPicker}
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Address *"
+                placeholderTextColor="#94a3b8"
+                value={address}
+                onChangeText={setAddress}
+                multiline
+                numberOfLines={2}
+                editable={!loading && !otpShown}
+                returnKeyType="next"
               />
             </View>
 
@@ -323,7 +292,7 @@ export default function Signup() {
                 <Text style={styles.countryCode}>+91</Text>
               </View>
               <TextInput
-                style={[styles.input, { marginLeft: 12 }]}
+                style={styles.input}
                 placeholder="Contact Number *"
                 placeholderTextColor="#94a3b8"
                 keyboardType="phone-pad"

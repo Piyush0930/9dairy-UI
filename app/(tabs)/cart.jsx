@@ -1,7 +1,9 @@
 import Colors from "@/constants/colors";
 import { useCart } from "@/contexts/CartContext";
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import {
   Alert,
   Image,
@@ -9,18 +11,122 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
+
 export default function CartScreen() {
-  const { items, addToCart, removeFromCart, getTotalPrice, clearCart } =
-    useCart();
+  const { items, addToCart, removeFromCart, getTotalPrice, clearCart } = useCart();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
-  const handleCheckout = () => {
-    router.push('/checkout');
+  const handleCheckout = async () => {
+    if (items.length === 0) {
+      Alert.alert('Error', 'Your cart is empty');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Get auth token from storage
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'Please login to place order');
+        router.push('/Login');
+        return;
+      }
+
+      // Get user data to check customer profile
+      const userData = await AsyncStorage.getItem('userData');
+      if (!userData) {
+        Alert.alert('Error', 'User data not found. Please login again.');
+        router.push('/Login');
+        return;
+      }
+
+      const user = JSON.parse(userData);
+      
+      // Prepare order data according to backend schema
+      const orderData = {
+        items: items.map(item => ({
+          productId: item.product.id, // Assuming product has id field
+          quantity: item.quantity
+        })),
+        deliveryAddress: {
+          // You might want to get this from user profile or let user enter
+          addressLine1: "Customer Address", // This should come from user profile
+          city: "City",
+          state: "State", 
+          pincode: "000000"
+        },
+        deliveryTime: "Morning", // Default or from user preferences
+        paymentMethod: "cash", // Default to cash on delivery
+        specialInstructions: "" // Can be made editable
+      };
+
+      const response = await fetch(`${API_BASE_URL}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(orderData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create order');
+      }
+
+      if (data.success) {
+        Alert.alert(
+          'Order Placed!',
+          `Your order has been placed successfully!\nOrder ID: ${data.order.orderId}\nTotal: ₹${data.order.finalAmount}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                clearCart();
+                router.push('/checkout');
+              }
+            }
+          ]
+        );
+      } else {
+        throw new Error(data.message || 'Failed to create order');
+      }
+    } catch (error) {
+      console.error('Checkout Error:', error);
+      Alert.alert(
+        'Order Failed', 
+        error.message || 'Failed to place order. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearCart = () => {
+    Alert.alert(
+      'Clear Cart',
+      'Are you sure you want to clear your cart?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: clearCart
+        }
+      ]
+    );
   };
 
   if (items.length === 0) {
@@ -35,6 +141,12 @@ export default function CartScreen() {
           <Text style={styles.emptySubtext}>
             Add something fresh from our dairy collection!
           </Text>
+          <TouchableOpacity 
+            style={styles.shopNowButton}
+            onPress={() => router.push('/(tabs)')}
+          >
+            <Text style={styles.shopNowText}>Shop Now</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -44,7 +156,7 @@ export default function CartScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Cart</Text>
-        <TouchableOpacity onPress={clearCart} style={styles.clearButton}>
+        <TouchableOpacity onPress={handleClearCart} style={styles.clearButton}>
           <MaterialIcons name="delete-outline" size={20} color={Colors.light.tint} />
           <Text style={styles.clearText}>Clear</Text>
         </TouchableOpacity>
@@ -71,6 +183,7 @@ export default function CartScreen() {
                 <TouchableOpacity
                   style={styles.quantityButton}
                   onPress={() => removeFromCart(item.product.id)}
+                  disabled={loading}
                 >
                   <Feather name="minus" size={16} color={Colors.light.text} />
                 </TouchableOpacity>
@@ -78,6 +191,7 @@ export default function CartScreen() {
                 <TouchableOpacity
                   style={styles.quantityButton}
                   onPress={() => addToCart(item.product)}
+                  disabled={loading}
                 >
                   <Feather name="plus" size={16} color={Colors.light.text} />
                 </TouchableOpacity>
@@ -102,6 +216,18 @@ export default function CartScreen() {
             <Text style={styles.totalValue}>₹{getTotalPrice()}</Text>
           </View>
         </View>
+
+        {/* Order Info Section */}
+        <View style={styles.infoSection}>
+          <View style={styles.infoItem}>
+            <Ionicons name="time-outline" size={18} color={Colors.light.tint} />
+            <Text style={styles.infoText}>Delivery by tomorrow morning</Text>
+          </View>
+          <View style={styles.infoItem}>
+            <Ionicons name="cash-outline" size={18} color={Colors.light.tint} />
+            <Text style={styles.infoText}>Cash on delivery available</Text>
+          </View>
+        </View>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -109,8 +235,12 @@ export default function CartScreen() {
           <Text style={styles.footerLabel}>Total</Text>
           <Text style={styles.footerTotal}>₹{getTotalPrice()}</Text>
         </View>
-        <TouchableOpacity style={styles.checkoutButton} onPress={handleCheckout}>
-          <Text style={styles.checkoutButtonText}>Place Order</Text>
+        <TouchableOpacity
+          style={[styles.checkoutButton, loading && styles.buttonDisabled]}
+          onPress={() => router.push('/checkout')}
+          disabled={loading}
+        >
+          <Text style={styles.checkoutButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -163,6 +293,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
     textAlign: "center",
+    marginBottom: 24,
+  },
+  shopNowButton: {
+    backgroundColor: Colors.light.tint,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  shopNowText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
@@ -235,6 +377,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.light.border,
+    marginBottom: 16,
   },
   billTitle: {
     fontSize: 16,
@@ -277,6 +420,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.light.text,
   },
+  infoSection: {
+    marginHorizontal: 16,
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  infoText: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginLeft: 8,
+  },
   footer: {
     position: "absolute",
     bottom: 0,
@@ -314,6 +475,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 32,
     borderRadius: 12,
+    minWidth: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#9ca3af',
   },
   checkoutButtonText: {
     color: "#FFF",

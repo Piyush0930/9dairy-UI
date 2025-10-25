@@ -8,13 +8,13 @@ export const [CartProvider, useCart] = createContextHook(() => {
 
   const addToCart = useCallback((product) => {
     setItems((prev) => {
-      const existing = prev.find((item) => item.product.id === product.id);
+      const existing = prev.find((item) => item.product._id === product._id);
       if (existing) {
         setToastMessage(`${product.name} quantity updated`);
         setShowToast(true);
         setTimeout(() => setShowToast(false), 2000);
         return prev.map((item) =>
-          item.product.id === product.id
+          item.product._id === product._id
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
@@ -28,15 +28,15 @@ export const [CartProvider, useCart] = createContextHook(() => {
 
   const removeFromCart = useCallback((productId) => {
     setItems((prev) => {
-      const existing = prev.find((item) => item.product.id === productId);
+      const existing = prev.find((item) => item.product._id === productId);
       if (existing && existing.quantity > 1) {
         return prev.map((item) =>
-          item.product.id === productId
+          item.product._id === productId
             ? { ...item, quantity: item.quantity - 1 }
             : item
         );
       }
-      return prev.filter((item) => item.product.id !== productId);
+      return prev.filter((item) => item.product._id !== productId);
     });
   }, []);
 
@@ -56,7 +56,7 @@ export const [CartProvider, useCart] = createContextHook(() => {
   }, [items]);
 
   const getItemQuantity = useCallback((productId) => {
-    const item = items.find((item) => item.product.id === productId);
+    const item = items.find((item) => item.product._id === productId);
     return item ? item.quantity : 0;
   }, [items]);
 

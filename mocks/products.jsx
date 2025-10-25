@@ -1,7 +1,7 @@
 // Correct import
 const products = [
   {
-    id: "1",
+    id: "507f1f77bcf86cd799439011",
     name: "Amul - Butter Salted, 500 gm",
     category: "butter",
     price: 261,
@@ -15,7 +15,7 @@ const products = [
     bulkPrices: { 6: 240, 15: 570 },
   },
   {
-    id: "2",
+    id: "507f191e810c19729de860ea",
     name: "Fresh Cow Milk - Full Cream",
     category: "milk",
     price: 65,
@@ -222,8 +222,8 @@ const products = [
   },
 ];
 
-const popularProducts = products.filter((p) => 
-  ["2", "6", "7", "3", "1", "5", "9"].includes(p.id)
+const popularProducts = products.filter((p) =>
+  ["507f191e810c19729de860ea", "6", "7", "3", "507f1f77bcf86cd799439011", "5", "9"].includes(p.id)
 ).map((p) => ({ ...p, isPopular: true }));
 
 const categories = [

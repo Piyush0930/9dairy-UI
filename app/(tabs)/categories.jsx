@@ -1,18 +1,18 @@
 import Colors from "@/constants/colors";
 import { useCart } from "@/contexts/CartContext";
-import { categories, products } from "@/mocks/products";
 import { Feather, FontAwesome, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Alert,
   Dimensions,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
-  Image,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -37,16 +37,71 @@ const getImageSource = (imageName) => {
 const { width } = Dimensions.get('window');
 
 export default function CategoriesScreen() {
-  const [selectedCategory, setSelectedCategory] = useState("milk");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   const [showSortModal, setShowSortModal] = useState(false);
   const [sortOption, setSortOption] = useState("relevance");
   const { getTotalItems, items, addToCart, removeFromCart, getItemQuantity } = useCart();
   const cartCount = getTotalItems();
   const insets = useSafeAreaInsets();
 
-  let filteredProducts = products.filter(
-    (p) => p.category === selectedCategory
-  );
+  // State for dynamic data
+  const [categories, setCategories] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // API Base URL
+  const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
+
+  // Fetch categories from API
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/catalog/categories`);
+      const data = await response.json();
+
+      if (data.success !== false) {
+        setCategories(data);
+      } else {
+        setCategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      Alert.alert('Error', 'Failed to load categories');
+      setCategories([]);
+    }
+  };
+
+  // Fetch products from API
+  const fetchProducts = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/catalog/products`);
+      const data = await response.json();
+
+      if (response.ok) {
+        setProducts(data || []);
+      } else {
+        setProducts([]);
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      Alert.alert('Error', 'Failed to load products');
+      setProducts([]);
+    }
+  };
+
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      await Promise.all([fetchCategories(), fetchProducts()]);
+      setLoading(false);
+    };
+
+    fetchData();
+  }, []);
+
+  let filteredProducts = selectedCategory === "all"
+    ? products
+    : products.filter((p) => p.category._id.toString() === selectedCategory);
 
   if (sortOption === "pricelow") {
     filteredProducts = [...filteredProducts].sort((a, b) => a.price - b.price);
@@ -161,16 +216,16 @@ export default function CategoriesScreen() {
               </Text>
             </TouchableOpacity>
 
-            {categories.map((category) => (
+            {categories.map((category, index) => (
               <TouchableOpacity
-                key={category.id}
+                key={`category-${category._id}-${index}`}
                 style={[
                   styles.categoryItem,
-                  selectedCategory === category.id && styles.categoryItemActive,
+                  selectedCategory === category._id && styles.categoryItemActive,
                 ]}
                 onPress={() => {
                   console.log(`Category ${category.name} selected`);
-                  setSelectedCategory(category.id);
+                  setSelectedCategory(category._id);
                 }}
                 activeOpacity={0.7}
               >
@@ -189,7 +244,7 @@ export default function CategoriesScreen() {
                 <Text
                   style={[
                     styles.categoryName,
-                    selectedCategory === category.id && styles.categoryNameActive,
+                    selectedCategory === category._id && styles.categoryNameActive,
                   ]}
                   numberOfLines={3}
                 >
@@ -207,7 +262,7 @@ export default function CategoriesScreen() {
           >
             {filteredProducts.length > 0 ? (
               filteredProducts.map((product) => (
-                <View key={product.id} style={styles.productCard}>
+                <View key={product._id} style={styles.productCard}>
                   <TouchableOpacity
                     style={styles.heartButton}
                     onPress={() => {
@@ -228,16 +283,16 @@ export default function CategoriesScreen() {
                       <Text style={styles.productName}>{product.name}</Text>
                       <Text style={styles.productUnit}>{product.unit}</Text>
 
-                      {product.rating && (
+                      {product.rating && product.rating.average > 0 && (
                         <View style={styles.ratingRow}>
                           <View style={styles.ratingBadge}>
                             <FontAwesome name="star" size={12} color="#FFFFFF" />
                             <Text style={styles.ratingText}>
-                              {product.rating}
+                              {product.rating.average}
                             </Text>
                           </View>
                           <Text style={styles.reviewsText}>
-                            ({product.reviews})
+                            ({product.rating.count})
                           </Text>
                         </View>
                       )}
@@ -277,7 +332,7 @@ export default function CategoriesScreen() {
                   </View>
 
                   <View style={styles.productActions}>
-                    {getItemQuantity(product.id) === 0 ? (
+                    {getItemQuantity(product._id) === 0 ? (
                       <TouchableOpacity
                         style={styles.addButton}
                         onPress={() => {
@@ -291,13 +346,13 @@ export default function CategoriesScreen() {
                     ) : (
                       <View style={styles.addButton}>
                         <TouchableOpacity
-                          onPress={() => removeFromCart(product.id)}
+                          onPress={() => removeFromCart(product._id)}
                           style={styles.qtyBtn}
                           activeOpacity={0.7}
                         >
                           <Feather name="minus" size={16} color={Colors.light.tint} />
                         </TouchableOpacity>
-                        <Text style={styles.qtyText}>{getItemQuantity(product.id)}</Text>
+                        <Text style={styles.qtyText}>{getItemQuantity(product._id)}</Text>
                         <TouchableOpacity
                           onPress={() => addToCart(product)}
                           style={styles.qtyBtn}

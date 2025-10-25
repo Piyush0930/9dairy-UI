@@ -1,7 +1,6 @@
-import { Stack } from "expo-router";
-import { TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, Stack } from "expo-router";
+import { TouchableOpacity } from "react-native";
 
 export default function AdminLayout() {
   return (
@@ -40,6 +39,18 @@ export default function AdminLayout() {
         name="orders"
         options={{
           title: "Admin Orders",
+        }}
+      />
+      <Stack.Screen
+        name="categories"
+        options={{
+          title: "Categories Management",
+        }}
+      />
+      <Stack.Screen
+        name="products"
+        options={{
+          title: "Products Management",
         }}
       />
     </Stack>

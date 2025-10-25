@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MaterialIcons, FontAwesome, Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
+import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function AdminDashboard() {
   const insets = useSafeAreaInsets();
@@ -10,35 +10,51 @@ export default function AdminDashboard() {
   const menuItems = [
     {
       id: 1,
-      title: "Invoice Summary",
-      subtitle: "View and manage invoices",
-      icon: "receipt",
-      route: "/(admin)/invoice-summary",
+      title: "Categories Management",
+      subtitle: "Create and manage product categories",
+      icon: "category",
+      route: "/(admin)/categories",
       color: "#4CAF50",
     },
     {
       id: 2,
-      title: "Orders Management",
-      subtitle: "Manage customer orders",
-      icon: "list-alt",
-      route: "/(admin)/orders",
+      title: "Products Management",
+      subtitle: "Add and manage products",
+      icon: "inventory",
+      route: "/(admin)/products",
       color: "#2196F3",
     },
     {
       id: 3,
-      title: "Analytics",
-      subtitle: "View sales analytics",
-      icon: "bar-chart",
-      route: null,
+      title: "Orders Management",
+      subtitle: "Manage customer orders",
+      icon: "list-alt",
+      route: "/(admin)/orders",
       color: "#FF9800",
     },
     {
       id: 4,
+      title: "Invoice Summary",
+      subtitle: "View and manage invoices",
+      icon: "receipt",
+      route: "/(admin)/invoice-summary",
+      color: "#9C27B0",
+    },
+    {
+      id: 5,
+      title: "Analytics",
+      subtitle: "View sales analytics",
+      icon: "bar-chart",
+      route: null,
+      color: "#607D8B",
+    },
+    {
+      id: 6,
       title: "Settings",
       subtitle: "Admin settings",
       icon: "settings",
       route: null,
-      color: "#9C27B0",
+      color: "#E91E63",
     },
   ];
 
