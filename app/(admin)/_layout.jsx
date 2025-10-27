@@ -1,10 +1,9 @@
-import { Ionicons } from "@expo/vector-icons";
-import { router, Stack } from "expo-router";
-import { TouchableOpacity } from "react-native";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Tabs } from "expo-router";
 
 export default function AdminLayout() {
   return (
-    <Stack
+    <Tabs
       screenOptions={{
         headerStyle: {
           backgroundColor: "#FFFFFF",
@@ -13,46 +12,55 @@ export default function AdminLayout() {
         headerTitleStyle: {
           fontWeight: "bold",
         },
-        headerLeft: () => (
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={{ marginLeft: 16 }}
-          >
-            <Ionicons name="arrow-back" size={24} color="#000000" />
-          </TouchableOpacity>
-        ),
+        tabBarStyle: {
+          backgroundColor: "#FFFFFF",
+          borderTopWidth: 1,
+          borderTopColor: "#E0E0E0",
+          height: 60,
+          paddingBottom: 5,
+          paddingTop: 5,
+        },
+        tabBarActiveTintColor: "#2196F3",
+        tabBarInactiveTintColor: "#9E9E9E",
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: "600",
+        },
       }}
     >
-      <Stack.Screen
-        name="index"
-        options={{
-          title: "Admin Dashboard",
-        }}
-      />
-      <Stack.Screen
-        name="invoice-summary"
-        options={{
-          title: "Invoice Summary",
-        }}
-      />
-      <Stack.Screen
+      <Tabs.Screen
         name="orders"
         options={{
-          title: "Admin Orders",
+          title: "Orders",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="list-alt" size={size} color={color} />
+          ),
         }}
       />
-      <Stack.Screen
-        name="categories"
-        options={{
-          title: "Categories Management",
-        }}
-      />
-      <Stack.Screen
+      <Tabs.Screen
         name="products"
         options={{
-          title: "Products Management",
+          title: "Products",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="inventory" size={size} color={color} />
+          ),
         }}
       />
-    </Stack>
+      <Tabs.Screen
+        name="categories"
+        options={{
+          title: "Categories",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="grid" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="index"
+        options={{
+          href: null,
+        }}
+      />
+    </Tabs>
   );
 }

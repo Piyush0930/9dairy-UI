@@ -1,5 +1,5 @@
-- [x] Modify Signup.jsx: Update handleVerify to always navigate to dashboard after OTP entry (remove OTP validation for testing).
-- [x] Modify Login.jsx: Update handleVerify to always navigate to dashboard after OTP entry (remove OTP validation for testing).
-- [x] Delete app/profileinfo.jsx as user info is collected in signup.
-- [x] Verify no references to profileinfo.jsx in the codebase.
-- [x] Test signup and login flows to ensure direct navigation to dashboard after OTP.
+- [x] Delete app/(admin)/index.jsx to remove the dashboard page
+- [x] Delete app/(admin)/invoice-summary.jsx to remove the invoice summary page
+- [x] Verify that admin login lands on orders page (first tab in _layout.jsx)
+- [x] Test navigation to ensure no broken links
+- [x] Add "Share All" button on the top of the history tab in admin orders page
