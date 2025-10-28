@@ -169,7 +169,7 @@ export default function CartScreen() {
       >
         <View style={styles.itemsList}>
           {items.map((item) => (
-            <View key={item.product.id} style={styles.cartItem}>
+            <View key={item.product._id} style={styles.cartItem}>
               <Image
                 source={{ uri: item.product.image }}
                 style={styles.productImage}

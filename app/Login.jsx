@@ -1,5 +1,6 @@
 // C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\Login.jsx
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -18,31 +19,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 
 const { width, height } = Dimensions.get('window');
 
-const API_BASE_URL =`${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
-// Storage helper
-const storage = {
-  async setItem(key, value) {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(key, JSON.stringify(value));
-      }
-    } catch (error) {
-      console.warn('Storage error:', error);
-    }
-  },
-  async getItem(key) {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const value = window.localStorage.getItem(key);
-        return value ? JSON.parse(value) : null;
-      }
-      return null;
-    } catch (error) {
-      console.warn('Storage error:', error);
-      return null;
-    }
-  }
-};
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
 export default function Login() {
   const [mobile, setMobile] = useState('');
@@ -138,8 +115,8 @@ export default function Login() {
       if (data.success) {
         // Store token and user data
         if (data.token) {
-          await storage.setItem('authToken', data.token);
-          await storage.setItem('userData', JSON.stringify(data.user));
+          await AsyncStorage.setItem('authToken', data.token);
+          await AsyncStorage.setItem('userData', JSON.stringify(data.user));
         }
 
         showAlert('Success', 'Login successful!');

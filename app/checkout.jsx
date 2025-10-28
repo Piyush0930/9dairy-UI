@@ -80,6 +80,16 @@ export default function CheckoutScreen() {
       }
     } catch (error) {
       console.error('Checkout Error:', error);
+
+      // Handle invalid token by clearing storage and redirecting to login
+      if (error.message === 'Invalid token') {
+        await AsyncStorage.removeItem('authToken');
+        await AsyncStorage.removeItem('userData');
+        Alert.alert('Session Expired', 'Please login again.');
+        router.push('/Login');
+        return;
+      }
+
       Alert.alert(
         'Order Failed',
         error.message || 'Failed to place order. Please try again.'

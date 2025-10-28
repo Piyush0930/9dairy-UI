@@ -1,4 +1,7 @@
+import Colors from '@/constants/colors';
+import { useAuth } from '@/contexts/AuthContext';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,6 +24,7 @@ const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/catalog`;
 
 export default function CategoriesManagement() {
   const insets = useSafeAreaInsets();
+  const { getAuthHeaders } = useAuth();
   const [categories, setCategories] = useState([]);
   const [filteredCategories, setFilteredCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +32,7 @@ export default function CategoriesManagement() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -42,11 +47,14 @@ export default function CategoriesManagement() {
 
   useEffect(() => {
     filterCategories();
-  }, [categories, searchQuery]);
+  }, [categories, searchQuery, activeFilter]);
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/categories`);
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/categories`, {
+        headers: await getAuthHeaders(),
+      });
       const data = await response.json();
 
       if (response.ok && Array.isArray(data)) {
@@ -56,11 +64,7 @@ export default function CategoriesManagement() {
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
-      Alert.alert(
-        'Network Error',
-        'Failed to load categories. Please check your connection and try again.',
-        [{ text: 'Retry', onPress: fetchCategories }]
-      );
+      Alert.alert('Error', 'Failed to load categories.');
       setCategories([]);
     } finally {
       setLoading(false);
@@ -69,16 +73,24 @@ export default function CategoriesManagement() {
   };
 
   const filterCategories = useCallback(() => {
-    if (!searchQuery.trim()) {
-      setFilteredCategories(categories);
-    } else {
-      const filtered = categories.filter(category =>
-        category.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (category.description && category.description.toLowerCase().includes(searchQuery.toLowerCase()))
-      );
-      setFilteredCategories(filtered);
+    let filtered = categories;
+
+    if (activeFilter === 'active') {
+      filtered = filtered.filter(cat => cat.isActive !== false);
+    } else if (activeFilter === 'inactive') {
+      filtered = filtered.filter(cat => cat.isActive === false);
     }
-  }, [categories, searchQuery]);
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(cat =>
+        cat.name.toLowerCase().includes(query) ||
+        (cat.description && cat.description.toLowerCase().includes(query))
+      );
+    }
+
+    setFilteredCategories(filtered);
+  }, [categories, searchQuery, activeFilter]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -87,24 +99,22 @@ export default function CategoriesManagement() {
 
   const validateForm = () => {
     if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Category name is required');
+      Alert.alert('Error', 'Category name is required.');
       return false;
     }
     if (formData.name.trim().length < 2) {
-      Alert.alert('Validation Error', 'Category name must be at least 2 characters long');
-      return false;
-    }
-    if (formData.displayOrder < 0) {
-      Alert.alert('Validation Error', 'Display order cannot be negative');
+      Alert.alert('Error', 'Category name must be at least 2 characters.');
       return false;
     }
     return true;
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    if (!formData.name.trim()) {
+      Alert.alert('Error', 'Category name is required.');
+      return;
+    }
 
-    setSubmitting(true);
     try {
       const url = editingCategory
         ? `${API_BASE_URL}/categories/${editingCategory._id}`
@@ -112,43 +122,76 @@ export default function CategoriesManagement() {
 
       const method = editingCategory ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
+      let response;
+      const headers = getAuthHeaders();
+
+      // Check if we have a local image URI (from image picker)
+      if (formData.image && formData.image.startsWith('file://')) {
+        // Use FormData for file upload
+        const formDataToSend = new FormData();
+
+        // Add text fields
+        formDataToSend.append('name', formData.name);
+        formDataToSend.append('description', formData.description || '');
+        formDataToSend.append('displayOrder', formData.displayOrder.toString());
+
+        // Add image file (React Native way)
+        const fileName = `category-image-${Date.now()}.jpg`;
+        formDataToSend.append('image', {
+          uri: formData.image,
+          type: 'image/jpeg',
+          name: fileName,
+        });
+
+        response = await fetch(url, {
+          method,
+          headers, // Auth headers only, no Content-Type for FormData
+          body: formDataToSend,
+        });
+      } else {
+        // Use JSON for text-only updates (no image change)
+        const jsonData = {
+          name: formData.name,
+          description: formData.description || '',
+          displayOrder: parseInt(formData.displayOrder) || 0,
+        };
+
+        // Only include image if it's a URL (not local URI)
+        if (formData.image && !formData.image.startsWith('file://')) {
+          jsonData.image = formData.image;
+        }
+
+        response = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            ...headers,
+          },
+          body: JSON.stringify(jsonData),
+        });
+      }
 
       const data = await response.json();
 
-      if (response.ok) {
-        Alert.alert(
-          'Success',
-          `Category ${editingCategory ? 'updated' : 'created'} successfully`,
-          [{ text: 'OK' }]
-        );
-        setModalVisible(false);
-        resetForm();
+      if (response.ok && data.success !== false) {
+        Alert.alert('Success', `Category ${editingCategory ? 'updated' : 'created'} successfully!`);
+        closeModal();
         fetchCategories();
       } else {
-        Alert.alert('Error', data.message || 'Something went wrong');
+        Alert.alert('Error', data.message || 'Failed to save category.');
       }
     } catch (error) {
-      console.error('Error saving category:', error);
-      Alert.alert(
-        'Network Error',
-        'Failed to save category. Please check your connection and try again.'
+      Alert.alert('Error', error.message === 'Network request failed'
+        ? 'Check your connection and try again.'
+        : 'Failed to save category.'
       );
-    } finally {
-      setSubmitting(false);
     }
   };
 
   const handleDelete = async (categoryId, categoryName) => {
     Alert.alert(
       'Delete Category',
-      `Are you sure you want to delete "${categoryName}"? This action cannot be undone.`,
+      `Are you sure you want to delete "${categoryName}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -158,21 +201,17 @@ export default function CategoriesManagement() {
             try {
               const response = await fetch(`${API_BASE_URL}/categories/${categoryId}`, {
                 method: 'DELETE',
+                headers: await getAuthHeaders(),
               });
-
               if (response.ok) {
-                Alert.alert('Success', 'Category deleted successfully');
+                Alert.alert('Success', 'Category deleted.');
                 fetchCategories();
               } else {
                 const data = await response.json();
-                Alert.alert('Error', data.message || 'Failed to delete category');
+                Alert.alert('Error', data.message || 'Failed to delete.');
               }
             } catch (error) {
-              console.error('Error deleting category:', error);
-              Alert.alert(
-                'Network Error',
-                'Failed to delete category. Please check your connection and try again.'
-              );
+              Alert.alert('Error', 'Failed to delete category.');
             }
           },
         },
@@ -206,6 +245,29 @@ export default function CategoriesManagement() {
     });
   };
 
+  const pickImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission required', 'Permission to access camera roll is required!');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setFormData({ ...formData, image: result.assets[0].uri });
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
   const closeModal = () => {
     if (submitting) return;
     setModalVisible(false);
@@ -216,7 +278,7 @@ export default function CategoriesManagement() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#2196F3" />
+        <ActivityIndicator size="large" color={Colors.light.accent} />
         <Text style={styles.loadingText}>Loading categories...</Text>
       </View>
     );
@@ -224,36 +286,46 @@ export default function CategoriesManagement() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+      {/* Search & Filter Bar */}
+      <View style={styles.searchFilterContainer}>
+        <View style={styles.searchInputContainer}>
+          <Ionicons name="search" size={20} color={Colors.light.textSecondary} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search categories..."
-            placeholderTextColor="#999"
+            placeholderTextColor={Colors.light.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close" size={20} color="#666" />
-            </TouchableOpacity>
-          ) : null}
         </View>
       </View>
 
-      {/* Stats Bar */}
-      <View style={styles.statsBar}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{filteredCategories.length}</Text>
-          <Text style={styles.statLabel}>Total</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{categories.filter(c => c.isActive).length}</Text>
-          <Text style={styles.statLabel}>Active</Text>
-        </View>
+      {/* Filter Tabs */}
+      <View style={styles.filterContainer}>
+        <TouchableOpacity
+          style={[styles.filterButton, activeFilter === 'all' && styles.filterButtonActive]}
+          onPress={() => setActiveFilter('all')}
+        >
+          <Text style={[styles.filterButtonText, activeFilter === 'all' && styles.filterButtonTextActive]}>
+            All ({categories.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterButton, activeFilter === 'active' && styles.filterButtonActive]}
+          onPress={() => setActiveFilter('active')}
+        >
+          <Text style={[styles.filterButtonText, activeFilter === 'active' && styles.filterButtonTextActive]}>
+            Active ({categories.filter(c => c.isActive !== false).length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterButton, activeFilter === 'inactive' && styles.filterButtonActive]}
+          onPress={() => setActiveFilter('inactive')}
+        >
+          <Text style={[styles.filterButtonText, activeFilter === 'inactive' && styles.filterButtonTextActive]}>
+            Inactive ({categories.filter(c => c.isActive === false).length})
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Categories List */}
@@ -261,25 +333,19 @@ export default function CategoriesManagement() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {filteredCategories.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="category" size={80} color="#E0E0E0" />
-            <Text style={styles.emptyStateText}>
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="category" size={56} color={Colors.light.textSecondary} />
+            <Text style={styles.emptyText}>
               {searchQuery ? 'No categories found' : 'No categories yet'}
             </Text>
-            <Text style={styles.emptyStateSubtext}>
-              {searchQuery
-                ? 'Try adjusting your search terms'
-                : 'Create your first category to get started'
-              }
+            <Text style={styles.emptySubtext}>
+              {searchQuery ? 'Try a different search' : 'Create your first category'}
             </Text>
-            {!searchQuery && (
+            {!searchQuery && activeFilter === 'all' && (
               <TouchableOpacity style={styles.createFirstButton} onPress={openCreateModal}>
-                <Ionicons name="add" size={20} color="#FFF" />
                 <Text style={styles.createFirstButtonText}>Create Category</Text>
               </TouchableOpacity>
             )}
@@ -292,7 +358,7 @@ export default function CategoriesManagement() {
                   <Image source={{ uri: category.image }} style={styles.categoryImage} />
                 ) : (
                   <View style={styles.categoryImagePlaceholder}>
-                    <MaterialIcons name="image" size={24} color="#CCC" />
+                    <MaterialIcons name="image" size={24} color={Colors.light.textSecondary} />
                   </View>
                 )}
               </View>
@@ -303,7 +369,7 @@ export default function CategoriesManagement() {
                     {category.name}
                   </Text>
                   <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryOrderText}>#{category.displayOrder}</Text>
+                    <Text style={styles.categoryOrderText}>#{category.displayOrder || 0}</Text>
                   </View>
                 </View>
 
@@ -315,15 +381,15 @@ export default function CategoriesManagement() {
 
                 <View style={styles.categoryMeta}>
                   <View style={styles.metaItem}>
-                    <Ionicons name="time-outline" size={14} color="#666" />
+                    <Ionicons name="time-outline" size={14} color={Colors.light.textSecondary} />
                     <Text style={styles.metaText}>
-                      {new Date(category.createdAt || Date.now()).toLocaleDateString()}
+                      {new Date(category.createdAt || Date.now()).toLocaleDateString('en-IN')}
                     </Text>
                   </View>
-                  <View style={styles.statusIndicator}>
-                    <View style={[styles.statusDot, category.isActive && styles.statusActive]} />
+                  <View style={[styles.statusIndicator, category.isActive !== false && styles.statusActive]}>
+                    <View style={[styles.statusDot, category.isActive !== false && styles.statusDotActive]} />
                     <Text style={styles.statusText}>
-                      {category.isActive ? 'Active' : 'Inactive'}
+                      {category.isActive !== false ? 'Active' : 'Inactive'}
                     </Text>
                   </View>
                 </View>
@@ -334,7 +400,7 @@ export default function CategoriesManagement() {
                   style={[styles.actionButton, styles.editButton]}
                   onPress={() => openEditModal(category)}
                 >
-                  <Feather name="edit-2" size={18} color="#2196F3" />
+                  <Feather name="edit-2" size={18} color={Colors.light.accent} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionButton, styles.deleteButton]}
@@ -348,47 +414,32 @@ export default function CategoriesManagement() {
         )}
       </ScrollView>
 
+      {/* FAB */}
+      <TouchableOpacity style={styles.fab} onPress={openCreateModal}>
+        <Ionicons name="add" size={28} color="#FFF" />
+      </TouchableOpacity>
+
       {/* Create/Edit Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={closeModal}
-      >
+      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <View style={styles.modalTitleContainer}>
-                <MaterialIcons
-                  name={editingCategory ? "edit" : "add"}
-                  size={24}
-                  color="#2196F3"
-                />
-                <Text style={styles.modalTitle}>
-                  {editingCategory ? 'Edit Category' : 'Create New Category'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={closeModal}
-                disabled={submitting}
-                style={styles.closeButton}
-              >
-                <Ionicons name="close" size={24} color="#666" />
+              <Text style={styles.modalTitle}>
+                {editingCategory ? 'Edit Category' : 'Create Category'}
+              </Text>
+              <TouchableOpacity onPress={closeModal} disabled={submitting}>
+                <MaterialIcons name="close" size={24} color={Colors.light.text} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  Category Name <Text style={styles.required}>*</Text>
-                </Text>
+                <Text style={styles.inputLabel}>Category Name <Text style={styles.required}>*</Text></Text>
                 <TextInput
                   style={[styles.textInput, formData.name.trim() && styles.inputValid]}
                   value={formData.name}
                   onChangeText={(text) => setFormData({ ...formData, name: text })}
                   placeholder="Enter category name"
-                  placeholderTextColor="#999"
-                  maxLength={50}
                   editable={!submitting}
                 />
                 <Text style={styles.charCount}>{formData.name.length}/50</Text>
@@ -400,33 +451,33 @@ export default function CategoriesManagement() {
                   style={[styles.textInput, styles.textArea]}
                   value={formData.description}
                   onChangeText={(text) => setFormData({ ...formData, description: text })}
-                  placeholder="Enter category description (optional)"
-                  placeholderTextColor="#999"
+                  placeholder="Optional description..."
                   multiline
                   numberOfLines={4}
-                  maxLength={200}
                   editable={!submitting}
                 />
                 <Text style={styles.charCount}>{formData.description.length}/200</Text>
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Image URL</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formData.image}
-                  onChangeText={(text) => setFormData({ ...formData, image: text })}
-                  placeholder="https://example.com/image.jpg"
-                  placeholderTextColor="#999"
-                  keyboardType="url"
-                  autoCapitalize="none"
-                  editable={!submitting}
-                />
-                {formData.image ? (
+                <Text style={styles.inputLabel}>Image</Text>
+                <View style={styles.imageInputContainer}>
+                  <TextInput
+                    style={[styles.textInput, styles.imageInput]}
+                    value={formData.image}
+                    onChangeText={(text) => setFormData({ ...formData, image: text })}
+                    placeholder="https://... or select from gallery"
+                    editable={!submitting}
+                  />
+                  <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
+                    <Ionicons name="image" size={20} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+                {formData.image && (
                   <View style={styles.imagePreview}>
                     <Image source={{ uri: formData.image }} style={styles.previewImage} />
                   </View>
-                ) : null}
+                )}
               </View>
 
               <View style={styles.inputGroup}>
@@ -439,12 +490,10 @@ export default function CategoriesManagement() {
                     setFormData({ ...formData, displayOrder: Math.max(0, num) });
                   }}
                   placeholder="0"
-                  placeholderTextColor="#999"
                   keyboardType="numeric"
-                  maxLength={3}
                   editable={!submitting}
                 />
-                <Text style={styles.helperText}>Lower numbers appear first in the list</Text>
+                <Text style={styles.helperText}>Lower numbers appear first</Text>
               </View>
             </ScrollView>
 
@@ -465,7 +514,7 @@ export default function CategoriesManagement() {
                   <ActivityIndicator size="small" color="#FFF" />
                 ) : (
                   <Text style={styles.submitButtonText}>
-                    {editingCategory ? 'Update Category' : 'Create Category'}
+                    {editingCategory ? 'Update' : 'Create'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -478,103 +527,104 @@ export default function CategoriesManagement() {
 }
 
 const styles = StyleSheet.create({
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#f8f9fa',
+  container: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
   },
-  searchBar: {
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+  },
+  searchFilterContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: Colors.light.background,
+  },
+  searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e9ecef',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderColor: Colors.light.border,
+    paddingHorizontal: 12,
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
+    paddingVertical: 12,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.light.text,
   },
-  statsBar: {
+  filterContainer: {
     flexDirection: 'row',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFF',
     marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 12,
+    borderRadius: 8,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
   },
-  statItem: {
+  filterButton: {
     flex: 1,
+    paddingVertical: 10,
+    borderRadius: 6,
     alignItems: 'center',
   },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#2196F3',
+  filterButtonActive: {
+    backgroundColor: Colors.light.accent,
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#6c757d',
-    fontWeight: '500',
-    marginTop: 4,
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.textSecondary,
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#e9ecef',
-    marginHorizontal: 16,
+  filterButtonTextActive: {
+    color: '#FFF',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
   },
   categoryCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: Colors.light.border,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
   },
   categoryImageContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
+    width: 64,
+    height: 64,
+    borderRadius: 8,
     marginRight: 16,
     overflow: 'hidden',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: Colors.light.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
   categoryImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 12,
   },
   categoryImagePlaceholder: {
-    width: '100%',
-    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#e9ecef',
   },
   categoryContent: {
     flex: 1,
@@ -583,16 +633,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   categoryName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.light.text,
     flex: 1,
   },
   categoryBadge: {
-    backgroundColor: '#e3f2fd',
+    backgroundColor: Colors.light.accent + '20',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -601,13 +651,13 @@ const styles = StyleSheet.create({
   categoryOrderText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2196F3',
+    color: Colors.light.accent,
   },
   categoryDescription: {
     fontSize: 14,
-    color: '#6c757d',
+    color: Colors.light.textSecondary,
     lineHeight: 20,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   categoryMeta: {
     flexDirection: 'row',
@@ -621,7 +671,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: '#6c757d',
+    color: Colors.light.textSecondary,
   },
   statusIndicator: {
     flexDirection: 'row',
@@ -632,15 +682,15 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#dc3545',
+    backgroundColor: '#F44336',
   },
-  statusActive: {
-    backgroundColor: '#28a745',
+  statusDotActive: {
+    backgroundColor: Colors.light.accent,
   },
   statusText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#6c757d',
+    color: Colors.light.textSecondary,
   },
   categoryActions: {
     flexDirection: 'row',
@@ -649,83 +699,111 @@ const styles = StyleSheet.create({
   actionButton: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   editButton: {
-    backgroundColor: '#e3f2fd',
+    backgroundColor: Colors.light.accent + '20',
   },
   deleteButton: {
-    backgroundColor: '#fee',
+    backgroundColor: '#FFEBEE',
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    backgroundColor: Colors.light.accent,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  createFirstButton: {
+    backgroundColor: Colors.light.accent,
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 24,
+  },
+  createFirstButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    width: '100%',
-    maxWidth: width * 0.9,
-    maxHeight: '85%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '95%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
+    padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  modalTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    borderBottomColor: Colors.light.border,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#1a1a1a',
-  },
-  closeButton: {
-    padding: 8,
+    fontWeight: '700',
+    color: Colors.light.text,
   },
   modalBody: {
-    padding: 24,
+    padding: 20,
   },
   inputGroup: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#1a1a1a',
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
     marginBottom: 8,
   },
   required: {
-    color: '#dc3545',
+    color: '#F44336',
   },
   textInput: {
-    borderWidth: 2,
-    borderColor: '#e9ecef',
-    borderRadius: 12,
-    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 8,
+    padding: 12,
     fontSize: 16,
-    color: '#1a1a1a',
-    backgroundColor: '#f8f9fa',
+    color: Colors.light.text,
+    backgroundColor: '#FFF',
   },
   inputValid: {
-    borderColor: '#28a745',
-    backgroundColor: '#f8fff9',
+    borderColor: Colors.light.accent,
   },
   textArea: {
     height: 100,
@@ -733,13 +811,13 @@ const styles = StyleSheet.create({
   },
   charCount: {
     fontSize: 12,
-    color: '#6c757d',
+    color: Colors.light.textSecondary,
     textAlign: 'right',
     marginTop: 4,
   },
   helperText: {
     fontSize: 12,
-    color: '#6c757d',
+    color: Colors.light.textSecondary,
     marginTop: 4,
   },
   imagePreview: {
@@ -751,106 +829,53 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: Colors.light.border,
   },
   modalFooter: {
     flexDirection: 'row',
-    padding: 24,
+    padding: 20,
     borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
+    borderTopColor: Colors.light.border,
     gap: 12,
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    paddingVertical: 14,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e9ecef',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6c757d',
+    color: Colors.light.text,
   },
   submitButton: {
     flex: 1,
-    backgroundColor: '#2196F3',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.light.accent,
+    borderRadius: 8,
+    paddingVertical: 14,
     alignItems: 'center',
-    shadowColor: '#2196F3',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#FFF',
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6c757d',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyStateText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginTop: 16,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginTop: 8,
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  createFirstButton: {
-    backgroundColor: '#2196F3',
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    marginTop: 24,
+  imageInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    shadowColor: '#2196F3',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  createFirstButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+  imageInput: {
+    flex: 1,
+  },
+  imagePickerButton: {
+    marginLeft: 8,
+    backgroundColor: Colors.light.accent,
+    padding: 10,
+    borderRadius: 6,
   },
 });

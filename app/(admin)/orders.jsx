@@ -365,6 +365,7 @@ export default function AdminOrders() {
             {activeFilter === 'history' && (
               <TouchableOpacity onPress={shareOverallInvoice} style={styles.shareAllButton}>
                 <MaterialIcons name="share" size={24} color="#FFF" />
+                <Text style={styles.shareAllButtonText}>Share All</Text>
               </TouchableOpacity>
             )}
           </View>
