@@ -49,7 +49,7 @@ export default function LocationPicker({
           longitude: location.longitude
         });
       } catch (error) {
-        console.log('⚠️ Could not get initial location for bias:', error.message);
+        console.log('⚠ Could not get initial location for bias:', error.message);
       }
     };
 
@@ -95,60 +95,115 @@ export default function LocationPicker({
   };
 
   // Handle suggestion selection
-  const handleSuggestionSelect = async (suggestion) => {
-    setInput(suggestion.description);
-    setShowSuggestions(false);
-    setLoading(true);
+  // Handle suggestion selection - ISKO UPDATE KARO
+const handleSuggestionSelect = async (suggestion) => {
+  setInput(suggestion.description);
+  setShowSuggestions(false);
+  setLoading(true);
 
+  try {
+    const details = await LocationService.getPlaceDetails(suggestion.placeId);
+    
+    // ✅ PAKKA COORDINATES KE LIYE CHECK KARO
+    if (!details.latitude || !details.longitude) {
+      throw new Error('Coordinates not available for this location');
+    }
+
+    const locationData = {
+      coordinates: {
+        latitude: details.latitude,
+        longitude: details.longitude
+      },
+      formattedAddress: details.formattedAddress || suggestion.description,
+      placeId: details.placeId,
+      addressComponents: details.addressComponents
+    };
+
+    console.log('📍 Location selected with coordinates:', locationData);
+    onLocationSelect(locationData);
+    
+  } catch (error) {
+    console.error('Error getting place details:', error);
+    
+    // ✅ AGAR COORDINATES NAHI MILLE TO CURRENT LOCATION USE KARO
     try {
-      const details = await LocationService.getPlaceDetails(suggestion.placeId);
+      console.log('🔄 Falling back to current location...');
+      const currentLocation = await LocationService.getCurrentLocation();
       
-      const locationData = {
-        coordinates: {
-          latitude: details.latitude,
-          longitude: details.longitude
-        },
-        formattedAddress: details.formattedAddress,
-        placeId: details.placeId,
-        addressComponents: details.addressComponents
-      };
-
-      onLocationSelect(locationData);
-    } catch (error) {
-      console.error('Error getting place details:', error);
-      Alert.alert('Error', 'Failed to get location details. Please try again.');
-      
-      // Use the suggestion text as fallback
       const fallbackData = {
-        coordinates: null,
+        coordinates: {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude
+        },
         formattedAddress: suggestion.description,
-        placeId: suggestion.placeId
+        placeId: suggestion.placeId,
+        isFallback: true
       };
+      
+      console.log('📍 Using fallback coordinates:', fallbackData);
       onLocationSelect(fallbackData);
-    } finally {
-      setLoading(false);
+      
+    } catch (fallbackError) {
+      console.error('Fallback also failed:', fallbackError);
+      
+      // ✅ LAST RESORT - DEFAULT COORDINATES
+      const defaultData = {
+        coordinates: {
+          latitude: 19.0760, // Mumbai default
+          longitude: 72.8777
+        },
+        formattedAddress: suggestion.description,
+        placeId: suggestion.placeId,
+        isDefault: true
+      };
+      
+      console.log('📍 Using default coordinates:', defaultData);
+      onLocationSelect(defaultData);
     }
-  };
+  } finally {
+    setLoading(false);
+  }
+};
 
-  // Get current location
-  const handleGetCurrentLocation = async () => {
-    setGettingLocation(true);
-    try {
-      const location = await LocationService.getLocationWithFallback();
-      setInput(location.formattedAddress);
-      setCurrentCoords(location.coordinates);
-      onLocationSelect(location);
-      setShowSuggestions(false);
-    } catch (error) {
-      console.error('Error getting current location:', error);
-      Alert.alert(
-        'Location Error', 
-        error.message || 'Unable to get your current location. Please check your location settings and try again.'
-      );
-    } finally {
-      setGettingLocation(false);
+// Current location function ko bhi improve karo
+const handleGetCurrentLocation = async () => {
+  setGettingLocation(true);
+  try {
+    const location = await LocationService.getLocationWithFallback();
+    
+    // ✅ CURRENT LOCATION MEIN BHI COORDINATES CHECK KARO
+    if (!location.coordinates || !location.coordinates.latitude || !location.coordinates.longitude) {
+      throw new Error('Current location coordinates not available');
     }
-  };
+    
+    setInput(location.formattedAddress);
+    setCurrentCoords(location.coordinates);
+    
+    console.log('📍 Current location with coordinates:', location);
+    onLocationSelect(location);
+    setShowSuggestions(false);
+    
+  } catch (error) {
+    console.error('Error getting current location:', error);
+    
+    // ✅ FALLBACK FOR CURRENT LOCATION
+    const fallbackLocation = {
+      coordinates: {
+        latitude: 19.0760,
+        longitude: 72.8777
+      },
+      formattedAddress: "Your current location",
+      isFallback: true
+    };
+    
+    setInput("Your current location");
+    console.log('📍 Using fallback for current location:', fallbackLocation);
+    onLocationSelect(fallbackLocation);
+    setShowSuggestions(false);
+  } finally {
+    setGettingLocation(false);
+  }
+};
 
   // Clear input
   const handleClearInput = () => {

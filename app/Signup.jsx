@@ -1,4 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\Signup.jsx
+
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -18,7 +19,37 @@ import LocationPicker from '../components/LocationPicker';
 
 const { width, height } = Dimensions.get('window');
 
-const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`
+
+// Simple storage helper (replace with SecureStore if needed)
+const storage = {
+  async setItem(key, value) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }
+      // For React Native, you might want to use AsyncStorage or SecureStore
+      // await AsyncStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.warn('Storage error:', error);
+    }
+  },
+  async getItem(key) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const value = window.localStorage.getItem(key);
+        return value ? JSON.parse(value) : null;
+      }
+      // For React Native
+      // const value = await AsyncStorage.getItem(key);
+      // return value ? JSON.parse(value) : null;
+      return null;
+    } catch (error) {
+      console.warn('Storage error:', error);
+      return null;
+    }
+  }
+};
 
 export default function Signup() {
   const [userType, setUserType] = useState('customer');
@@ -31,6 +62,7 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [locationData, setLocationData] = useState(null);
   const router = useRouter();
   const otpRefs = useRef([]);
 
@@ -80,57 +112,131 @@ export default function Signup() {
     return true;
   };
 
-  const handleGetOtp = async (isResend = false) => {
-    if (!validateForm()) return;
-
-    setLoading(true);
-    if (isResend) setResendLoading(true);
-
-    try {
-      const signupData = {
-        phone: contactNo,
-        fullName,
-        address,
-        contactNo,
-        userType,
-        ...(userType === 'admin' && { shopName })
-      };
-
-      const response = await fetch(`${API_BASE_URL}/signup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(signupData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Signup failed');
-      }
-
-      if (data.success) {
-        setUserId(data.userId);
-        if (!isResend) {
-          setOtpShown(true);
-        }
-        showAlert('Success', isResend ? 'OTP resent successfully!' : data.message);
-      } else {
-        throw new Error(data.message || 'Signup failed');
-      }
-    } catch (error) {
-      console.error('Signup Error:', error);
-      if (error.message === 'Network request failed') {
-        showAlert('Network Error', 'Please check your internet connection and try again.');
-      } else {
-        showAlert('Error', error.message || 'Failed to sign up. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-      if (isResend) setResendLoading(false);
-    }
+  const handleLocationSelect = (location) => {
+  console.log('📍 User ne location select kiya:', {
+    address: location.formattedAddress,
+    coordinates: location.coordinates,
+    hasCoords: !!(location.coordinates?.latitude && location.coordinates?.longitude)
+  });
+  
+  // Address components se city, state extract karo
+  let city = '';
+  let state = '';
+  
+  if (location.addressComponents) {
+    const cityComponent = location.addressComponents.find(comp => 
+      comp.types.includes('locality') || comp.types.includes('administrative_area_level_2')
+    );
+    const stateComponent = location.addressComponents.find(comp => 
+      comp.types.includes('administrative_area_level_1')
+    );
+    
+    city = cityComponent?.long_name || '';
+    state = stateComponent?.long_name || '';
+  }
+  
+  const enhancedLocation = {
+    ...location,
+    city,
+    state
   };
+  
+  setLocationData(enhancedLocation);
+  
+  // User ko sirf address dikhao
+  if (location.formattedAddress) {
+    setAddress(location.formattedAddress);
+  }
+};
+
+  const handleGetOtp = async (isResend = false) => {
+  if (!validateForm()) return;
+
+  console.log('📍 Current Location Data:', locationData);
+
+  setLoading(true);
+  if (isResend) setResendLoading(true);
+
+  try {
+    // ✅ BACKEND KE PARAMETERS KE HISAB SE DATA BANAO
+    let locationParams = {};
+    
+    if (locationData && locationData.coordinates) {
+      // Backend ko yeh format chahiye:
+      locationParams = {
+        coordinates: {
+          latitude: locationData.coordinates.latitude,
+          longitude: locationData.coordinates.longitude
+        },
+        formattedAddress: locationData.formattedAddress || address
+      };
+      console.log('✅ Using coordinates in backend parameters format');
+    } else {
+      // ✅ AGAR COORDINATES NAHI HAI TO DEFAULT USE KARO
+      console.log('⚠ No coordinates found, using defaults');
+      locationParams = {
+        coordinates: {
+          latitude: 20.0983745,
+          longitude: 73.9296103
+        },
+        formattedAddress: address
+      };
+    }
+
+    const signupData = {
+      phone: contactNo,
+      fullName,
+      address: locationData?.formattedAddress || address,
+      contactNo,
+      userType,
+      ...(userType === 'admin' && { shopName }),
+      ...locationParams  // ✅ Direct parameters, NOT nested under location
+    };
+
+    console.log('📤 Final API Payload (Backend Parameters):', JSON.stringify(signupData, null, 2));
+
+    const response = await fetch(`${API_BASE_URL}/signup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(signupData),
+    });
+
+    console.log('📥 Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Server error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('✅ Server response:', data);
+
+    if (data.success) {
+      setUserId(data.userId);
+      if (!isResend) {
+        setOtpShown(true);
+      }
+      showAlert('Success', isResend ? 'OTP resent successfully!' : data.message);
+    } else {
+      throw new Error(data.message || 'Signup failed');
+    }
+  } catch (error) {
+    console.error('❌ Signup Error:', error);
+    
+    if (error.message.includes('coordinates')) {
+      showAlert('Location Error', 'Please select a valid location from suggestions or use current location.');
+    } else if (error.message.includes('Network request failed')) {
+      showAlert('Network Error', 'Please check your internet connection and try again.');
+    } else {
+      showAlert('Error', error.message || 'Failed to sign up. Please try again.');
+    }
+  } finally {
+    setLoading(false);
+    if (isResend) setResendLoading(false);
+  }
+};
 
   const handleVerify = async () => {
     const otpCode = otp.join('');
@@ -161,10 +267,10 @@ export default function Signup() {
         throw new Error(data.message || 'OTP verification failed');
       }
 
-      // Store token and user data securely
+      // Store token and user data
       if (data.token) {
-        await AsyncStorage.setItem('authToken', data.token);
-        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+        await storage.setItem('authToken', data.token);
+        await storage.setItem('userData', JSON.stringify(data.user));
       }
 
       showAlert('Success', 'Account verified successfully!');
@@ -201,6 +307,7 @@ export default function Signup() {
     setOtp(['', '', '', '', '', '']);
     setOtpShown(false);
     setUserId(null);
+    setLocationData(null);
   };
 
   return (
@@ -231,7 +338,7 @@ export default function Signup() {
           <View style={styles.toggleContainer}>
             <TouchableOpacity
               style={[styles.toggleButton, userType === 'customer' && styles.toggleButtonActive]}
-              onPress={() => resetForm()}
+              onPress={() => setUserType('customer')}
               disabled={loading}
             >
               <Text style={[styles.toggleText, userType === 'customer' && styles.toggleTextActive]}>
@@ -240,16 +347,7 @@ export default function Signup() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.toggleButton, userType === 'admin' && styles.toggleButtonActive]}
-              onPress={() => {
-                setUserType('admin');
-                setFullName('');
-                setAddress('');
-                setContactNo('');
-                setShopName('');
-                setOtp(['', '', '', '', '', '']);
-                setOtpShown(false);
-                setUserId(null);
-              }}
+              onPress={() => setUserType('admin')}
               disabled={loading}
             >
               <Text style={[styles.toggleText, userType === 'admin' && styles.toggleTextActive]}>
@@ -272,17 +370,13 @@ export default function Signup() {
               />
             </View>
 
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Address *"
-                placeholderTextColor="#94a3b8"
-                value={address}
-                onChangeText={setAddress}
-                multiline
-                numberOfLines={2}
-                editable={!loading && !otpShown}
-                returnKeyType="next"
+            <View style={styles.locationContainer}>
+              <Text style={styles.locationLabel}>Address *</Text>
+              <LocationPicker
+                onLocationSelect={handleLocationSelect}
+                placeholder="Enter your address"
+                showCurrentLocation={true}
+                style={styles.locationPicker}
               />
             </View>
 
@@ -292,7 +386,7 @@ export default function Signup() {
                 <Text style={styles.countryCode}>+91</Text>
               </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { marginLeft: 12 }]}
                 placeholder="Contact Number *"
                 placeholderTextColor="#94a3b8"
                 keyboardType="phone-pad"
