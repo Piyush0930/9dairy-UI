@@ -18,6 +18,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const getImageSource = (imageName) => {
+  // If it's a full URL (from Cloudinary/database), use it directly
+  if (imageName && (imageName.startsWith('http') || imageName.startsWith('https'))) {
+    return { uri: imageName };
+  }
+
+  // Otherwise, use local asset mapping
   const imageMap = {
     "MilkCategory.png": require("../../assets/images/MilkCategory.png"),
     "ButterCategoryCategory.png": require("../../assets/images/ButterCategoryCategory.png"),

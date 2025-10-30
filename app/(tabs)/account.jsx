@@ -698,6 +698,17 @@ export default function Account() {
           </TouchableOpacity>
         </View>
 
+        {/* Privacy Policy Link */}
+        <View style={styles.menuSection}>
+          <TouchableOpacity
+            style={styles.privacyButton}
+            onPress={() => router.push('/privacy-policy')}
+          >
+            <Ionicons name="shield-checkmark-outline" size={24} color={Colors.light.text} />
+            <Text style={styles.privacyButtonText}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.versionContainer}>
           <Text style={styles.versionText}>Version 1.0.0</Text>
           <Text style={styles.madeWithText}>Made with ❤️ by Dairy Nine</Text>
