@@ -31,7 +31,7 @@ export default function ProductsManagement() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [activeFilter, setActiveFilter] = useState('all');
+
   const [searchQuery, setSearchQuery] = useState('');
 
   const [formData, setFormData] = useState({
@@ -85,13 +85,6 @@ export default function ProductsManagement() {
   const filteredProducts = useMemo(() => {
     let filtered = products;
 
-    // Filter by availability
-    if (activeFilter === 'active') {
-      filtered = filtered.filter(p => p.isAvailable && p.stock > 0);
-    } else if (activeFilter === 'out-of-stock') {
-      filtered = filtered.filter(p => p.stock <= 0);
-    }
-
     // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -103,7 +96,7 @@ export default function ProductsManagement() {
     }
 
     return filtered;
-  }, [products, activeFilter, searchQuery]);
+  }, [products, searchQuery]);
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.price || !formData.category) {
@@ -248,13 +241,12 @@ export default function ProductsManagement() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
 
-      if (!result.canceled) {
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         setFormData({ ...formData, image: result.assets[0].uri });
       }
     } catch (error) {
@@ -276,6 +268,11 @@ export default function ProductsManagement() {
         <View style={styles.productInfo}>
           <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
           <Text style={styles.productCategory}>{item.category?.name || 'Uncategorized'}</Text>
+          {item.description && (
+            <Text style={styles.productDescription} numberOfLines={2} ellipsizeMode='tail'>
+              {item.description}
+            </Text>
+          )}
           <View style={styles.priceRow}>
             <Text style={styles.productPrice}>₹{item.price}</Text>
             {discount && <Text style={styles.discountBadge}>{discount}</Text>}
@@ -312,7 +309,7 @@ export default function ProductsManagement() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
       {/* Search & Filter Bar */}
       <View style={styles.searchFilterContainer}>
         <View style={styles.searchInputContainer}>
@@ -327,27 +324,7 @@ export default function ProductsManagement() {
         </View>
       </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'all' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('all')}
-        >
-          <Text style={[styles.filterButtonText, activeFilter === 'all' && styles.filterButtonTextActive]}>All</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'active' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('active')}
-        >
-          <Text style={[styles.filterButtonText, activeFilter === 'active' && styles.filterButtonTextActive]}>Active</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'out-of-stock' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('out-of-stock')}
-        >
-          <Text style={[styles.filterButtonText, activeFilter === 'out-of-stock' && styles.filterButtonTextActive]}>Out of Stock</Text>
-        </TouchableOpacity>
-      </View>
+
 
       {/* Product List */}
       <FlatList
@@ -360,12 +337,12 @@ export default function ProductsManagement() {
           <View style={styles.emptyContainer}>
             <MaterialIcons name="inventory-2" size={56} color={Colors.light.textSecondary} />
             <Text style={styles.emptyText}>
-              {searchQuery ? 'No products found' : activeFilter === 'out-of-stock' ? 'No out-of-stock items' : 'No products yet'}
+              {searchQuery ? 'No products found' : 'No products yet'}
             </Text>
             <Text style={styles.emptySubtext}>
               {searchQuery ? 'Try a different search term' : 'Add your first product to get started'}
             </Text>
-            {!searchQuery && activeFilter === 'all' && (
+            {!searchQuery && (
               <TouchableOpacity style={styles.addFirstButton} onPress={openCreateModal}>
                 <Text style={styles.addFirstButtonText}>Add Product</Text>
               </TouchableOpacity>
@@ -698,6 +675,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.light.textSecondary,
     marginBottom: 4,
+  },
+  productDescription: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    lineHeight: 20,
+    marginBottom: 8,
   },
   priceRow: {
     flexDirection: 'row',

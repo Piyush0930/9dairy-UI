@@ -11,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from "react-native";
@@ -40,6 +41,8 @@ export default function CategoriesScreen() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [showSortModal, setShowSortModal] = useState(false);
   const [sortOption, setSortOption] = useState("relevance");
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
   const { getTotalItems, items, addToCart, removeFromCart, getItemQuantity } = useCart();
   const cartCount = getTotalItems();
   const insets = useSafeAreaInsets();
@@ -103,6 +106,14 @@ export default function CategoriesScreen() {
     ? products
     : products.filter((p) => p.category._id.toString() === selectedCategory);
 
+  // Apply search filter
+  if (searchQuery.trim()) {
+    const query = searchQuery.toLowerCase();
+    filteredProducts = filteredProducts.filter((p) =>
+      p.name.toLowerCase().includes(query)
+    );
+  }
+
   if (sortOption === "pricelow") {
     filteredProducts = [...filteredProducts].sort((a, b) => a.price - b.price);
   } else if (sortOption === "pricehigh") {
@@ -122,7 +133,7 @@ export default function CategoriesScreen() {
             <TouchableOpacity
               style={styles.iconButton}
               onPress={() => {
-                console.log('Search clicked');
+                setShowSearch(!showSearch);
               }}
               activeOpacity={0.7}
             >
@@ -141,6 +152,21 @@ export default function CategoriesScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {showSearch && (
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search products..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor={Colors.light.textSecondary}
+            />
+            <TouchableOpacity style={styles.searchIcon}>
+              <Ionicons name="search" size={20} color={Colors.light.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.saveTip}>
           <Text style={styles.saveTipIcon}>💰</Text>
@@ -577,6 +603,25 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 11,
     fontWeight: "700",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.light.backgroundLight,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.light.text,
+  },
+  searchIcon: {
+    padding: 4,
   },
   saveTip: {
     flexDirection: "row",

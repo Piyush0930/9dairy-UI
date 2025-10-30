@@ -9,6 +9,7 @@ import {
   Dimensions,
   Image,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,10 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// Optional: for precise MIME type (recommended)
+// npx expo install mime
+// import mime from 'mime';
 
 const { width } = Dimensions.get('window');
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/catalog`;
@@ -32,8 +37,8 @@ export default function CategoriesManagement() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
-  const [submitting, setSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -47,7 +52,7 @@ export default function CategoriesManagement() {
 
   useEffect(() => {
     filterCategories();
-  }, [categories, searchQuery, activeFilter]);
+  }, [categories, searchQuery]);
 
   const fetchCategories = async () => {
     try {
@@ -75,12 +80,6 @@ export default function CategoriesManagement() {
   const filterCategories = useCallback(() => {
     let filtered = categories;
 
-    if (activeFilter === 'active') {
-      filtered = filtered.filter(cat => cat.isActive !== false);
-    } else if (activeFilter === 'inactive') {
-      filtered = filtered.filter(cat => cat.isActive === false);
-    }
-
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(cat =>
@@ -90,7 +89,7 @@ export default function CategoriesManagement() {
     }
 
     setFilteredCategories(filtered);
-  }, [categories, searchQuery, activeFilter]);
+  }, [categories, searchQuery]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -99,21 +98,20 @@ export default function CategoriesManagement() {
 
   const validateForm = () => {
     if (!formData.name.trim()) {
-      Alert.alert('Error', 'Category name is required.');
+      Alert.alert('Validation Error', 'Category name is required.');
       return false;
     }
     if (formData.name.trim().length < 2) {
-      Alert.alert('Error', 'Category name must be at least 2 characters.');
+      Alert.alert('Validation Error', 'Category name must be at least 2 characters.');
       return false;
     }
     return true;
   };
 
   const handleSubmit = async () => {
-    if (!formData.name.trim()) {
-      Alert.alert('Error', 'Category name is required.');
-      return;
-    }
+    if (!validateForm()) return;
+
+    setIsSubmitting(true);
 
     try {
       const url = editingCategory
@@ -121,70 +119,95 @@ export default function CategoriesManagement() {
         : `${API_BASE_URL}/categories`;
 
       const method = editingCategory ? 'PUT' : 'POST';
+      const authHeaders = await getAuthHeaders();
 
       let response;
-      const headers = getAuthHeaders();
 
-      // Check if we have a local image URI (from image picker)
-      if (formData.image && formData.image.startsWith('file://')) {
-        // Use FormData for file upload
-        const formDataToSend = new FormData();
+      const isLocalImage = formData.image && (
+        formData.image.startsWith('file://') ||
+        formData.image.startsWith('content://') ||
+        formData.image.includes('ph://')
+      );
 
-        // Add text fields
-        formDataToSend.append('name', formData.name);
-        formDataToSend.append('description', formData.description || '');
-        formDataToSend.append('displayOrder', formData.displayOrder.toString());
+      if (isLocalImage) {
+        const form = new FormData();
+        form.append('name', formData.name.trim());
+        form.append('description', formData.description?.trim() || '');
+        form.append('displayOrder', formData.displayOrder.toString());
 
-        // Add image file (React Native way)
-        const fileName = `category-image-${Date.now()}.jpg`;
-        formDataToSend.append('image', {
-          uri: formData.image,
-          type: 'image/jpeg',
-          name: fileName,
-        });
+        // Fix Android URI
+        let imageUri = formData.image;
+        if (Platform.OS === 'android' && !imageUri.startsWith('file://') && !imageUri.startsWith('content://')) {
+          imageUri = `file://${imageUri}`;
+        }
+
+        const filename = imageUri.split('/').pop() || `image-${Date.now()}.jpg`;
+
+        // Use asset.type if available, else fallback
+        // If you have result.assets[0].type from picker, use it
+        // For now, use safe default
+        let type = 'image/jpeg';
+
+        // Option: Use mime library (uncomment if installed)
+        // const mimeType = mime.getType(imageUri);
+        // type = mimeType || 'image/jpeg';
+
+        form.append('image', {
+          uri: imageUri,
+          name: filename,
+          type,
+        } );
 
         response = await fetch(url, {
           method,
-          headers, // Auth headers only, no Content-Type for FormData
-          body: formDataToSend,
+          headers: {
+            'Authorization': authHeaders['Authorization'],
+          },
+          body: form,
         });
       } else {
-        // Use JSON for text-only updates (no image change)
-        const jsonData = {
-          name: formData.name,
-          description: formData.description || '',
-          displayOrder: parseInt(formData.displayOrder) || 0,
+        const payload = {
+          name: formData.name.trim(),
+          description: formData.description?.trim() || '',
+          displayOrder: formData.displayOrder,
         };
 
-        // Only include image if it's a URL (not local URI)
-        if (formData.image && !formData.image.startsWith('file://')) {
-          jsonData.image = formData.image;
+        if (formData.image && formData.image.startsWith('http')) {
+          payload.image = formData.image;
         }
 
         response = await fetch(url, {
           method,
           headers: {
+            ...authHeaders,
             'Content-Type': 'application/json',
-            ...headers,
           },
-          body: JSON.stringify(jsonData),
+          body: JSON.stringify(payload),
         });
       }
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (e) {
+        data = { message: 'Invalid response' };
+      }
 
-      if (response.ok && data.success !== false) {
+      if (response.ok) {
         Alert.alert('Success', `Category ${editingCategory ? 'updated' : 'created'} successfully!`);
         closeModal();
         fetchCategories();
       } else {
-        Alert.alert('Error', data.message || 'Failed to save category.');
+        Alert.alert('Error', data.message || `Server error: ${response.status}`);
       }
     } catch (error) {
-      Alert.alert('Error', error.message === 'Network request failed'
-        ? 'Check your connection and try again.'
-        : 'Failed to save category.'
+      console.error('Submit error:', error);
+      Alert.alert(
+        'Upload Failed',
+        'Image upload failed. Try:\n• Smaller image\n• Different file\n• Check server logs'
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -222,7 +245,7 @@ export default function CategoriesManagement() {
   const openEditModal = (category) => {
     setEditingCategory(category);
     setFormData({
-      name: category.name,
+      name: category.name || '',
       description: category.description || '',
       image: category.image || '',
       displayOrder: category.displayOrder || 0,
@@ -247,29 +270,30 @@ export default function CategoriesManagement() {
 
   const pickImage = async () => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permissionResult.granted === false) {
-        Alert.alert('Permission required', 'Permission to access camera roll is required!');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'], // Fixed: No more deprecated warning
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 1,
+        quality: 0.7,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setFormData({ ...formData, image: result.assets[0].uri });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setFormData(prev => ({ ...prev, image: result.assets[0].uri }));
       }
     } catch (error) {
       console.error('Image picker error:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      Alert.alert('Error', 'Could not select image. Please try again.');
     }
   };
 
   const closeModal = () => {
-    if (submitting) return;
+    if (isSubmitting) return;
     setModalVisible(false);
     resetForm();
     setEditingCategory(null);
@@ -285,8 +309,8 @@ export default function CategoriesManagement() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Search & Filter Bar */}
+    <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
+      {/* Search Bar */}
       <View style={styles.searchFilterContainer}>
         <View style={styles.searchInputContainer}>
           <Ionicons name="search" size={20} color={Colors.light.textSecondary} style={styles.searchIcon} />
@@ -298,34 +322,6 @@ export default function CategoriesManagement() {
             onChangeText={setSearchQuery}
           />
         </View>
-      </View>
-
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'all' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('all')}
-        >
-          <Text style={[styles.filterButtonText, activeFilter === 'all' && styles.filterButtonTextActive]}>
-            All ({categories.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'active' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('active')}
-        >
-          <Text style={[styles.filterButtonText, activeFilter === 'active' && styles.filterButtonTextActive]}>
-            Active ({categories.filter(c => c.isActive !== false).length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'inactive' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('inactive')}
-        >
-          <Text style={[styles.filterButtonText, activeFilter === 'inactive' && styles.filterButtonTextActive]}>
-            Inactive ({categories.filter(c => c.isActive === false).length})
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {/* Categories List */}
@@ -344,7 +340,7 @@ export default function CategoriesManagement() {
             <Text style={styles.emptySubtext}>
               {searchQuery ? 'Try a different search' : 'Create your first category'}
             </Text>
-            {!searchQuery && activeFilter === 'all' && (
+            {!searchQuery && (
               <TouchableOpacity style={styles.createFirstButton} onPress={openCreateModal}>
                 <Text style={styles.createFirstButtonText}>Create Category</Text>
               </TouchableOpacity>
@@ -380,12 +376,6 @@ export default function CategoriesManagement() {
                 )}
 
                 <View style={styles.categoryMeta}>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="time-outline" size={14} color={Colors.light.textSecondary} />
-                    <Text style={styles.metaText}>
-                      {new Date(category.createdAt || Date.now()).toLocaleDateString('en-IN')}
-                    </Text>
-                  </View>
                   <View style={[styles.statusIndicator, category.isActive !== false && styles.statusActive]}>
                     <View style={[styles.statusDot, category.isActive !== false && styles.statusDotActive]} />
                     <Text style={styles.statusText}>
@@ -419,7 +409,7 @@ export default function CategoriesManagement() {
         <Ionicons name="add" size={28} color="#FFF" />
       </TouchableOpacity>
 
-      {/* Create/Edit Modal */}
+      {/* Modal */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -427,7 +417,7 @@ export default function CategoriesManagement() {
               <Text style={styles.modalTitle}>
                 {editingCategory ? 'Edit Category' : 'Create Category'}
               </Text>
-              <TouchableOpacity onPress={closeModal} disabled={submitting}>
+              <TouchableOpacity onPress={closeModal} disabled={isSubmitting}>
                 <MaterialIcons name="close" size={24} color={Colors.light.text} />
               </TouchableOpacity>
             </View>
@@ -440,7 +430,7 @@ export default function CategoriesManagement() {
                   value={formData.name}
                   onChangeText={(text) => setFormData({ ...formData, name: text })}
                   placeholder="Enter category name"
-                  editable={!submitting}
+                  editable={!isSubmitting}
                 />
                 <Text style={styles.charCount}>{formData.name.length}/50</Text>
               </View>
@@ -454,7 +444,7 @@ export default function CategoriesManagement() {
                   placeholder="Optional description..."
                   multiline
                   numberOfLines={4}
-                  editable={!submitting}
+                  editable={!isSubmitting}
                 />
                 <Text style={styles.charCount}>{formData.description.length}/200</Text>
               </View>
@@ -467,9 +457,9 @@ export default function CategoriesManagement() {
                     value={formData.image}
                     onChangeText={(text) => setFormData({ ...formData, image: text })}
                     placeholder="https://... or select from gallery"
-                    editable={!submitting}
+                    editable={!isSubmitting}
                   />
-                  <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
+                  <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage} disabled={isSubmitting}>
                     <Ionicons name="image" size={20} color="#FFF" />
                   </TouchableOpacity>
                 </View>
@@ -491,7 +481,7 @@ export default function CategoriesManagement() {
                   }}
                   placeholder="0"
                   keyboardType="numeric"
-                  editable={!submitting}
+                  editable={!isSubmitting}
                 />
                 <Text style={styles.helperText}>Lower numbers appear first</Text>
               </View>
@@ -499,18 +489,18 @@ export default function CategoriesManagement() {
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
-                style={[styles.cancelButton, submitting && styles.buttonDisabled]}
+                style={[styles.cancelButton, isSubmitting && styles.buttonDisabled]}
                 onPress={closeModal}
-                disabled={submitting}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.submitButton, submitting && styles.buttonDisabled]}
+                style={[styles.submitButton, isSubmitting && styles.buttonDisabled]}
                 onPress={handleSubmit}
-                disabled={submitting}
+                disabled={isSubmitting}
               >
-                {submitting ? (
+                {isSubmitting ? (
                   <ActivityIndicator size="small" color="#FFF" />
                 ) : (
                   <Text style={styles.submitButtonText}>
@@ -526,6 +516,7 @@ export default function CategoriesManagement() {
   );
 }
 
+// Styles (unchanged)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -564,33 +555,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.light.text,
   },
-  filterContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 8,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  filterButtonActive: {
-    backgroundColor: Colors.light.accent,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  filterButtonTextActive: {
-    color: '#FFF',
-  },
   scrollView: {
     flex: 1,
   },
@@ -612,7 +576,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 8,
-    marginRight: 16,
+    marginRight: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.background,
     justifyContent: 'center',
@@ -658,20 +622,13 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     lineHeight: 20,
     marginBottom: 8,
+    numberOfLines: 2,
+    ellipsizeMode: 'tail',
   },
   categoryMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
   },
   statusIndicator: {
     flexDirection: 'row',
@@ -697,11 +654,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    width: 40,
-    height: 40,
+    padding: 8,
     borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
   },
   editButton: {
     backgroundColor: Colors.light.accent + '20',

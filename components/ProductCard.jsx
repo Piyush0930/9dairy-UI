@@ -2,11 +2,31 @@ import Colors from "@/constants/colors";
 import { useCart } from "@/contexts/CartContext";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useRef } from 'react';
+import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 export default function ProductCard({ product, onAddToCart, onPress }) {
   const { addToCart, removeFromCart, getItemQuantity } = useCart();
   const quantity = getItemQuantity(product.id);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const animatePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 20,
+      bounciness: 8,
+    }).start();
+  };
+
+  const animatePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 20,
+      bounciness: 8,
+    }).start();
+  };
 
   const handleAdd = () => {
     if (onAddToCart) {
@@ -29,49 +49,53 @@ export default function ProductCard({ product, onAddToCart, onPress }) {
   };
 
   return (
-    <TouchableOpacity 
-      style={styles.container} 
-      onPress={handlePress}
-      activeOpacity={0.9}
-    >
-      <Image source={{ uri: product.image }} style={styles.image} />
-      <View style={styles.content}>
-        <Text style={styles.name} numberOfLines={2} ellipsizeMode="tail">
-          {product.name}
-        </Text>
-        <Text style={styles.unit}>{product.unit}</Text>
-        <View style={styles.footer}>
-          <Text style={styles.price}>₹{product.price}</Text>
-          {quantity === 0 ? (
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={handleAdd}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add" size={16} color="#FFF" />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.quantityControl}>
+    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+      <TouchableOpacity
+        style={styles.container}
+        onPress={handlePress}
+        onPressIn={animatePressIn}
+        onPressOut={animatePressOut}
+        activeOpacity={0.8}
+      >
+        <Image source={{ uri: product.image }} style={styles.image} />
+        <View style={styles.content}>
+          <Text style={styles.name} numberOfLines={2} ellipsizeMode="tail">
+            {product.name}
+          </Text>
+          <Text style={styles.unit}>{product.unit}</Text>
+          <View style={styles.footer}>
+            <Text style={styles.price}>₹{product.price}</Text>
+            {quantity === 0 ? (
               <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={handleRemove}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="remove" size={14} color={Colors.light.tint} />
-              </TouchableOpacity>
-              <Text style={styles.quantityText}>{quantity}</Text>
-              <TouchableOpacity
-                style={styles.quantityButton}
+                style={styles.addButton}
                 onPress={handleAdd}
                 activeOpacity={0.7}
               >
-                <Ionicons name="add" size={14} color={Colors.light.tint} />
+                <Ionicons name="add" size={16} color="#FFF" />
               </TouchableOpacity>
-            </View>
-          )}
+            ) : (
+              <View style={styles.quantityControl}>
+                <TouchableOpacity
+                  style={styles.quantityButton}
+                  onPress={handleRemove}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="remove" size={14} color={Colors.light.tint} />
+                </TouchableOpacity>
+                <Text style={styles.quantityText}>{quantity}</Text>
+                <TouchableOpacity
+                  style={styles.quantityButton}
+                  onPress={handleAdd}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={14} color={Colors.light.tint} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
