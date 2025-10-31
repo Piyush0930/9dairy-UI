@@ -1,144 +1,163 @@
+// contexts/AuthContext.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 const AuthContext = createContext();
 
-export const AuthProvider = ({ children }) => {
-  const [authToken, setAuthToken] = useState(null);
-  const [userData, setUserData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authToken, setAuthToken] = useState(null); // Add this line
 
-  // Initialize auth state on app start
   useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const [token, user] = await Promise.all([
-          AsyncStorage.getItem('authToken'),
-          AsyncStorage.getItem('userData')
-        ]);
-
-        if (token && user) {
-          const parsedUser = JSON.parse(user);
-          // Check if token is expired
-          if (isTokenExpired(parsedUser)) {
-            await clearAuthData();
-          } else {
-            setAuthToken(token);
-            setUserData(parsedUser);
-            setIsAuthenticated(true);
-          }
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        // Clear potentially corrupted data
-        await clearAuthData();
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initializeAuth();
+    checkAuthState();
   }, []);
 
-  const clearAuthData = useCallback(async () => {
+  const checkAuthState = async () => {
+    try {
+      console.log('🔐 Checking auth state...');
+      
+      const [token, userData] = await Promise.all([
+        SecureStore.getItemAsync('userToken'),
+        AsyncStorage.getItem('userData'),
+      ]);
+      
+      console.log('📱 Auth check results:', { token: !!token, userData: !!userData });
+      
+      if (token && userData) {
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+        setAuthToken(token); // Set the auth token
+        setIsAuthenticated(true);
+        console.log('✅ User authenticated from storage');
+      } else {
+        console.log('❌ No valid auth data found');
+        setIsAuthenticated(false);
+      }
+    } catch (error) {
+      console.error('❌ Error checking auth state:', error);
+      await clearAuthData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearAuthData = async () => {
     try {
       await Promise.all([
-        AsyncStorage.removeItem('authToken'),
-        AsyncStorage.removeItem('userData')
+        SecureStore.deleteItemAsync('userToken'),
+        AsyncStorage.removeItem('userData'),
       ]);
-      setAuthToken(null);
-      setUserData(null);
-      setIsAuthenticated(false);
+      setAuthToken(null); // Clear auth token
+      console.log('🧹 Auth data cleared');
     } catch (error) {
       console.error('Error clearing auth data:', error);
     }
-  }, []);
+  };
 
-  const login = useCallback(async (token, user) => {
+  const login = async (userData, token) => {
     try {
-      await Promise.all([
-        AsyncStorage.setItem('authToken', token),
-        AsyncStorage.setItem('userData', JSON.stringify(user))
-      ]);
-      setAuthToken(token);
-      setUserData(user);
+      console.log('🔐 Starting login process...');
+      
+      // First update the state synchronously
+      setUser(userData);
+      setAuthToken(token); // Set the auth token
       setIsAuthenticated(true);
+      
+      // Then save to storage
+      await Promise.all([
+        SecureStore.setItemAsync('userToken', token),
+        AsyncStorage.setItem('userData', JSON.stringify(userData)),
+      ]);
+      
+      console.log('✅ Login successful, state updated');
+      
+      // Now navigate - state is already updated
+      console.log('🚀 Navigating to home...');
+      router.replace('/(tabs)');
+      
     } catch (error) {
-      console.error('Login storage error:', error);
-      throw error;
+      console.error('❌ Login error:', error);
+      // Rollback state on error
+      setUser(null);
+      setAuthToken(null);
+      setIsAuthenticated(false);
+      throw new Error('Failed to save login data');
     }
-  }, []);
+  };
 
-  const logout = useCallback(async () => {
-    await clearAuthData();
-  }, [clearAuthData]);
-
-  const updateUserData = useCallback(async (newUserData) => {
+  const logout = async () => {
     try {
-      const updatedUser = { ...userData, ...newUserData };
-      await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-      setUserData(updatedUser);
+      setUser(null);
+      setAuthToken(null);
+      setIsAuthenticated(false);
+      await clearAuthData();
+      console.log('👋 Logout successful');
+      
+      router.replace('/Login');
     } catch (error) {
-      console.error('Update user data error:', error);
-      throw error;
+      console.error('Error during logout:', error);
     }
-  }, [userData]);
+  };
 
-  const getAuthHeaders = useCallback(() => {
-    if (!authToken) return {};
-    return {
-      'Authorization': `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    };
-  }, [authToken]);
-
-  const isTokenExpired = useCallback(() => {
-    if (!userData?.tokenExpiry) return false;
-    return new Date() > new Date(userData.tokenExpiry);
-  }, [userData]);
-
-  const validateToken = useCallback(async () => {
-    if (!authToken || isTokenExpired()) {
-      await logout();
-      return false;
-    }
-
+  // Add this validation function
+  const validateToken = async () => {
     try {
-      // Optional: Add a lightweight token validation endpoint
-      // const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/auth/validate`, {
-      //   headers: getAuthHeaders()
-      // });
-      // return response.ok;
-
-      return true; // Assume valid if not expired
+      const token = await SecureStore.getItemAsync('userToken');
+      if (!token) return false;
+      
+      // You can add additional token validation logic here
+      // For now, we'll just check if it exists
+      return true;
     } catch (error) {
       console.error('Token validation error:', error);
-      await logout();
       return false;
     }
-  }, [authToken, isTokenExpired, logout, getAuthHeaders]);
+  };
+
+  const getAuthHeaders = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('userToken');
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+    } catch (error) {
+      console.error('Error getting auth headers:', error);
+      return { 'Content-Type': 'application/json' };
+    }
+  };
+
+  const updateUser = async (updatedUserData) => {
+    try {
+      setUser(updatedUserData);
+      await AsyncStorage.setItem('userData', JSON.stringify(updatedUserData));
+    } catch (error) {
+      console.error('Error updating user data:', error);
+    }
+  };
 
   return (
-    <AuthContext.Provider value={{
-      // State
-      authToken,
-      userData,
-      isLoading,
-      isAuthenticated,
-
-      // Methods
-      login,
-      logout,
-      updateUserData,
-      getAuthHeaders,
-      validateToken,
-      clearAuthData,
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        loading,
+        authToken, // Expose authToken
+        login,
+        logout,
+        validateToken, // Expose validateToken
+        getAuthHeaders,
+        updateUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
