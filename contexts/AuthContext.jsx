@@ -10,7 +10,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authToken, setAuthToken] = useState(null); // Add this line
+  const [authToken, setAuthToken] = useState(null);
 
   useEffect(() => {
     checkAuthState();
@@ -30,9 +30,20 @@ export function AuthProvider({ children }) {
       if (token && userData) {
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
-        setAuthToken(token); // Set the auth token
+        setAuthToken(token);
         setIsAuthenticated(true);
         console.log('✅ User authenticated from storage');
+        console.log('👤 User role from storage:', parsedUser.role);
+        
+        // ✅ CORRECTED: Proper role-based routing with correct route names
+        if (parsedUser.role === 'admin') {
+          console.log('🔧 Admin user detected, redirecting to ADMIN app...');
+          router.replace('/(admin)'); // Use your actual admin route
+        } else {
+          console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
+          router.replace('/(tabs)'); // Customer route
+        }
+        
       } else {
         console.log('❌ No valid auth data found');
         setIsAuthenticated(false);
@@ -45,26 +56,13 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const clearAuthData = async () => {
-    try {
-      await Promise.all([
-        SecureStore.deleteItemAsync('userToken'),
-        AsyncStorage.removeItem('userData'),
-      ]);
-      setAuthToken(null); // Clear auth token
-      console.log('🧹 Auth data cleared');
-    } catch (error) {
-      console.error('Error clearing auth data:', error);
-    }
-  };
-
   const login = async (userData, token) => {
     try {
       console.log('🔐 Starting login process...');
       
       // First update the state synchronously
       setUser(userData);
-      setAuthToken(token); // Set the auth token
+      setAuthToken(token);
       setIsAuthenticated(true);
       
       // Then save to storage
@@ -74,10 +72,16 @@ export function AuthProvider({ children }) {
       ]);
       
       console.log('✅ Login successful, state updated');
+      console.log('👤 User role:', userData.role);
       
-      // Now navigate - state is already updated
-      console.log('🚀 Navigating to home...');
-      router.replace('/(tabs)');
+      // ✅ CORRECTED: Same routing logic as checkAuthState
+      if (userData.role === 'admin') {
+        console.log('🔧 Admin user detected, redirecting to ADMIN app...');
+        router.replace('/admin'); // Use your actual admin route
+      } else {
+        console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
+        router.replace('/(tabs)'); // Customer route
+      }
       
     } catch (error) {
       console.error('❌ Login error:', error);
@@ -86,6 +90,19 @@ export function AuthProvider({ children }) {
       setAuthToken(null);
       setIsAuthenticated(false);
       throw new Error('Failed to save login data');
+    }
+  };
+
+  const clearAuthData = async () => {
+    try {
+      await Promise.all([
+        SecureStore.deleteItemAsync('userToken'),
+        AsyncStorage.removeItem('userData'),
+      ]);
+      setAuthToken(null);
+      console.log('🧹 Auth data cleared');
+    } catch (error) {
+      console.error('Error clearing auth data:', error);
     }
   };
 
@@ -103,14 +120,10 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Add this validation function
   const validateToken = async () => {
     try {
       const token = await SecureStore.getItemAsync('userToken');
       if (!token) return false;
-      
-      // You can add additional token validation logic here
-      // For now, we'll just check if it exists
       return true;
     } catch (error) {
       console.error('Token validation error:', error);
@@ -146,10 +159,10 @@ export function AuthProvider({ children }) {
         user,
         isAuthenticated,
         loading,
-        authToken, // Expose authToken
+        authToken,
         login,
         logout,
-        validateToken, // Expose validateToken
+        validateToken,
         getAuthHeaders,
         updateUser,
       }}

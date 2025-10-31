@@ -19,13 +19,18 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Correct API base URL based on your Postman collection
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function ProductsManagement() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { getAuthHeaders } = useAuth();
+  const { 
+    authToken, 
+    isLoading: authLoading, 
+    isAuthenticated, 
+    validateToken,
+    logout 
+  } = useAuth();
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -33,7 +38,6 @@ export default function ProductsManagement() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [uploading, setUploading] = useState(false);
-
   const [searchQuery, setSearchQuery] = useState('');
 
   const [formData, setFormData] = useState({
@@ -55,19 +59,89 @@ export default function ProductsManagement() {
 
   const [imageUri, setImageUri] = useState('');
 
+  // Enhanced API error handler
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected, logging out...');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: () => logout()
+          }
+        ]
+      );
+      return true;
+    }
+    
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false;
+  };
+
+  // Token validation before API calls
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    return true;
+  };
+
+  // Get auth headers
+  const getAuthHeaders = (forFormData = false) => {
+    const headers = {
+      'Authorization': `Bearer ${authToken}`,
+    };
+    
+    if (!forFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    return headers;
+  };
+
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchData();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      console.log('❌ No auth token or not authenticated');
+      setLoading(false);
+    }
+  }, [authToken, authLoading, isAuthenticated]);
 
   const fetchData = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const headers = getAuthHeaders();
       
-      // Use the correct endpoints from your Postman
       const [productsRes, categoriesRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/catalog/products`),
-        fetch(`${API_BASE_URL}/api/catalog/categories`),
+        fetch(`${API_BASE_URL}/api/catalog/products`, {
+          headers: getAuthHeaders(),
+        }),
+        fetch(`${API_BASE_URL}/api/catalog/categories`, {
+          headers: getAuthHeaders(),
+        }),
       ]);
 
       if (!productsRes.ok) throw new Error('Failed to fetch products');
@@ -79,10 +153,7 @@ export default function ProductsManagement() {
       setCategories(Array.isArray(categoriesData) ? categoriesData : categoriesData.categories || []);
     } catch (error) {
       console.error('Error fetching data:', error);
-      Alert.alert('Error', error.message === 'Network request failed'
-        ? 'Please check your internet connection.'
-        : 'Failed to load data.'
-      );
+      handleApiError(error, 'Failed to load data.');
       setProducts([]);
       setCategories([]);
     } finally {
@@ -111,6 +182,9 @@ export default function ProductsManagement() {
       return;
     }
 
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
       setUploading(true);
       
@@ -120,10 +194,8 @@ export default function ProductsManagement() {
 
       const method = editingProduct ? 'PUT' : 'POST';
 
-      // Create FormData for file upload (as shown in your Postman)
       const submitFormData = new FormData();
       
-      // Add all fields as shown in your Postman raw JSON example
       submitFormData.append('name', formData.name);
       submitFormData.append('description', formData.description);
       submitFormData.append('price', parseFloat(formData.price).toString());
@@ -136,12 +208,10 @@ export default function ProductsManagement() {
       submitFormData.append('isFeatured', formData.isFeatured.toString());
       submitFormData.append('isAvailable', formData.isAvailable.toString());
       
-      // Add tags as comma-separated string (as in your Postman)
       if (formData.tags) {
         submitFormData.append('tags', formData.tags);
       }
 
-      // Add nutritional info if needed
       if (formData.nutritionalInfo.fat || formData.nutritionalInfo.protein || 
           formData.nutritionalInfo.calories || formData.nutritionalInfo.carbohydrates) {
         Object.keys(formData.nutritionalInfo).forEach(key => {
@@ -151,7 +221,6 @@ export default function ProductsManagement() {
         });
       }
 
-      // Add image file if selected
       if (formData.image) {
         submitFormData.append('image', {
           uri: formData.image.uri,
@@ -160,13 +229,9 @@ export default function ProductsManagement() {
         });
       }
 
-      const headers = getAuthHeaders();
-      // Remove Content-Type header for FormData
-      delete headers['Content-Type'];
-
       const response = await fetch(url, {
         method,
-        headers: headers,
+        headers: getAuthHeaders(true),
         body: submitFormData,
       });
 
@@ -177,20 +242,20 @@ export default function ProductsManagement() {
         closeModal();
         fetchData();
       } else {
-        Alert.alert('Error', data.message || 'Failed to save product.');
+        handleApiError({ message: data.message, response }, data.message || 'Failed to save product.');
       }
     } catch (error) {
       console.error('Submit error:', error);
-      Alert.alert('Error', error.message === 'Network request failed'
-        ? 'Check your connection and try again.'
-        : 'Failed to save product.'
-      );
+      handleApiError(error, 'Failed to save product.');
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDelete = (productId) => {
+  const handleDelete = async (productId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     Alert.alert(
       'Delete Product',
       'This action cannot be undone.',
@@ -205,15 +270,16 @@ export default function ProductsManagement() {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
               });
+              
               if (response.ok) {
                 Alert.alert('Success', 'Product deleted.');
                 fetchData();
               } else {
                 const data = await response.json();
-                Alert.alert('Error', data.message || 'Failed to delete.');
+                handleApiError({ message: data.message, response }, data.message || 'Failed to delete.');
               }
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete product.');
+              handleApiError(error, 'Failed to delete product.');
             }
           },
         },
@@ -352,6 +418,15 @@ export default function ProductsManagement() {
       </View>
     );
   };
+
+  if (authLoading) {
+    return (
+      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -653,9 +728,7 @@ export default function ProductsManagement() {
   );
 }
 
-// Keep all the same styles as before, just add the new image styles:
 const styles = StyleSheet.create({
-  // ... (all your existing styles remain the same)
   container: {
     flex: 1,
     backgroundColor: Colors.light.background,

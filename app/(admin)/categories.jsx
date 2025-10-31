@@ -20,16 +20,19 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Optional: for precise MIME type (recommended)
-// npx expo install mime
-// import mime from 'mime';
-
 const { width } = Dimensions.get('window');
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/catalog`;
 
 export default function CategoriesManagement() {
   const insets = useSafeAreaInsets();
-  const { getAuthHeaders } = useAuth();
+  const { 
+    authToken, 
+    isLoading: authLoading, 
+    isAuthenticated, 
+    validateToken,
+    logout 
+  } = useAuth(); // Use AuthContext like in other components
+  
   const [categories, setCategories] = useState([]);
   const [filteredCategories, setFilteredCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,19 +49,98 @@ export default function CategoriesManagement() {
     displayOrder: 0,
   });
 
+  // Enhanced API error handler
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected, logging out...');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: () => logout()
+          }
+        ]
+      );
+      return true; // Indicates auth error
+    }
+    
+    // Show custom or generic error
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false; // Indicates non-auth error
+  };
+
+  // Add token validation before API calls
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    return true;
+  };
+
+  // Get auth headers for API calls
+  const getAuthHeaders = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return {};
+    
+    return {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
+  // Auto-redirect when not authenticated
   useEffect(() => {
-    fetchCategories();
-  }, []);
+    if (!authLoading && !isAuthenticated) {
+      console.log('🔒 User not authenticated, redirecting to login...');
+      // You might want to add navigation here if needed
+    }
+  }, [isAuthenticated, authLoading]);
+
+  useEffect(() => {
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchCategories();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      console.log('❌ No auth token or not authenticated');
+      setLoading(false);
+    }
+  }, [authToken, authLoading, isAuthenticated]);
 
   useEffect(() => {
     filterCategories();
   }, [categories, searchQuery]);
 
   const fetchCategories = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE_URL}/categories`, {
-        headers: await getAuthHeaders(),
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        },
       });
       const data = await response.json();
 
@@ -66,10 +148,13 @@ export default function CategoriesManagement() {
         setCategories(data);
       } else {
         setCategories([]);
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to fetch categories');
+        }
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
-      Alert.alert('Error', 'Failed to load categories.');
+      handleApiError(error, 'Failed to load categories.');
       setCategories([]);
     } finally {
       setLoading(false);
@@ -111,6 +196,9 @@ export default function CategoriesManagement() {
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     setIsSubmitting(true);
 
     try {
@@ -119,7 +207,6 @@ export default function CategoriesManagement() {
         : `${API_BASE_URL}/categories`;
 
       const method = editingCategory ? 'PUT' : 'POST';
-      const authHeaders = await getAuthHeaders();
 
       let response;
 
@@ -142,26 +229,18 @@ export default function CategoriesManagement() {
         }
 
         const filename = imageUri.split('/').pop() || `image-${Date.now()}.jpg`;
-
-        // Use asset.type if available, else fallback
-        // If you have result.assets[0].type from picker, use it
-        // For now, use safe default
         let type = 'image/jpeg';
-
-        // Option: Use mime library (uncomment if installed)
-        // const mimeType = mime.getType(imageUri);
-        // type = mimeType || 'image/jpeg';
 
         form.append('image', {
           uri: imageUri,
           name: filename,
           type,
-        } );
+        });
 
         response = await fetch(url, {
           method,
           headers: {
-            'Authorization': authHeaders['Authorization'],
+            'Authorization': `Bearer ${authToken}`,
           },
           body: form,
         });
@@ -179,7 +258,7 @@ export default function CategoriesManagement() {
         response = await fetch(url, {
           method,
           headers: {
-            ...authHeaders,
+            'Authorization': `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(payload),
@@ -198,20 +277,20 @@ export default function CategoriesManagement() {
         closeModal();
         fetchCategories();
       } else {
-        Alert.alert('Error', data.message || `Server error: ${response.status}`);
+        handleApiError({ message: data.message, response }, data.message || `Server error: ${response.status}`);
       }
     } catch (error) {
       console.error('Submit error:', error);
-      Alert.alert(
-        'Upload Failed',
-        'Image upload failed. Try:\n• Smaller image\n• Different file\n• Check server logs'
-      );
+      handleApiError(error, 'Image upload failed. Try:\n• Smaller image\n• Different file\n• Check server logs');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (categoryId, categoryName) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     Alert.alert(
       'Delete Category',
       `Are you sure you want to delete "${categoryName}"?`,
@@ -224,17 +303,21 @@ export default function CategoriesManagement() {
             try {
               const response = await fetch(`${API_BASE_URL}/categories/${categoryId}`, {
                 method: 'DELETE',
-                headers: await getAuthHeaders(),
+                headers: {
+                  'Authorization': `Bearer ${authToken}`,
+                  'Content-Type': 'application/json'
+                },
               });
+              
               if (response.ok) {
                 Alert.alert('Success', 'Category deleted.');
                 fetchCategories();
               } else {
                 const data = await response.json();
-                Alert.alert('Error', data.message || 'Failed to delete.');
+                handleApiError({ message: data.message, response }, data.message || 'Failed to delete.');
               }
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete category.');
+              handleApiError(error, 'Failed to delete category.');
             }
           },
         },
@@ -277,7 +360,7 @@ export default function CategoriesManagement() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'], // Fixed: No more deprecated warning
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.7,
@@ -298,6 +381,15 @@ export default function CategoriesManagement() {
     resetForm();
     setEditingCategory(null);
   };
+
+  if (authLoading) {
+    return (
+      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -329,7 +421,7 @@ export default function CategoriesManagement() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.light.accent]} />}
       >
         {filteredCategories.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -516,7 +608,7 @@ export default function CategoriesManagement() {
   );
 }
 
-// Styles (unchanged)
+// Keep all your existing styles exactly as they were
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -622,8 +714,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     lineHeight: 20,
     marginBottom: 8,
-    numberOfLines: 2,
-    ellipsizeMode: 'tail',
   },
   categoryMeta: {
     flexDirection: 'row',

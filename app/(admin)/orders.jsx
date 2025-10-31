@@ -1,6 +1,6 @@
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext"; // Add this import
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
@@ -57,36 +57,85 @@ const statusOrder = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'd
 
 export default function AdminOrders() {
   const insets = useSafeAreaInsets();
+  const { authToken, isLoading: authLoading, isAuthenticated, validateToken } = useAuth(); // Use AuthContext
+  
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState('orders');
   const [expandedOrder, setExpandedOrder] = useState(null);
 
-  const fetchOrders = async () => {
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) return Alert.alert('Error', 'Authentication required');
+  // Enhanced API error handler
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [{ text: "OK" }]
+      );
+      return true; // Indicates auth error
+    }
+    
+    // Show custom or generic error
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false; // Indicates non-auth error
+  };
 
+  // Add token validation before API calls
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    return true;
+  };
+
+  const fetchOrders = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
       const response = await fetch(`${API_BASE_URL}/admin/orders`, {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${authToken}`, // Use authToken from context
+          'Content-Type': 'application/json' 
+        },
       });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
       if (data.success) setOrders(data.orders || []);
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to fetch orders');
+      handleApiError(error, error.message || 'Failed to fetch orders');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    fetchOrders();
+    await fetchOrders();
   };
 
   const toggleOrderExpansion = (orderId) => {
@@ -94,11 +143,16 @@ export default function AdminOrders() {
   };
 
   const updateOrderStatus = async (orderId, newStatus) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${authToken}`, // Use authToken from context
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify({ status: newStatus }),
       });
       const data = await res.json();
@@ -106,23 +160,28 @@ export default function AdminOrders() {
       Alert.alert('Success', 'Status updated');
       fetchOrders();
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message);
     }
   };
 
   const cancelOrder = async (orderId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${authToken}`, // Use authToken from context
+          'Content-Type': 'application/json' 
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
       Alert.alert('Success', 'Order cancelled');
       fetchOrders();
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message);
     }
   };
 
@@ -151,49 +210,66 @@ export default function AdminOrders() {
   };
 
   const shareOrderInvoice = async (orderId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const fileUri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
       const download = await FileSystem.downloadAsync(
         `${API_BASE_URL}/orders/${orderId}/invoice`,
         fileUri,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        { headers: { 'Authorization': `Bearer ${authToken}` } } // Use authToken from context
       );
-      if (download.status !== 200) throw new Error('Failed');
+      if (download.status !== 200) throw new Error('Failed to download invoice');
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
       }
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message || 'Failed to share invoice');
     }
   };
 
-  // FIXED: Correct function name
   const shareOverallInvoice = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const fileUri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split('T')[0]}.pdf`;
       const download = await FileSystem.downloadAsync(
         `${API_BASE_URL}/admin/invoices/pdf`,
         fileUri,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        { headers: { 'Authorization': `Bearer ${authToken}` } } // Use authToken from context
       );
-      if (download.status !== 200) throw new Error('Failed');
+      if (download.status !== 200) throw new Error('Failed to download overall invoice');
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
       }
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message || 'Failed to share overall invoice');
     }
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchOrders();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      console.log('❌ No auth token or not authenticated');
+      setLoading(false);
+    }
+  }, [authToken, authLoading, isAuthenticated]);
 
   const filteredOrders = activeFilter === 'orders'
     ? orders.filter(o => o.orderStatus !== 'delivered')
     : orders.filter(o => o.orderStatus === 'delivered');
+
+  if (authLoading) {
+    return (
+      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
@@ -453,12 +529,22 @@ export default function AdminOrders() {
   );
 }
 
-// === STYLES: Minimal top padding, clean layout ===
+// Add centered style
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.light.background,
   },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+  },
+  // ... keep all your existing styles exactly as they were
   filterContainer: {
     flexDirection: 'row',
     marginHorizontal: 16,
@@ -528,7 +614,6 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
   loadingContainer: { alignItems: 'center', justifyContent: 'center', padding: 40 },
-  loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
   emptyContainer: { alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: 'center' },
   refreshButton: { marginTop: 16, backgroundColor: Colors.light.accent, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
