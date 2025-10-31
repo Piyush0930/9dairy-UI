@@ -1,8 +1,8 @@
 import Colors from '@/constants/colors';
+import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { mockAddresses } from '@/mocks/addresses';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -13,37 +13,104 @@ const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 export default function CheckoutScreen() {
   const router = useRouter();
   const { items, getTotalPrice, clearCart } = useCart();
+  const { 
+    authToken, 
+    isAuthenticated, 
+    validateToken,
+    logout,
+    user 
+  } = useAuth();
   const insets = useSafeAreaInsets();
   const [selectedAddress, setSelectedAddress] = useState(mockAddresses[0].id);
   const [selectedPayment, setSelectedPayment] = useState('upi');
+  const [loading, setLoading] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState(false);
+  const [orderData, setOrderData] = useState(null);
+
+  // Enhanced API error handler
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected in checkout');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: () => logout()
+          }
+        ]
+      );
+      return true;
+    }
+    
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false;
+  };
+
+  // Validate auth before API calls
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "Please login to place an order",
+        [
+          {
+            text: "Cancel",
+            style: "cancel"
+          },
+          {
+            text: "Login",
+            onPress: () => router.push('/Login')
+          }
+        ]
+      );
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert(
+        "Session Expired",
+        "Please login again",
+        [
+          {
+            text: "OK",
+            onPress: () => logout()
+          }
+        ]
+      );
+      return false;
+    }
+
+    return true;
+  };
 
   const handlePlaceOrder = async () => {
+    if (items.length === 0) {
+      Alert.alert('Error', 'Your cart is empty');
+      return;
+    }
+
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      // Get auth token from storage
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        Alert.alert('Error', 'Please login to place order');
-        router.push('/Login');
-        return;
-      }
-
-      // Get user data to check customer profile
-      const userData = await AsyncStorage.getItem('userData');
-      if (!userData) {
-        Alert.alert('Error', 'User data not found. Please login again.');
-        router.push('/Login');
-        return;
-      }
-
-      const user = JSON.parse(userData);
-
-      // Get selected address details
       const selectedAddressData = mockAddresses.find(addr => addr.id === selectedAddress);
 
-      // Prepare order data according to backend schema
       const orderData = {
         items: items.map(item => ({
-          productId: item.product._id, // Use _id for MongoDB ObjectId
+          productId: item.product._id,
           quantity: item.quantity
         })),
         deliveryAddress: {
@@ -52,16 +119,16 @@ export default function CheckoutScreen() {
           state: selectedAddressData.state,
           pincode: selectedAddressData.pincode
         },
-        deliveryTime: "Morning", // Default or from user preferences
-        paymentMethod: selectedPayment === 'cod' ? 'cash' : selectedPayment, // Map to backend values
-        specialInstructions: "" // Can be made editable
+        deliveryTime: "Morning",
+        paymentMethod: selectedPayment === 'cod' ? 'cash' : selectedPayment,
+        specialInstructions: ""
       };
 
       const response = await fetch(`${API_BASE_URL}/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify(orderData),
       });
@@ -73,29 +140,89 @@ export default function CheckoutScreen() {
       }
 
       if (data.success) {
+        // Set order data and show success animation
+        setOrderData(data.order);
+        setOrderSuccess(true);
         clearCart();
-        router.push('/order-success');
+        
+        // Auto navigate after 3 seconds
+        setTimeout(() => {
+          router.replace('/(tabs)/orders');
+        }, 3000);
       } else {
         throw new Error(data.message || 'Failed to create order');
       }
     } catch (error) {
       console.error('Checkout Error:', error);
-
-      // Handle invalid token by clearing storage and redirecting to login
-      if (error.message === 'Invalid token') {
-        await AsyncStorage.removeItem('authToken');
-        await AsyncStorage.removeItem('userData');
-        Alert.alert('Session Expired', 'Please login again.');
-        router.push('/Login');
-        return;
-      }
-
-      Alert.alert(
-        'Order Failed',
-        error.message || 'Failed to place order. Please try again.'
-      );
+      handleApiError(error, error.message || 'Failed to place order. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
+
+  // Order Success Animation Component
+  const OrderSuccessAnimation = () => (
+    <View style={styles.successContainer}>
+      <View style={styles.animationContainer}>
+        {/* Animated Checkmark */}
+        <View style={styles.checkmarkContainer}>
+          <View style={styles.checkmarkCircle}>
+            <Ionicons name="checkmark" size={60} color="#FFF" />
+          </View>
+        </View>
+        
+        {/* Success Text */}
+        <Text style={styles.successTitle}>Order Placed Successfully!</Text>
+        <Text style={styles.successSubtitle}>
+          Your order has been confirmed and will be delivered soon
+        </Text>
+        
+        {/* Order Details */}
+        {orderData && (
+          <View style={styles.orderDetails}>
+            <Text style={styles.orderId}>Order ID: #{orderData.orderId}</Text>
+            <Text style={styles.orderAmount}>Total: ₹{orderData.finalAmount}</Text>
+            <Text style={styles.deliveryText}>
+              Expected delivery: Tomorrow Morning
+            </Text>
+          </View>
+        )}
+        
+        {/* Loading indicator for auto navigation */}
+        <View style={styles.navigationIndicator}>
+          <Text style={styles.navigationText}>
+            Redirecting to orders in 3 seconds...
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  // Add empty cart check at the beginning
+  if (items.length === 0 && !orderSuccess) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="cart-outline" size={80} color={Colors.light.border} />
+          <Text style={styles.emptyTitle}>Your cart is empty</Text>
+          <Text style={styles.emptySubtext}>
+            Add some items to your cart before checkout
+          </Text>
+          <TouchableOpacity 
+            style={styles.shopNowButton}
+            onPress={() => router.push('/(tabs)')}
+          >
+            <Text style={styles.shopNowText}>Continue Shopping</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Show success animation if order was successful
+  if (orderSuccess) {
+    return <OrderSuccessAnimation />;
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -201,7 +328,7 @@ export default function CheckoutScreen() {
           <Text style={styles.sectionTitle}>Order Summary</Text>
           <View style={styles.summaryCard}>
             {items.map((item) => (
-              <View key={item.product.id} style={styles.summaryItem}>
+              <View key={item.product._id} style={styles.summaryItem}>
                 <Text style={styles.summaryItemName}>
                   {item.product.name} x {item.quantity}
                 </Text>
@@ -224,8 +351,14 @@ export default function CheckoutScreen() {
           <Text style={styles.totalLabel}>Total Amount</Text>
           <Text style={styles.totalAmount}>₹{getTotalPrice()}</Text>
         </View>
-        <TouchableOpacity style={styles.placeOrderButton} onPress={handlePlaceOrder}>
-          <Text style={styles.placeOrderButtonText}>Place Order</Text>
+        <TouchableOpacity 
+          style={[styles.placeOrderButton, loading && styles.buttonDisabled]} 
+          onPress={handlePlaceOrder}
+          disabled={loading}
+        >
+          <Text style={styles.placeOrderButtonText}>
+            {loading ? 'Placing Order...' : 'Place Order'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -406,9 +539,127 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  buttonDisabled: {
+    backgroundColor: '#9ca3af',
+    opacity: 0.6,
+  },
   placeOrderButtonText: {
     color: Colors.light.white,
     fontSize: 16,
     fontWeight: '700',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  shopNowButton: {
+    backgroundColor: Colors.light.tint,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  shopNowText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Success Animation Styles
+  successContainer: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  animationContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  checkmarkContainer: {
+    marginBottom: 32,
+  },
+  checkmarkCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  successTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.light.text,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  successSubtitle: {
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 22,
+  },
+  orderDetails: {
+    backgroundColor: Colors.light.white,
+    borderRadius: 12,
+    padding: 20,
+    width: '100%',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  orderId: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  orderAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.accent,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  deliveryText: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+  },
+  navigationIndicator: {
+    marginTop: 16,
+  },
+  navigationText: {
+    fontSize: 14,
+    color: Colors.light.textLight,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });

@@ -1,7 +1,7 @@
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -19,9 +19,81 @@ const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
 export default function CartScreen() {
   const { items, addToCart, removeFromCart, getTotalPrice, clearCart } = useCart();
+  const { 
+    authToken, 
+    isAuthenticated, 
+    validateToken,
+    logout 
+  } = useAuth(); // Added logout for consistency
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+
+  // Enhanced API error handler (consistent with other components)
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected in cart');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: () => logout() // Use logout instead of direct navigation
+          }
+        ]
+      );
+      return true;
+    }
+    
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false;
+  };
+
+  // Validate auth before API calls (consistent with other components)
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "Please login to place an order",
+        [
+          {
+            text: "Cancel",
+            style: "cancel"
+          },
+          {
+            text: "Login",
+            onPress: () => router.push('/Login')
+          }
+        ]
+      );
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert(
+        "Session Expired",
+        "Please login again",
+        [
+          {
+            text: "OK",
+            onPress: () => logout() // Use logout for consistency
+          }
+        ]
+      );
+      return false;
+    }
+
+    return true;
+  };
 
   const handleCheckout = async () => {
     if (items.length === 0) {
@@ -29,50 +101,37 @@ export default function CartScreen() {
       return;
     }
 
+    // Validate authentication first
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Get auth token from storage
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        Alert.alert('Error', 'Please login to place order');
-        router.push('/Login');
-        return;
-      }
-
-      // Get user data to check customer profile
-      const userData = await AsyncStorage.getItem('userData');
-      if (!userData) {
-        Alert.alert('Error', 'User data not found. Please login again.');
-        router.push('/Login');
-        return;
-      }
-
-      const user = JSON.parse(userData);
-      
       // Prepare order data according to backend schema
       const orderData = {
         items: items.map(item => ({
-          productId: item.product.id, // Assuming product has id field
+          productId: item.product.id,
           quantity: item.quantity
         })),
         deliveryAddress: {
-          // You might want to get this from user profile or let user enter
           addressLine1: "Customer Address", // This should come from user profile
           city: "City",
           state: "State", 
           pincode: "000000"
         },
-        deliveryTime: "Morning", // Default or from user preferences
-        paymentMethod: "cash", // Default to cash on delivery
-        specialInstructions: "" // Can be made editable
+        deliveryTime: "Morning",
+        paymentMethod: "cash",
+        specialInstructions: ""
       };
 
       const response = await fetch(`${API_BASE_URL}/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${authToken}` // Use authToken directly
         },
         body: JSON.stringify(orderData),
       });
@@ -89,10 +148,17 @@ export default function CartScreen() {
           `Your order has been placed successfully!\nOrder ID: ${data.order.orderId}\nTotal: ₹${data.order.finalAmount}`,
           [
             {
-              text: 'OK',
+              text: 'View Orders',
               onPress: () => {
                 clearCart();
-                router.push('/checkout');
+                router.push('/(tabs)/orders');
+              }
+            },
+            {
+              text: 'Continue Shopping',
+              onPress: () => {
+                clearCart();
+                router.push('/(tabs)');
               }
             }
           ]
@@ -101,11 +167,7 @@ export default function CartScreen() {
         throw new Error(data.message || 'Failed to create order');
       }
     } catch (error) {
-      console.error('Checkout Error:', error);
-      Alert.alert(
-        'Order Failed', 
-        error.message || 'Failed to place order. Please try again.'
-      );
+      handleApiError(error, error.message || 'Failed to place order. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -127,6 +189,22 @@ export default function CartScreen() {
         }
       ]
     );
+  };
+
+  const handleContinueToCheckout = async () => {
+    if (items.length === 0) {
+      Alert.alert('Error', 'Your cart is empty');
+      return;
+    }
+
+    // Validate authentication before proceeding to checkout
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      return;
+    }
+    
+    // If authenticated, proceed to checkout screen
+    router.push('/checkout');
   };
 
   if (items.length === 0) {
@@ -237,10 +315,14 @@ export default function CartScreen() {
         </View>
         <TouchableOpacity
           style={[styles.checkoutButton, loading && styles.buttonDisabled]}
-          onPress={() => router.push('/checkout')}
+          onPress={handleContinueToCheckout}
           disabled={loading}
         >
-          <Text style={styles.checkoutButtonText}>Continue</Text>
+          {loading ? (
+            <Text style={styles.checkoutButtonText}>Checking...</Text>
+          ) : (
+            <Text style={styles.checkoutButtonText}>Continue</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
