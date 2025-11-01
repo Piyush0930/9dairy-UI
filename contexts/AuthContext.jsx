@@ -77,7 +77,7 @@ export function AuthProvider({ children }) {
       // ✅ CORRECTED: Same routing logic as checkAuthState
       if (userData.role === 'admin') {
         console.log('🔧 Admin user detected, redirecting to ADMIN app...');
-        router.replace('/admin'); // Use your actual admin route
+        router.replace('/(admin)'); // Use your actual admin route
       } else {
         console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
         router.replace('/(tabs)'); // Customer route

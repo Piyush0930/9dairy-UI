@@ -15,7 +15,7 @@ function NavigationHandler() {
     console.log('🔍 Navigation Debug:', {
       loading,
       isAuthenticated,
-      user,
+      user: user ? { ...user, role: user.role } : null,
       segments,
       currentPath: segments.join('/')
     });
@@ -42,17 +42,26 @@ function NavigationHandler() {
       isProtectedRoute,
       isAuthRoute,
       shouldRedirectToLogin: !isAuthenticated && isProtectedRoute,
-      shouldRedirectToHome: isAuthenticated && isAuthRoute
+      shouldRedirectToHome: isAuthenticated && isAuthRoute,
+      userRole: user?.role
     });
 
     if (!isAuthenticated && isProtectedRoute) {
       console.log('🚫 Not authenticated - redirecting to Login');
       router.replace('/Login');
     } else if (isAuthenticated && isAuthRoute) {
-      console.log('✅ Authenticated - redirecting to Home');
-      router.replace('/(tabs)');
+      console.log('✅ Authenticated - redirecting based on role:', user?.role);
+      
+      // ✅ FIXED: Redirect based on user role
+      if (user?.role === 'admin') {
+        console.log('🔧 Redirecting admin to admin dashboard');
+        router.replace('/(admin)');
+      } else {
+        console.log('🛒 Redirecting customer to tabs');
+        router.replace('/(tabs)');
+      }
     }
-  }, [isAuthenticated, segments, loading]);
+  }, [isAuthenticated, segments, loading, user]);
 
   // Show loading state
   if (loading) {
