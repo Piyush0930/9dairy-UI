@@ -70,20 +70,28 @@ export default function AdminProfile() {
     }
   }, [refreshTrigger]);
 
-  const fetchProfile = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/admin/retailer/profile`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
+  // In your AdminProfile component, update the fetchProfile function:
+const fetchProfile = async () => {
+  try {
+    setLoading(true);
+    console.log('📡 Fetching profile data...');
+    
+    const response = await fetch(`${API_BASE_URL}/admin/retailer/profile`, {
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
 
-      const data = await response.json();
+    const data = await response.json();
+    console.log('📊 Profile API Response:', data);
+    
+    if (data.success) {
+      // Handle both response structures: data.data and data.profile
+      const profileData = data.data || data.profile;
       
-      if (data.success && data.data) {
-        const profileData = data.data;
+      if (profileData) {
+        console.log('✅ Profile data received:', profileData);
         setProfile(profileData);
         updateProfile(profileData); // Update global context
         
@@ -108,15 +116,22 @@ export default function AdminProfile() {
           });
         }
         
-        console.log('✅ Profile loaded and context updated, serviceRadius:', profileData.serviceRadius);
+        console.log('✅ Profile loaded successfully, serviceRadius:', profileData.serviceRadius);
+      } else {
+        console.log('⚠️ Profile data structure unexpected:', data);
+        Alert.alert('Warning', 'Profile data format unexpected');
       }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-      Alert.alert('Error', 'Failed to load profile data');
-    } finally {
-      setLoading(false);
+    } else {
+      console.log('❌ Profile API error:', data.message);
+      Alert.alert('Error', data.message || 'Failed to load profile data');
     }
-  };
+  } catch (error) {
+    console.error('❌ Error fetching profile:', error);
+    Alert.alert('Error', 'Failed to load profile data');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSaveProfile = async () => {
     try {
@@ -414,7 +429,7 @@ export default function AdminProfile() {
             value="Admin / Retailer"
           />
 
-          <InfoCard
+           <InfoCard
             icon={<MaterialIcons name="calendar-today" size={18} color={Colors.light.accent} />}
             title="Member Since"
             value={profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-IN') : 'N/A'}

@@ -33,37 +33,46 @@ export default function RadiusSettings() {
     fetchRetailerProfile();
   }, []);
 
-  const fetchRetailerProfile = async () => {
-    try {
-      setProfileLoading(true);
-      const response = await fetch(`${API_BASE_URL}/admin/retailer/profile`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      const data = await response.json();
-      console.log('Retailer profile response:', data);
-      
-      if (data.success && data.data) {
-        setRetailerProfile(data.data);
-        setCurrentRadius(data.data.serviceRadius || 50);
-        setRadius(data.data.serviceRadius || 50);
-        console.log('Profile loaded successfully, radius:', data.data.serviceRadius);
+  // In components/RadiusSettings.js, update the fetchRetailerProfile function:
+const fetchRetailerProfile = async () => {
+  try {
+    setProfileLoading(true);
+    const response = await fetch(`${API_BASE_URL}/admin/retailer/profile`, {
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    console.log('📊 RadiusSettings Profile Response:', data);
+    
+    if (data.success) {
+      const profileData = data.data || data.profile;
+      if (profileData) {
+        setRetailerProfile(profileData);
+        const serviceRadius = profileData.serviceRadius || 50;
+        setCurrentRadius(serviceRadius);
+        setRadius(serviceRadius);
+        console.log('✅ RadiusSettings: Profile loaded, radius:', serviceRadius);
       } else {
-        console.log('No profile data found, using default radius');
+        console.log('⚠️ RadiusSettings: No profile data in response');
         setCurrentRadius(50);
         setRadius(50);
       }
-    } catch (error) {
-      console.error('Error fetching retailer profile:', error);
+    } else {
+      console.log('❌ RadiusSettings: Profile API error');
       setCurrentRadius(50);
       setRadius(50);
-    } finally {
-      setProfileLoading(false);
     }
-  };
+  } catch (error) {
+    console.error('❌ Error fetching retailer profile:', error);
+    setCurrentRadius(50);
+    setRadius(50);
+  } finally {
+    setProfileLoading(false);
+  }
+};
 
   // Enhanced update function with better debugging
   const updateRadius = async () => {
