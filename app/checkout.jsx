@@ -1,10 +1,9 @@
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
-import { mockAddresses } from '@/mocks/addresses';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,11 +20,46 @@ export default function CheckoutScreen() {
     user 
   } = useAuth();
   const insets = useSafeAreaInsets();
-  const [selectedAddress, setSelectedAddress] = useState(mockAddresses[0].id);
+  const [selectedAddress, setSelectedAddress] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState('upi');
   const [loading, setLoading] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderData, setOrderData] = useState(null);
+  const [profileData, setProfileData] = useState(null);
+  const [fetchingProfile, setFetchingProfile] = useState(true);
+
+  // Fetch profile data with addresses
+  const fetchProfile = async () => {
+    if (!authToken) return;
+
+    try {
+      setFetchingProfile(true);
+      const response = await fetch(`${API_BASE_URL}/customer/profile`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch profile');
+      }
+
+      const data = await response.json();
+      setProfileData(data);
+      
+      // Set the first address as selected by default if available
+      if (data.deliveryAddress) {
+        setSelectedAddress(data.deliveryAddress);
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      handleApiError(error, 'Failed to load addresses');
+    } finally {
+      setFetchingProfile(false);
+    }
+  };
 
   // Enhanced API error handler
   const handleApiError = (error, customMessage = null) => {
@@ -92,9 +126,21 @@ export default function CheckoutScreen() {
     return true;
   };
 
+  // Fetch profile on component mount
+  useEffect(() => {
+    if (authToken && isAuthenticated) {
+      fetchProfile();
+    }
+  }, [authToken, isAuthenticated]);
+
   const handlePlaceOrder = async () => {
     if (items.length === 0) {
       Alert.alert('Error', 'Your cart is empty');
+      return;
+    }
+
+    if (!selectedAddress) {
+      Alert.alert('Error', 'Please select a delivery address');
       return;
     }
 
@@ -106,18 +152,19 @@ export default function CheckoutScreen() {
     setLoading(true);
 
     try {
-      const selectedAddressData = mockAddresses.find(addr => addr.id === selectedAddress);
-
       const orderData = {
         items: items.map(item => ({
           productId: item.product._id,
           quantity: item.quantity
         })),
         deliveryAddress: {
-          addressLine1: selectedAddressData.addressLine,
-          city: selectedAddressData.city,
-          state: selectedAddressData.state,
-          pincode: selectedAddressData.pincode
+          addressLine1: selectedAddress.addressLine1,
+          addressLine2: selectedAddress.addressLine2 || '',
+          city: selectedAddress.city,
+          state: selectedAddress.state,
+          pincode: selectedAddress.pincode,
+          landmark: selectedAddress.landmark || '',
+          coordinates: selectedAddress.coordinates || {}
         },
         deliveryTime: "Morning",
         paymentMethod: selectedPayment === 'cod' ? 'cash' : selectedPayment,
@@ -158,6 +205,18 @@ export default function CheckoutScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Format address for display
+  const formatAddress = (address) => {
+    const parts = [
+      address.addressLine1,
+      address.addressLine2,
+      address.landmark,
+      `${address.city}, ${address.state} - ${address.pincode}`
+    ].filter(part => part && part.trim() !== '');
+    
+    return parts.join(', ');
   };
 
   // Order Success Animation Component
@@ -224,47 +283,91 @@ export default function CheckoutScreen() {
     return <OrderSuccessAnimation />;
   }
 
+  // Show loading while fetching profile
+  if (fetchingProfile) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading addresses...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show message if no address found
+  if (!profileData?.deliveryAddress) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.section}>
+            <View style={styles.noAddressContainer}>
+              <Ionicons name="location-outline" size={60} color={Colors.light.border} />
+              <Text style={styles.noAddressTitle}>No Delivery Address</Text>
+              <Text style={styles.noAddressText}>
+                Please add a delivery address to place your order
+              </Text>
+              <TouchableOpacity 
+                style={styles.addAddressButton}
+                onPress={() => router.push('/profile')}
+              >
+                <Text style={styles.addAddressButtonText}>Add Address</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Delivery Address</Text>
-            <TouchableOpacity style={styles.addButton}>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => router.push('/profile')}
+            >
               <Ionicons name="add" size={20} color={Colors.light.tint} />
-              <Text style={styles.addButtonText}>Add New</Text>
+              <Text style={styles.addButtonText}>Manage</Text>
             </TouchableOpacity>
           </View>
-          {mockAddresses.map((address) => (
-            <TouchableOpacity
-              key={address.id}
-              style={[
-                styles.addressCard,
-                selectedAddress === address.id && styles.addressCardSelected,
-              ]}
-              onPress={() => setSelectedAddress(address.id)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.addressHeader}>
-                <View style={styles.addressIconContainer}>
-                  <Ionicons name="location-outline" size={20} color={Colors.light.accent} />
-                </View>
-                <View style={styles.addressInfo}>
-                  <Text style={styles.addressName}>{address.name}</Text>
-                  <Text style={styles.addressText}>
-                    {address.addressLine}, {address.city}
+          
+          {/* Single Address Card */}
+          <TouchableOpacity
+            style={[
+              styles.addressCard,
+              selectedAddress && styles.addressCardSelected,
+            ]}
+            onPress={() => setSelectedAddress(profileData.deliveryAddress)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.addressHeader}>
+              <View style={styles.addressIconContainer}>
+                <Ionicons name="location-outline" size={20} color={Colors.light.accent} />
+              </View>
+              <View style={styles.addressInfo}>
+                <Text style={styles.addressName}>
+                  {profileData.personalInfo?.fullName || 'Customer'}
+                </Text>
+                <Text style={styles.addressText}>
+                  {formatAddress(profileData.deliveryAddress)}
+                </Text>
+                <Text style={styles.addressPhone}>
+                  {user?.phone || profileData.user?.phone}
+                </Text>
+                {profileData.deliveryAddress.landmark && (
+                  <Text style={styles.landmarkText}>
+                    Landmark: {profileData.deliveryAddress.landmark}
                   </Text>
-                  <Text style={styles.addressText}>
-                    {address.state} - {address.pincode}
-                  </Text>
-                  <Text style={styles.addressPhone}>{address.phone}</Text>
-                </View>
-                {selectedAddress === address.id && (
-                  <Ionicons name="checkmark-circle-outline" size={24} color={Colors.light.accent} />
                 )}
               </View>
-            </TouchableOpacity>
-          ))}
+              {selectedAddress && (
+                <Ionicons name="checkmark-circle-outline" size={24} color={Colors.light.accent} />
+              )}
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
@@ -352,9 +455,9 @@ export default function CheckoutScreen() {
           <Text style={styles.totalAmount}>₹{getTotalPrice()}</Text>
         </View>
         <TouchableOpacity 
-          style={[styles.placeOrderButton, loading && styles.buttonDisabled]} 
+          style={[styles.placeOrderButton, (loading || !selectedAddress) && styles.buttonDisabled]} 
           onPress={handlePlaceOrder}
-          disabled={loading}
+          disabled={loading || !selectedAddress}
         >
           <Text style={styles.placeOrderButtonText}>
             {loading ? 'Placing Order...' : 'Place Order'}
@@ -435,11 +538,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
     marginBottom: 2,
+    lineHeight: 18,
   },
   addressPhone: {
     fontSize: 14,
     color: Colors.light.textLight,
     marginTop: 4,
+  },
+  landmarkText: {
+    fontSize: 13,
+    color: Colors.light.textLight,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   paymentCard: {
     flexDirection: 'row',
@@ -574,6 +684,45 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   shopNowText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+  },
+  noAddressContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  noAddressTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noAddressText: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  addAddressButton: {
+    backgroundColor: Colors.light.tint,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  addAddressButtonText: {
     color: '#FFF',
     fontSize: 14,
     fontWeight: '600',
