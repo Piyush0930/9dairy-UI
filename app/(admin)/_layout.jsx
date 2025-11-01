@@ -1,3 +1,4 @@
+// app/(admin)/_layout.jsx - Update the tabs
 import { useAuth } from "@/contexts/AuthContext";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
@@ -23,7 +24,6 @@ export default function AdminLayout() {
             try {
               console.log('👋 Admin initiated logout...');
               await logout();
-              // The AuthContext logout already handles navigation to login
             } catch (error) {
               console.error('❌ Logout error in AdminLayout:', error);
               Alert.alert("Error", "Failed to logout. Please try again.");
@@ -33,13 +33,6 @@ export default function AdminLayout() {
       ]
     );
   };
-
-  // Optional: Redirect if not authenticated
-  // useEffect(() => {
-  //   if (!isAuthenticated) {
-  //     router.replace('/Login');
-  //   }
-  // }, [isAuthenticated]);
 
   return (
     <Tabs
@@ -102,6 +95,15 @@ export default function AdminLayout() {
           title: "Categories",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="person" size={size} color={color} />
           ),
         }}
       />

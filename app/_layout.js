@@ -1,6 +1,7 @@
 // app/_layout.js
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { CartProvider } from '@/contexts/CartContext';
+import { ProfileProvider } from '@/contexts/ProfileContext'; // Add this import
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
@@ -78,10 +79,12 @@ function NavigationHandler() {
 export default function RootLayout() {
   return (
     <AuthProvider>
+      <ProfileProvider>
       <CartProvider>
         <NavigationHandler />
         <Slot />
       </CartProvider>
+      </ProfileProvider>
     </AuthProvider>
   );
 }
