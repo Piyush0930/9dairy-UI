@@ -127,85 +127,204 @@ export default function CheckoutScreen() {
   };
 
   // Fetch profile on component mount
-  useEffect(() => {
-    if (authToken && isAuthenticated) {
-      fetchProfile();
-    }
-  }, [authToken, isAuthenticated]);
-
-  const handlePlaceOrder = async () => {
-    if (items.length === 0) {
-      Alert.alert('Error', 'Your cart is empty');
+  // Update the useEffect to handle authentication properly
+useEffect(() => {
+  const checkAuthAndFetchProfile = async () => {
+    if (!authToken || !isAuthenticated) {
+      console.log('🔐 User not authenticated, redirecting to login');
+      router.push('/Login');
       return;
     }
 
-    if (!selectedAddress) {
-      Alert.alert('Error', 'Please select a delivery address');
-      return;
-    }
-
-    const isValid = await validateAuthBeforeCall();
+    const isValid = await validateToken();
     if (!isValid) {
+      console.log('🔐 Token invalid, logging out');
+      logout();
       return;
     }
 
-    setLoading(true);
-
-    try {
-      const orderData = {
-        items: items.map(item => ({
-          productId: item.product._id,
-          quantity: item.quantity
-        })),
-        deliveryAddress: {
-          addressLine1: selectedAddress.addressLine1,
-          addressLine2: selectedAddress.addressLine2 || '',
-          city: selectedAddress.city,
-          state: selectedAddress.state,
-          pincode: selectedAddress.pincode,
-          landmark: selectedAddress.landmark || '',
-          coordinates: selectedAddress.coordinates || {}
-        },
-        deliveryTime: "Morning",
-        paymentMethod: selectedPayment === 'cod' ? 'cash' : selectedPayment,
-        specialInstructions: ""
-      };
-
-      const response = await fetch(`${API_BASE_URL}/orders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify(orderData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to create order');
-      }
-
-      if (data.success) {
-        // Set order data and show success animation
-        setOrderData(data.order);
-        setOrderSuccess(true);
-        clearCart();
-        
-        // Auto navigate after 3 seconds
-        setTimeout(() => {
-          router.replace('/(tabs)/orders');
-        }, 3000);
-      } else {
-        throw new Error(data.message || 'Failed to create order');
-      }
-    } catch (error) {
-      console.error('Checkout Error:', error);
-      handleApiError(error, error.message || 'Failed to place order. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    // Only fetch profile if authenticated and token is valid
+    await fetchProfile();
   };
+
+  checkAuthAndFetchProfile();
+}, [authToken, isAuthenticated]);
+
+  // In your checkout component
+// Fixed handlePlaceOrder function
+const handlePlaceOrder = async () => {
+  try {
+    // Validate authentication first
+    const isAuthValid = await validateAuthBeforeCall();
+    if (!isAuthValid) return;
+
+    // Check if we have a selected address
+    if (!selectedAddress) {
+      Alert.alert(
+        'Address Required',
+        'Please select a delivery address to place your order.',
+        [
+          {
+            text: 'Select Address',
+            onPress: () => setSelectedAddress(profileData.deliveryAddress)
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          }
+        ]
+      );
+      return;
+    }
+
+    // Check if address has coordinates (for retailer assignment)
+    if (!selectedAddress.coordinates?.latitude || !selectedAddress.coordinates?.longitude) {
+      Alert.alert(
+        'Location Required',
+        'Your address needs location details for delivery. Please update your address with location information.',
+        [
+          {
+            text: 'Update Address',
+            onPress: () => router.push('/profile')
+          },
+          {
+            text: 'Continue Anyway',
+            onPress: () => proceedWithOrderPlacement()
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          }
+        ]
+      );
+      return;
+    }
+
+    // Proceed with order placement
+    await proceedWithOrderPlacement();
+    
+  } catch (error) {
+    console.error('Checkout Error:', error);
+    handleApiError(error, 'Failed to place order');
+  }
+};
+
+// Separate function for actual order placement
+const proceedWithOrderPlacement = async () => {
+  setLoading(true);
+
+  try {
+    // Prepare order data
+    const orderData = {
+      items: items.map(item => ({
+        productId: item.product._id,
+        quantity: item.quantity
+      })),
+      deliveryAddress: selectedAddress,
+      paymentMethod: selectedPayment,
+      specialInstructions: '' // You can add a field for this if needed
+    };
+
+    console.log('📦 Placing order with data:', {
+      itemCount: items.length,
+      totalAmount: getTotalPrice(),
+      hasCoordinates: !!selectedAddress.coordinates
+    });
+
+    // Make API call to create order
+    const response = await fetch(`${API_BASE_URL}/orders`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(orderData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || `Server error: ${response.status}`);
+    }
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to create order');
+    }
+
+    console.log('✅ Order created successfully:', data.order);
+
+    // Store order data for success screen
+    setOrderData(data.order);
+    
+    // Clear cart
+    clearCart();
+    
+    // Show success state
+    setOrderSuccess(true);
+
+    // Auto-navigate to orders after 3 seconds
+    setTimeout(() => {
+      router.push('/(tabs)/orders');
+    }, 3000);
+
+  } catch (error) {
+    console.error('Order Placement Error:', error);
+    
+    // Handle specific error messages
+    if (error.message.includes('Delivery address with coordinates')) {
+      Alert.alert(
+        'Location Required',
+        'Please update your address with location details to help us assign the nearest retailer.',
+        [
+          {
+            text: 'Update Address',
+            onPress: () => router.push('/profile')
+          },
+          {
+            text: 'OK',
+            style: 'cancel'
+          }
+        ]
+      );
+    } else if (error.message.includes('No retailer available')) {
+      Alert.alert(
+        'Service Unavailable',
+        'Sorry, there are no retailers available in your area at the moment. Please try again later or contact customer support.',
+        [
+          {
+            text: 'OK',
+            style: 'cancel'
+          }
+        ]
+      );
+    } else if (error.message.includes('Insufficient stock')) {
+      Alert.alert(
+        'Stock Issue',
+        error.message,
+        [
+          {
+            text: 'OK',
+            style: 'cancel',
+            onPress: () => router.push('/(tabs)') // Go back to shop
+          }
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Order Failed',
+        error.message || 'Failed to place order. Please try again.',
+        [
+          {
+            text: 'OK',
+            style: 'cancel'
+          }
+        ]
+      );
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Format address for display
   const formatAddress = (address) => {
@@ -455,14 +574,17 @@ export default function CheckoutScreen() {
           <Text style={styles.totalAmount}>₹{getTotalPrice()}</Text>
         </View>
         <TouchableOpacity 
-          style={[styles.placeOrderButton, (loading || !selectedAddress) && styles.buttonDisabled]} 
-          onPress={handlePlaceOrder}
-          disabled={loading || !selectedAddress}
-        >
-          <Text style={styles.placeOrderButtonText}>
-            {loading ? 'Placing Order...' : 'Place Order'}
-          </Text>
-        </TouchableOpacity>
+        style={[
+          styles.placeOrderButton, 
+          (loading || !selectedAddress || items.length === 0) && styles.buttonDisabled
+        ]} 
+        onPress={handlePlaceOrder}
+        disabled={loading || !selectedAddress || items.length === 0}
+      >
+        <Text style={styles.placeOrderButtonText}>
+          {loading ? 'Placing Order...' : `Place Order - ₹${getTotalPrice()}`}
+        </Text>
+      </TouchableOpacity>
       </View>
     </View>
   );
