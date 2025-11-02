@@ -19,19 +19,25 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/catalog`;
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function ProductsManagement() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { getAuthHeaders } = useAuth();
+  const { 
+    authToken, 
+    isLoading: authLoading, 
+    isAuthenticated, 
+    validateToken,
+    logout 
+  } = useAuth();
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-
+  const [uploading, setUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [formData, setFormData] = useState({
@@ -39,11 +45,11 @@ export default function ProductsManagement() {
     description: '',
     price: '',
     category: '',
-    unit: 'gm',
+    unit: 'liter',
     unitSize: '',
     stock: '',
     milkType: 'Cow',
-    image: '',
+    image: null,
     discount: '',
     isFeatured: false,
     isAvailable: true,
@@ -51,19 +57,95 @@ export default function ProductsManagement() {
     tags: '',
   });
 
+  const [imageUri, setImageUri] = useState('');
+
+  // Enhanced API error handler
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected, logging out...');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: () => logout()
+          }
+        ]
+      );
+      return true;
+    }
+    
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false;
+  };
+
+  // Token validation before API calls
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    return true;
+  };
+
+  // Get auth headers
+  const getAuthHeaders = (forFormData = false) => {
+    const headers = {
+      'Authorization': `Bearer ${authToken}`,
+    };
+    
+    if (!forFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    return headers;
+  };
+
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchData();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      console.log('❌ No auth token or not authenticated');
+      setLoading(false);
+    }
+  }, [authToken, authLoading, isAuthenticated]);
 
   const fetchData = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const headers = getAuthHeaders();
+      
       const [productsRes, categoriesRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/products`, { headers }),
-        fetch(`${API_BASE_URL}/categories`, { headers }),
+        fetch(`${API_BASE_URL}/api/catalog/products`, {
+          headers: getAuthHeaders(),
+        }),
+        fetch(`${API_BASE_URL}/api/catalog/categories`, {
+          headers: getAuthHeaders(),
+        }),
       ]);
 
+      if (!productsRes.ok) throw new Error('Failed to fetch products');
+      
       const productsData = await productsRes.json();
       const categoriesData = await categoriesRes.json();
 
@@ -71,10 +153,7 @@ export default function ProductsManagement() {
       setCategories(Array.isArray(categoriesData) ? categoriesData : categoriesData.categories || []);
     } catch (error) {
       console.error('Error fetching data:', error);
-      Alert.alert('Error', error.message === 'Network request failed'
-        ? 'Please check your internet connection.'
-        : 'Failed to load data.'
-      );
+      handleApiError(error, 'Failed to load data.');
       setProducts([]);
       setCategories([]);
     } finally {
@@ -85,7 +164,6 @@ export default function ProductsManagement() {
   const filteredProducts = useMemo(() => {
     let filtered = products;
 
-    // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(p =>
@@ -104,32 +182,57 @@ export default function ProductsManagement() {
       return;
     }
 
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
+      setUploading(true);
+      
       const url = editingProduct
-        ? `${API_BASE_URL}/products/${editingProduct._id}`
-        : `${API_BASE_URL}/products`;
+        ? `${API_BASE_URL}/api/catalog/products/${editingProduct._id}`
+        : `${API_BASE_URL}/api/catalog/products`;
 
       const method = editingProduct ? 'PUT' : 'POST';
 
-      const submitData = {
-        ...formData,
-        price: parseFloat(formData.price),
-        unitSize: parseInt(formData.unitSize) || 0,
-        stock: parseInt(formData.stock) || 0,
-        discount: parseFloat(formData.discount) || 0,
-        nutritionalInfo: {
-          fat: parseFloat(formData.nutritionalInfo.fat) || 0,
-          protein: parseFloat(formData.nutritionalInfo.protein) || 0,
-          calories: parseFloat(formData.nutritionalInfo.calories) || 0,
-          carbohydrates: parseFloat(formData.nutritionalInfo.carbohydrates) || 0,
-        },
-        tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-      };
+      const submitFormData = new FormData();
+      
+      submitFormData.append('name', formData.name);
+      submitFormData.append('description', formData.description);
+      submitFormData.append('price', parseFloat(formData.price).toString());
+      submitFormData.append('category', formData.category);
+      submitFormData.append('unit', formData.unit);
+      submitFormData.append('unitSize', (parseInt(formData.unitSize) || 0).toString());
+      submitFormData.append('stock', (parseInt(formData.stock) || 0).toString());
+      submitFormData.append('milkType', formData.milkType);
+      submitFormData.append('discount', (parseFloat(formData.discount) || 0).toString());
+      submitFormData.append('isFeatured', formData.isFeatured.toString());
+      submitFormData.append('isAvailable', formData.isAvailable.toString());
+      
+      if (formData.tags) {
+        submitFormData.append('tags', formData.tags);
+      }
+
+      if (formData.nutritionalInfo.fat || formData.nutritionalInfo.protein || 
+          formData.nutritionalInfo.calories || formData.nutritionalInfo.carbohydrates) {
+        Object.keys(formData.nutritionalInfo).forEach(key => {
+          submitFormData.append(`nutritionalInfo[${key}]`, 
+            (parseFloat(formData.nutritionalInfo[key]) || 0).toString()
+          );
+        });
+      }
+
+      if (formData.image) {
+        submitFormData.append('image', {
+          uri: formData.image.uri,
+          type: formData.image.type || 'image/jpeg',
+          name: formData.image.fileName || `product-${Date.now()}.jpg`,
+        });
+      }
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify(submitData),
+        headers: getAuthHeaders(true),
+        body: submitFormData,
       });
 
       const data = await response.json();
@@ -139,17 +242,20 @@ export default function ProductsManagement() {
         closeModal();
         fetchData();
       } else {
-        Alert.alert('Error', data.message || 'Failed to save product.');
+        handleApiError({ message: data.message, response }, data.message || 'Failed to save product.');
       }
     } catch (error) {
-      Alert.alert('Error', error.message === 'Network request failed'
-        ? 'Check your connection and try again.'
-        : 'Failed to save product.'
-      );
+      console.error('Submit error:', error);
+      handleApiError(error, 'Failed to save product.');
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleDelete = (productId) => {
+  const handleDelete = async (productId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     Alert.alert(
       'Delete Product',
       'This action cannot be undone.',
@@ -160,19 +266,20 @@ export default function ProductsManagement() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+              const response = await fetch(`${API_BASE_URL}/api/catalog/products/${productId}`, {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
               });
+              
               if (response.ok) {
                 Alert.alert('Success', 'Product deleted.');
                 fetchData();
               } else {
                 const data = await response.json();
-                Alert.alert('Error', data.message || 'Failed to delete.');
+                handleApiError({ message: data.message, response }, data.message || 'Failed to delete.');
               }
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete product.');
+              handleApiError(error, 'Failed to delete product.');
             }
           },
         },
@@ -186,18 +293,19 @@ export default function ProductsManagement() {
       name: product.name,
       description: product.description || '',
       price: product.price.toString(),
-      category: product.category._id,
-      unit: product.unit,
-      unitSize: product.unitSize.toString(),
-      stock: product.stock.toString(),
-      milkType: product.milkType,
-      image: product.image || '',
+      category: product.category?._id || product.category || '',
+      unit: product.unit || 'liter',
+      unitSize: product.unitSize?.toString() || '',
+      stock: product.stock?.toString() || '',
+      milkType: product.milkType || 'Cow',
+      image: null,
       discount: product.discount?.toString() || '0',
       isFeatured: product.isFeatured || false,
       isAvailable: product.isAvailable !== false,
       nutritionalInfo: product.nutritionalInfo || { fat: '', protein: '', calories: '', carbohydrates: '' },
-      tags: product.tags?.join(', ') || '',
+      tags: product.tags?.join(', ') || (typeof product.tags === 'string' ? product.tags : ''),
     });
+    setImageUri(product.image || '');
     setModalVisible(true);
   };
 
@@ -213,17 +321,18 @@ export default function ProductsManagement() {
       description: '',
       price: '',
       category: '',
-      unit: 'gm',
+      unit: 'liter',
       unitSize: '',
       stock: '',
       milkType: 'Cow',
-      image: '',
+      image: null,
       discount: '',
       isFeatured: false,
       isAvailable: true,
       nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' },
       tags: '',
     });
+    setImageUri('');
   };
 
   const closeModal = () => {
@@ -241,15 +350,26 @@ export default function ProductsManagement() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setFormData({ ...formData, image: result.assets[0].uri });
+        const selectedImage = result.assets[0];
+        setFormData({ 
+          ...formData, 
+          image: {
+            uri: selectedImage.uri,
+            type: 'image/jpeg',
+            fileName: selectedImage.fileName || `image-${Date.now()}.jpg`
+          }
+        });
+        setImageUri(selectedImage.uri);
       }
     } catch (error) {
+      console.error('Image picker error:', error);
       Alert.alert('Error', 'Failed to pick image');
     }
   };
@@ -299,6 +419,15 @@ export default function ProductsManagement() {
     );
   };
 
+  if (authLoading) {
+    return (
+      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top + 16 }]}>
@@ -310,7 +439,7 @@ export default function ProductsManagement() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
-      {/* Search & Filter Bar */}
+      {/* Search Bar */}
       <View style={styles.searchFilterContainer}>
         <View style={styles.searchInputContainer}>
           <Ionicons name="search" size={20} color={Colors.light.textSecondary} style={styles.searchIcon} />
@@ -323,8 +452,6 @@ export default function ProductsManagement() {
           />
         </View>
       </View>
-
-
 
       {/* Product List */}
       <FlatList
@@ -368,6 +495,26 @@ export default function ProductsManagement() {
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Image Preview */}
+              {(imageUri || formData.image) && (
+                <View style={styles.imagePreviewContainer}>
+                  <Image 
+                    source={{ uri: imageUri || formData.image?.uri }} 
+                    style={styles.imagePreview}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity 
+                    style={styles.removeImageButton}
+                    onPress={() => {
+                      setFormData({...formData, image: null});
+                      setImageUri('');
+                    }}
+                  >
+                    <Ionicons name="close" size={20} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* Name */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Product Name *</Text>
@@ -418,7 +565,7 @@ export default function ProductsManagement() {
                     value={formData.price}
                     onChangeText={(t) => setFormData({ ...formData, price: t })}
                     keyboardType="numeric"
-                    placeholder="49.00"
+                    placeholder="60"
                   />
                 </View>
                 <View style={styles.inputGroupFlex}>
@@ -456,7 +603,7 @@ export default function ProductsManagement() {
                     value={formData.unitSize}
                     onChangeText={(t) => setFormData({ ...formData, unitSize: t })}
                     keyboardType="numeric"
-                    placeholder="500"
+                    placeholder="1"
                   />
                 </View>
               </View>
@@ -489,20 +636,15 @@ export default function ProductsManagement() {
                 </View>
               </View>
 
-              {/* Image */}
+              {/* Image Upload */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Image</Text>
-                <View style={styles.imageInputContainer}>
-                  <TextInput
-                    style={[styles.textInput, styles.imageInput]}
-                    value={formData.image}
-                    onChangeText={(t) => setFormData({ ...formData, image: t })}
-                    placeholder="https://... or select from gallery"
-                  />
-                  <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
-                    <Ionicons name="image" size={20} color="#FFF" />
-                  </TouchableOpacity>
-                </View>
+                <Text style={styles.inputLabel}>Product Image</Text>
+                <TouchableOpacity style={styles.imageUploadButton} onPress={pickImage}>
+                  <Ionicons name="camera" size={24} color={Colors.light.accent} />
+                  <Text style={styles.imageUploadText}>
+                    {formData.image ? 'Change Image' : 'Select Image from Gallery'}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* Toggles */}
@@ -533,7 +675,7 @@ export default function ProductsManagement() {
                 <View style={styles.nutritionGrid}>
                   {['fat', 'protein', 'calories', 'carbohydrates'].map((key) => (
                     <View key={key} style={styles.nutritionInput}>
-                      <Text style={styles.nutritionLabel}>{key.charAt(0).toUpperCase() + key.slice(1)} (g)</Text>
+                      <Text style={styles.nutritionLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
                       <TextInput
                         style={styles.nutritionTextInput}
                         value={formData.nutritionalInfo[key]}
@@ -562,11 +704,21 @@ export default function ProductsManagement() {
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
+              <TouchableOpacity style={styles.cancelButton} onPress={closeModal} disabled={uploading}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                <Text style={styles.submitButtonText}>{editingProduct ? 'Update' : 'Add'}</Text>
+              <TouchableOpacity 
+                style={[styles.submitButton, uploading && styles.submitButtonDisabled]} 
+                onPress={handleSubmit}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>
+                    {editingProduct ? 'Update' : 'Add'}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -576,7 +728,6 @@ export default function ProductsManagement() {
   );
 }
 
-// === STYLES (Consistent with Orders Page) ===
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -614,33 +765,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: Colors.light.text,
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 8,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  filterButtonActive: {
-    backgroundColor: Colors.light.accent,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  filterButtonTextActive: {
-    color: '#FFF',
   },
   listContent: {
     padding: 16,
@@ -706,7 +830,6 @@ const styles = StyleSheet.create({
     color: '#F44336',
     fontWeight: '600',
   },
-
   categoryActions: {
     flexDirection: 'row',
     gap: 8,
@@ -919,22 +1042,52 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFF',
   },
-  imageInputContainer: {
-    flexDirection: 'row',
+  imagePreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  imagePreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#F44336',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  imageInput: {
-    flex: 1,
-    marginRight: 8,
-  },
-  imagePickerButton: {
-    backgroundColor: Colors.light.accent,
-    padding: 10,
+  imageUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderStyle: 'dashed',
     borderRadius: 8,
+    padding: 16,
+    backgroundColor: '#F9F9F9',
+  },
+  imageUploadText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: Colors.light.accent,
+    fontWeight: '600',
   },
 });

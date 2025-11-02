@@ -80,21 +80,25 @@ export default function HomeScreen() {
   const [popularProducts, setPopularProducts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Create infinite loop arrays by multiplying the cards
-  const infiniteStoreCards = [...storeCards, ...storeCards, ...storeCards];
-  const infinitePopularProducts = [...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts];
-
-  // API Base URL
-  const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
+  // API Base URL - corrected based on your Postman
+  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
   // Fetch categories from API
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/catalog/categories`);
+      const response = await fetch(`${API_BASE_URL}/api/catalog/categories`);
+      if (!response.ok) throw new Error('Failed to fetch categories');
+      
       const data = await response.json();
+      console.log('Categories data:', data);
 
-      if (data.success !== false) {
+      // Handle different response formats
+      if (Array.isArray(data)) {
         setCategories(data);
+      } else if (data.categories && Array.isArray(data.categories)) {
+        setCategories(data.categories);
+      } else if (data.success !== false) {
+        setCategories(Array.isArray(data) ? data : []);
       } else {
         setCategories([]);
       }
@@ -105,14 +109,22 @@ export default function HomeScreen() {
     }
   };
 
-  // Fetch popular products from API
+  // Fetch popular products from API - corrected endpoint
   const fetchPopularProducts = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/catalog/products/featured`);
+      const response = await fetch(`${API_BASE_URL}/api/catalog/products/featured`);
+      if (!response.ok) throw new Error('Failed to fetch featured products');
+      
       const data = await response.json();
+      console.log('Featured products data:', data);
 
-      if (data.success !== false) {
-        setPopularProducts(data.products || []);
+      // Handle different response formats
+      if (Array.isArray(data)) {
+        setPopularProducts(data);
+      } else if (data.products && Array.isArray(data.products)) {
+        setPopularProducts(data.products);
+      } else if (data.success !== false) {
+        setPopularProducts(Array.isArray(data) ? data : []);
       } else {
         setPopularProducts([]);
       }
@@ -134,6 +146,12 @@ export default function HomeScreen() {
     fetchData();
   }, []);
 
+  // Create infinite loop arrays only when data is available
+  const infiniteStoreCards = [...storeCards, ...storeCards, ...storeCards];
+  const infinitePopularProducts = popularProducts.length > 0 
+    ? [...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts, ...popularProducts]
+    : [];
+
   useEffect(() => {
     // Set initial position to middle set of cards
     setTimeout(() => {
@@ -141,12 +159,15 @@ export default function HomeScreen() {
         x: storeCards.length * (CARD_WIDTH + CARD_SPACING),
         animated: false,
       });
-      popularScrollRef.current?.scrollTo({
-        x: popularProducts.length * (POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING),
-        animated: false,
-      });
+      
+      if (popularProducts.length > 0) {
+        popularScrollRef.current?.scrollTo({
+          x: popularProducts.length * (POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING),
+          animated: false,
+        });
+      }
     }, 100);
-  }, []);
+  }, [popularProducts.length]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -165,8 +186,6 @@ export default function HomeScreen() {
 
     return () => clearInterval(interval);
   }, []);
-
-
 
   const handleStoreScroll = (event) => {
     const scrollX = event.nativeEvent.contentOffset.x;
@@ -188,10 +207,11 @@ export default function HomeScreen() {
   };
 
   const handlePopularScroll = (event) => {
+    if (popularProducts.length === 0) return;
+    
     const scrollX = event.nativeEvent.contentOffset.x;
     const cardTotalWidth = POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING;
     const totalWidth = popularProducts.length * cardTotalWidth;
-    const totalScrollWidth = infinitePopularProducts.length * cardTotalWidth;
 
     // Seamless infinite loop: when reaching the end of first set, jump to start of second set
     if (scrollX >= totalWidth * 2) {
@@ -293,7 +313,7 @@ export default function HomeScreen() {
               <ActivityIndicator size="large" color={Colors.light.tint} />
               <Text style={styles.loadingText}>Loading categories...</Text>
             </View>
-          ) : (
+          ) : categories.length > 0 ? (
             <View style={styles.categoriesGrid}>
               {categories.map((category) => (
                 <CategoryTile
@@ -303,10 +323,17 @@ export default function HomeScreen() {
                   color={category.color || '#E3F2FD'}
                   onPress={() => {
                     console.log(`Category ${category.name} clicked`);
-                    router.push('/categories');
+                    router.push({
+                      pathname: '/categories',
+                      params: { categoryId: category._id }
+                    });
                   }}
                 />
               ))}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No categories found</Text>
             </View>
           )}
         </View>
@@ -319,30 +346,42 @@ export default function HomeScreen() {
             </View>
           </View>
           <Text style={styles.popularSubtext}>Most frequently bought</Text>
-          <View style={styles.popularContainer}>
-            <ScrollView
-              ref={popularScrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.popularScroll}
-              snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
-              decelerationRate="fast"
-              style={styles.popularScrollContainer}
-              onScroll={handlePopularScroll}
-              scrollEventThrottle={16}
-              onScrollBeginDrag={() => { isPopularScrolling.current = true; }}
-              onScrollEndDrag={() => { isPopularScrolling.current = false; }}
-            >
-              {infinitePopularProducts.map((product, index) => (
-                <View key={`${product.id}-${index}`} style={styles.productCardWrapper}>
-                  <ProductCard
-                    product={product}
-                    onAddToCart={handleAddToCart}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-          </View>
+          
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.light.tint} />
+              <Text style={styles.loadingText}>Loading popular products...</Text>
+            </View>
+          ) : popularProducts.length > 0 ? (
+            <View style={styles.popularContainer}>
+              <ScrollView
+                ref={popularScrollRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.popularScroll}
+                snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
+                decelerationRate="fast"
+                style={styles.popularScrollContainer}
+                onScroll={handlePopularScroll}
+                scrollEventThrottle={16}
+                onScrollBeginDrag={() => { isPopularScrolling.current = true; }}
+                onScrollEndDrag={() => { isPopularScrolling.current = false; }}
+              >
+                {infinitePopularProducts.map((product, index) => (
+                  <View key={`${product._id || product.id}-${index}`} style={styles.productCardWrapper}>
+                    <ProductCard
+                      product={product}
+                      onAddToCart={handleAddToCart}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No popular products found</Text>
+            </View>
+          )}
         </View>
 
         <View style={[styles.section, { marginBottom: 100 }]}>
@@ -395,8 +434,6 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
-
-
     </View>
   );
 }
@@ -519,86 +556,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 16,
   },
-  storeContent: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingRight: 8,
-  },
-  storeTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  storeSubtext: {
-    fontSize: 13,
-    color: '#757575',
-    lineHeight: 19,
-    fontWeight: '400',
-    marginBottom: 12,
-  },
-  shopNowButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    gap: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  shopNowText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  storeImage: {
-    width: '42%',
-    height: '75%',
-    borderRadius: 12,
-  },
-  quickLinksRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
-  },
-  quickLinkCard: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  quickLinkIconContainer: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  quickLinkEmoji: {
-    fontSize: 36,
-  },
-  quickLinkTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 2,
-  },
-  quickLinkSubtext: {
-    fontSize: 13,
-    color: '#9E9E9E',
-    fontWeight: '400',
-  },
   categoriesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -647,5 +604,51 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.light.textSecondary,
   },
-
+  emptyState: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+  },
+  quickLinksRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  quickLinkCard: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  quickLinkIconContainer: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  quickLinkEmoji: {
+    fontSize: 36,
+  },
+  quickLinkTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginBottom: 2,
+  },
+  quickLinkSubtext: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    fontWeight: '400',
+  },
 });

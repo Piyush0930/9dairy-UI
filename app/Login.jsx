@@ -1,6 +1,5 @@
-// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\Login.jsx
-
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// app/Login.jsx
+import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -28,6 +27,8 @@ export default function Login() {
   const [sendingOtp, setSendingOtp] = useState(false);
   const router = useRouter();
   const otpRefs = useRef([]);
+  
+  const { login, isAuthenticated } = useAuth();
 
   const showAlert = (title, message) => {
     Alert.alert(title, message, [{ text: 'OK' }]);
@@ -89,7 +90,7 @@ export default function Login() {
 
     setLoading(true);
     try {
-      console.log('Verifying OTP for:', mobile);
+      console.log('🔐 Verifying OTP for:', mobile);
 
       const response = await fetch(`${API_BASE_URL}/verify-otp`, {
         method: 'POST',
@@ -98,30 +99,52 @@ export default function Login() {
       });
 
       const data = await response.json();
-      console.log('Verification Response:', data);
+      console.log('✅ Verification Response:', data);
 
       if (data.success && data.token) {
-        await AsyncStorage.setItem('authToken', data.token);
-        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
-
+        console.log('🚀 Calling AuthContext login...');
+        
+        // Use AuthContext login instead of direct AsyncStorage
+        await login(data.user, data.token);
+        
+        console.log('✅ AuthContext login completed');
+        
         showAlert('Success', 'Login successful!');
 
-        const userRole = data.user?.role;
-        if (userRole === 'admin') {
-          router.replace('/(admin)');
-        } else {
-          router.replace('/(tabs)');
-        }
+        // Backup navigation with small delay to ensure state is updated
+        setTimeout(() => {
+          console.log('📍 Navigating to appropriate screen...');
+          const userRole = data.user?.role;
+          if (userRole === 'admin') {
+            router.replace('/(admin)');
+          } else {
+            router.replace('/(tabs)');
+          }
+        }, 300);
       } else {
         throw new Error(data.message || 'Invalid OTP');
       }
     } catch (error) {
-      console.error('Verification Error:', error);
+      console.error('❌ Verification Error:', error);
       showAlert('Error', error.message || 'Failed to verify OTP. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  // If already authenticated, redirect to appropriate screen
+  if (isAuthenticated) {
+    console.log('🔄 Already authenticated, redirecting...');
+    setTimeout(() => {
+      router.replace('/(tabs)');
+    }, 100);
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={styles.loadingText}>Redirecting...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -251,7 +274,10 @@ export default function Login() {
 
               <TouchableOpacity
                 style={styles.editNumberContainer}
-                onPress={() => setOtpShown(false)}
+                onPress={() => {
+                  setOtpShown(false);
+                  setOtp(['', '', '', '', '', '']);
+                }}
                 disabled={loading}
               >
                 <Text style={styles.editNumberText}>
@@ -282,6 +308,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f9ff',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f9ff',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748b',
   },
   imageContainer: {
     position: 'absolute',

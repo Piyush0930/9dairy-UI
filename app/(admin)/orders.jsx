@@ -1,11 +1,14 @@
+// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\(admin)\orders.jsx
+
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import RadiusSettings from '@/components/RadiusSettings';
 
 // Status Helpers
 function getStatusIcon(status) {
@@ -16,6 +19,7 @@ function getStatusIcon(status) {
     case "confirmed": return <FontAwesome name="check" size={16} color="#4CAF50" />;
     case "preparing": return <MaterialIcons name="build" size={16} color="#FF9800" />;
     case "cancelled": return <MaterialIcons name="cancel" size={16} color="#F44336" />;
+    default: return <Ionicons name="time-outline" size={16} color="#FF9800" />;
   }
 }
 
@@ -27,6 +31,7 @@ function getStatusText(status) {
     case "confirmed": return "Confirmed";
     case "preparing": return "Preparing";
     case "cancelled": return "Cancelled";
+    default: return "Pending";
   }
 }
 
@@ -38,6 +43,7 @@ function getStatusColor(status) {
     case "confirmed": return "#2196F3";
     case "preparing": return "#FF9800";
     case "cancelled": return "#F44336";
+    default: return "#FF9800";
   }
 }
 
@@ -49,6 +55,7 @@ function getStatusBackgroundColor(status) {
     case "confirmed": return "rgba(33, 150, 243, 0.1)";
     case "preparing": return "rgba(255, 152, 0, 0.1)";
     case "cancelled": return "rgba(244, 67, 54, 0.1)";
+    default: return "rgba(255, 152, 0, 0.1)";
   }
 }
 
@@ -57,36 +64,92 @@ const statusOrder = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'd
 
 export default function AdminOrders() {
   const insets = useSafeAreaInsets();
+  const { authToken, isLoading: authLoading, isAuthenticated, validateToken } = useAuth();
+  
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState('orders');
   const [expandedOrder, setExpandedOrder] = useState(null);
 
-  const fetchOrders = async () => {
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) return Alert.alert('Error', 'Authentication required');
+  // Enhanced API error handler
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [{ text: "OK" }]
+      );
+      return true;
+    }
+    
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false;
+  };
 
-      const response = await fetch(`${API_BASE_URL}/admin/orders`, {
+  // Add token validation before API calls
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    return true;
+  };
+
+  const fetchOrders = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/retailer/orders`, {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json' 
+        },
       });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
-      if (data.success) setOrders(data.orders || []);
+      
+      if (data.success) {
+        setOrders(data.orders || []);
+        console.log('Current radius:', data.currentRadius);
+      } else {
+        setOrders([]);
+      }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to fetch orders');
+      console.error('Fetch orders error:', error);
+      handleApiError(error, error.message || 'Failed to fetch orders');
+      setOrders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    fetchOrders();
+    await fetchOrders();
   };
 
   const toggleOrderExpansion = (orderId) => {
@@ -94,11 +157,16 @@ export default function AdminOrders() {
   };
 
   const updateOrderStatus = async (orderId, newStatus) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify({ status: newStatus }),
       });
       const data = await res.json();
@@ -106,28 +174,35 @@ export default function AdminOrders() {
       Alert.alert('Success', 'Status updated');
       fetchOrders();
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message);
     }
   };
 
   const cancelOrder = async (orderId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json' 
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
       Alert.alert('Success', 'Order cancelled');
       fetchOrders();
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message);
     }
   };
 
   const handleStatusChange = (orderId, selectedStatus) => {
     const order = orders.find(o => o.orderId === orderId);
+    if (!order) return;
+
     const currentIndex = statusOrder.indexOf(order.orderStatus);
     const selectedIndex = statusOrder.indexOf(selectedStatus);
 
@@ -151,52 +226,72 @@ export default function AdminOrders() {
   };
 
   const shareOrderInvoice = async (orderId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const fileUri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
       const download = await FileSystem.downloadAsync(
         `${API_BASE_URL}/orders/${orderId}/invoice`,
         fileUri,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        { headers: { 'Authorization': `Bearer ${authToken}` } }
       );
-      if (download.status !== 200) throw new Error('Failed');
+      if (download.status !== 200) throw new Error('Failed to download invoice');
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
       }
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message || 'Failed to share invoice');
     }
   };
 
-  // FIXED: Correct function name
   const shareOverallInvoice = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
       const fileUri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split('T')[0]}.pdf`;
       const download = await FileSystem.downloadAsync(
         `${API_BASE_URL}/admin/invoices/pdf`,
         fileUri,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        { headers: { 'Authorization': `Bearer ${authToken}` } }
       );
-      if (download.status !== 200) throw new Error('Failed');
+      if (download.status !== 200) throw new Error('Failed to download overall invoice');
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
       }
     } catch (error) {
-      Alert.alert('Error', error.message);
+      handleApiError(error, error.message || 'Failed to share overall invoice');
     }
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchOrders();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      console.log('❌ No auth token or not authenticated');
+      setLoading(false);
+    }
+  }, [authToken, authLoading, isAuthenticated]);
 
   const filteredOrders = activeFilter === 'orders'
-    ? orders.filter(o => o.orderStatus !== 'delivered')
-    : orders.filter(o => o.orderStatus === 'delivered');
+    ? (orders || []).filter(o => o.orderStatus !== 'delivered')
+    : (orders || []).filter(o => o.orderStatus === 'delivered');
+
+  if (authLoading) {
+    return (
+      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
+      {/* Add Radius Settings at the top */}
+      <RadiusSettings />
+
       {/* Filter Tabs */}
       <View style={styles.filterContainer}>
         <TouchableOpacity
@@ -239,7 +334,7 @@ export default function AdminOrders() {
             <ActivityIndicator size="large" color={Colors.light.accent} />
             <Text style={styles.loadingText}>Loading orders...</Text>
           </View>
-        ) : filteredOrders.length === 0 ? (
+        ) : !filteredOrders || filteredOrders.length === 0 ? (
           <View style={styles.emptyContainer}>
             <MaterialIcons name="inventory" size={48} color={Colors.light.textSecondary} />
             <Text style={styles.emptyText}>
@@ -251,8 +346,15 @@ export default function AdminOrders() {
           </View>
         ) : (
           filteredOrders.map((order) => {
-            const customerName = order.customerName || order.customer?.personalInfo?.fullName || 'N/A';
-            const customerPhone = order.customer?.personalInfo?.phone || 'N/A';
+            if (!order) return null;
+
+            const customerName = order.customerName || 
+                               order.customer?.personalInfo?.fullName || 
+                               order.customer?.fullName || 
+                               'N/A';
+            const customerPhone = order.customer?.personalInfo?.phone || 
+                                order.customer?.phone || 
+                                'N/A';
             const subtotal = order.totalAmount || 0;
             const discount = order.discount || 0;
             const finalAmount = order.finalAmount || subtotal;
@@ -260,7 +362,7 @@ export default function AdminOrders() {
 
             return (
               <TouchableOpacity
-                key={order._id}
+                key={order._id || order.orderId}
                 style={styles.orderCard}
                 onPress={() => toggleOrderExpansion(order._id)}
                 activeOpacity={0.7}
@@ -268,12 +370,17 @@ export default function AdminOrders() {
                 {/* Order Header */}
                 <View style={styles.orderHeader}>
                   <View style={styles.orderIdRow}>
-                    <Text style={styles.orderIdLarge}>Order #{order.orderId}</Text>
-                    <Text style={styles.orderDate}>{new Date(order.createdAt).toLocaleDateString("en-IN")}</Text>
+                    <Text style={styles.orderIdLarge}>Order #{order.orderId || 'N/A'}</Text>
+                    <Text style={styles.orderDate}>
+                      {order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN") : 'N/A'}
+                    </Text>
                   </View>
                   <View style={[
                     styles.statusBadge,
-                    { backgroundColor: getStatusBackgroundColor(order.orderStatus), borderColor: getStatusColor(order.orderStatus) }
+                    { 
+                      backgroundColor: getStatusBackgroundColor(order.orderStatus), 
+                      borderColor: getStatusColor(order.orderStatus) 
+                    }
                   ]}>
                     {getStatusIcon(order.orderStatus)}
                     <Text style={[styles.statusText, { color: getStatusColor(order.orderStatus) }]}>
@@ -289,15 +396,25 @@ export default function AdminOrders() {
                   <Text style={styles.itemText}>{customerPhone}</Text>
                 </View>
 
+                {/* Distance Display */}
+                {order.distance && (
+                  <View style={styles.distanceSection}>
+                    <MaterialIcons name="location-pin" size={14} color={Colors.light.accent} />
+                    <Text style={styles.distanceText}>
+                      {order.distance} km away
+                    </Text>
+                  </View>
+                )}
+
                 {/* Items */}
                 <View style={styles.itemsSection}>
                   <Text style={styles.sectionTitleSmall}>Items:</Text>
-                  {order.items.slice(0, 2).map((item, idx) => (
+                  {order.items && order.items.slice(0, 2).map((item, idx) => (
                     <Text key={idx} style={styles.itemText}>
-                      {item.product?.name || 'Product'} - {item.quantity}x {item.unit || 'unit'}
+                      {item.product?.name || item.name || 'Product'} - {item.quantity}x {item.unit || 'unit'}
                     </Text>
                   ))}
-                  {order.items.length > 2 && (
+                  {order.items && order.items.length > 2 && (
                     <Text style={styles.moreItemsText}>+{order.items.length - 2} more items</Text>
                   )}
                 </View>
@@ -314,7 +431,7 @@ export default function AdminOrders() {
                 <View style={styles.deliverySection}>
                   <MaterialIcons name="schedule" size={14} color={Colors.light.textSecondary} />
                   <Text style={styles.deliveryLabel}>
-                    Delivery: {new Date(order.deliveryDate).toLocaleDateString("en-IN")} at {order.deliveryTime || 'N/A'}
+                    Delivery: {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("en-IN") : 'N/A'} at {order.deliveryTime || 'N/A'}
                   </Text>
                 </View>
 
@@ -332,14 +449,14 @@ export default function AdminOrders() {
                     {/* Items */}
                     <View style={styles.detailedItemsSection}>
                       <Text style={styles.sectionTitleSmall}>All Items:</Text>
-                      {order.items.map((item, idx) => (
+                      {order.items && order.items.map((item, idx) => (
                         <View key={idx} style={styles.detailedItemRow}>
-                          <Text style={styles.detailedItemText}>{item.product?.name || 'Product'}</Text>
+                          <Text style={styles.detailedItemText}>{item.product?.name || item.name || 'Product'}</Text>
                           <Text style={styles.detailedItemText}>
                             {item.quantity}x {item.unit || 'unit'} @ ₹{item.price || 'N/A'}
                           </Text>
                           <Text style={styles.detailedItemTotal}>
-                            ₹{(item.quantity * (item.price || 0)).toFixed(2)}
+                            ₹{((item.quantity || 0) * (item.price || 0)).toFixed(2)}
                           </Text>
                         </View>
                       ))}
@@ -367,9 +484,16 @@ export default function AdminOrders() {
                     {order.deliveryAddress && (
                       <View style={styles.addressSection}>
                         <Text style={styles.sectionTitleSmall}>Delivery Address:</Text>
-                        <Text style={styles.addressText}>{order.deliveryAddress.addressLine1}{order.deliveryAddress.addressLine2 ? `, ${order.deliveryAddress.addressLine2}` : ''}</Text>
-                        <Text style={styles.addressText}>{order.deliveryAddress.city}, {order.deliveryAddress.state} - {order.deliveryAddress.pincode}</Text>
-                        {order.deliveryAddress.landmark && <Text style={styles.addressText}>Landmark: {order.deliveryAddress.landmark}</Text>}
+                        <Text style={styles.addressText}>
+                          {order.deliveryAddress.addressLine1}
+                          {order.deliveryAddress.addressLine2 ? `, ${order.deliveryAddress.addressLine2}` : ''}
+                        </Text>
+                        <Text style={styles.addressText}>
+                          {order.deliveryAddress.city}, {order.deliveryAddress.state} - {order.deliveryAddress.pincode}
+                        </Text>
+                        {order.deliveryAddress.landmark && (
+                          <Text style={styles.addressText}>Landmark: {order.deliveryAddress.landmark}</Text>
+                        )}
                       </View>
                     )}
 
@@ -453,11 +577,19 @@ export default function AdminOrders() {
   );
 }
 
-// === STYLES: Minimal top padding, clean layout ===
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.light.background,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.light.textSecondary,
   },
   filterContainer: {
     flexDirection: 'row',
@@ -528,7 +660,6 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
   loadingContainer: { alignItems: 'center', justifyContent: 'center', padding: 40 },
-  loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
   emptyContainer: { alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: 'center' },
   refreshButton: { marginTop: 16, backgroundColor: Colors.light.accent, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
@@ -614,4 +745,16 @@ const styles = StyleSheet.create({
   actionButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(33, 150, 243, 0.1)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, flex: 1, marginRight: 8, justifyContent: 'center' },
   cancelButton: { backgroundColor: 'rgba(244, 67, 54, 0.1)', marginRight: 0, marginLeft: 8 },
   actionButtonText: { marginLeft: 6, fontSize: 14, fontWeight: '600', color: Colors.light.accent },
+  // Distance styles
+  distanceSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 6,
+  },
+  distanceText: {
+    fontSize: 13,
+    color: Colors.light.accent,
+    fontWeight: '600',
+  },
 });

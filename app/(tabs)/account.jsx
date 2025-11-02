@@ -101,7 +101,14 @@ function EditableField({ label, value, onChange, placeholder, keyboardType = "de
 export default function Account() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authToken, isLoading: authLoading, logout, validateToken } = useAuth();
+  const { 
+    authToken, 
+    isLoading: authLoading, 
+    logout, 
+    validateToken,
+    isAuthenticated 
+  } = useAuth();
+  
   const [customerProfile, setCustomerProfile] = useState(null);
   const [orderHistory, setOrderHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -118,7 +125,7 @@ export default function Account() {
     email: '',
     alternatePhone: '',
     dateOfBirth: '',
-    dateOfBirthDate: null, // For DateTimePicker
+    dateOfBirthDate: null,
 
     // Delivery Address
     addressLine1: '',
@@ -129,19 +136,58 @@ export default function Account() {
     landmark: ''
   });
 
+  // Enhanced API error handler
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected, logging out...');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: () => logout()
+          }
+        ]
+      );
+      return true; // Indicates auth error
+    }
+    
+    // Show custom or generic error
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false; // Indicates non-auth error
+  };
+
+  // Auto-redirect when not authenticated
   useEffect(() => {
-    if (!authLoading && authToken) {
+    if (!authLoading && !isAuthenticated) {
+      console.log('🔒 User not authenticated, redirecting to login...');
+      setTimeout(() => {
+        router.replace('/Login');
+      }, 100);
+    }
+  }, [isAuthenticated, authLoading]);
+
+  useEffect(() => {
+    if (!authLoading && authToken && isAuthenticated) {
       loadProfile();
       loadOrderHistory();
-    } else if (!authLoading && !authToken) {
-      Alert.alert("Session Expired", "Please login again");
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      console.log('❌ No auth token or not authenticated');
       setLoading(false);
     }
-  }, [authToken, authLoading]);
+  }, [authToken, authLoading, isAuthenticated]);
 
   // Add token validation before API calls
   const validateAuthBeforeCall = async () => {
-    if (!authToken) {
+    if (!authToken || !isAuthenticated) {
       Alert.alert("Session Expired", "Please login again");
       return false;
     }
@@ -168,13 +214,7 @@ export default function Account() {
       setCustomerProfile(response);
       initializeForm(response);
     } catch (error) {
-      console.error('Profile load error:', error);
-      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-        Alert.alert("Session Expired", "Please login again");
-        logout();
-      } else {
-        Alert.alert("Error", "Failed to load profile. Please try again.");
-      }
+      handleApiError(error, "Failed to load profile. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -211,13 +251,7 @@ export default function Account() {
       const response = await customerAPI.getOrderHistory(authToken);
       setOrderHistory(response || []);
     } catch (error) {
-      console.error('Order history load error:', error);
-      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-        Alert.alert("Session Expired", "Please login again");
-        logout();
-      } else {
-        Alert.alert("Error", "Failed to load order history. Please try again.");
-      }
+      handleApiError(error, "Failed to load order history. Please try again.");
     } finally {
       setLoadingOrders(false);
     }
@@ -286,16 +320,38 @@ export default function Account() {
       Alert.alert("Success", "Profile updated successfully");
       await loadProfile(); // Refresh profile data
     } catch (error) {
-      console.error('Profile update error:', error);
-      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-        Alert.alert("Session Expired", "Please login again");
-        logout();
-      } else {
-        Alert.alert("Error", `Failed to update profile: ${error.message}`);
-      }
+      handleApiError(error, `Failed to update profile: ${error.message}`);
     } finally {
       setSaving(false);
     }
+  };
+
+  // Enhanced logout handler
+  const handleLogout = async () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        { 
+          text: "Cancel", 
+          style: "cancel" 
+        },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              console.log('👋 User initiated logout...');
+              await logout();
+              // No need to navigate here - the AuthContext logout already handles navigation
+            } catch (error) {
+              console.error('❌ Logout error in UI:', error);
+              Alert.alert("Error", "Failed to logout. Please try again.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   const formatDate = (dateString) => {
@@ -633,10 +689,6 @@ export default function Account() {
           </View>
         </View>
 
-
-
-
-
         {/* Save and Cancel Buttons when editing */}
         {isEditing && (
           <View style={styles.saveSection}>
@@ -670,28 +722,7 @@ export default function Account() {
         <View style={styles.menuSection}>
           <TouchableOpacity
             style={styles.logoutButton}
-            onPress={async () => {
-              Alert.alert(
-                "Logout",
-                "Are you sure you want to logout?",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Logout",
-                    style: "destructive",
-                    onPress: async () => {
-                      try {
-                        await logout();
-                        router.replace('/GetStarted'); // Navigate to login page after logout
-                      } catch (error) {
-                        console.error('Logout error:', error);
-                        Alert.alert("Error", "Failed to logout");
-                      }
-                    }
-                  }
-                ]
-              );
-            }}
+            onPress={handleLogout}
           >
             <MaterialIcons name="logout" size={24} color="#FF6B6B" />
             <Text style={styles.logoutButtonText}>Logout</Text>
@@ -1035,6 +1066,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "500",
     color: "#FF6B6B",
+  },
+  privacyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    gap: 16,
+  },
+  privacyButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: Colors.light.text,
   },
   versionContainer: {
     marginTop: 32,

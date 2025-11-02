@@ -1,13 +1,13 @@
-import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext"; // Add this import
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Updated color theme to red (Zomato-like)
 const ZomatoColors = {
-  primary: '#E23744', // Zomato's primary red
+  primary: '#E23744',
   primaryLight: '#FF6B7A',
   primaryDark: '#CB1E2B',
   background: '#FFFFFF',
@@ -91,22 +91,10 @@ const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
 const statusOrder = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered'];
 
-export default function OrdersScreen() {
-  const insets = useSafeAreaInsets();
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('orders');
-  const [expandedOrder, setExpandedOrder] = useState(null);
-
-  const fetchOrders = async () => {
+// API Service for orders
+const ordersAPI = {
+  getOrders: async (token) => {
     try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        Alert.alert('Error', 'Authentication required');
-        return;
-      }
-
       const response = await fetch(`${API_BASE_URL}/orders`, {
         method: 'GET',
         headers: {
@@ -115,20 +103,106 @@ export default function OrdersScreen() {
         },
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch orders');
+        throw new Error(`Failed to fetch orders: ${response.status}`);
       }
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  }
+};
 
-      if (data.success) {
-        setOrders(data.orders || []);
+export default function OrdersScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { 
+    authToken, 
+    isLoading: authLoading, 
+    logout, 
+    validateToken,
+    isAuthenticated 
+  } = useAuth(); // Use AuthContext like in Account screen
+  
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('orders');
+  const [expandedOrder, setExpandedOrder] = useState(null);
+
+  // Enhanced API error handler (same as Account screen)
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    
+    // Check for authentication errors
+    if (error.message?.includes('401') || 
+        error.message?.includes('Unauthorized') ||
+        error.message?.includes('token') ||
+        error.response?.status === 401) {
+      
+      console.log('🔐 Authentication error detected, logging out...');
+      Alert.alert(
+        "Session Expired",
+        "Your session has expired. Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: () => logout()
+          }
+        ]
+      );
+      return true; // Indicates auth error
+    }
+    
+    // Show custom or generic error
+    Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
+    return false; // Indicates non-auth error
+  };
+
+  // Auto-redirect when not authenticated (same as Account screen)
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      console.log('🔒 User not authenticated, redirecting to login...');
+      setTimeout(() => {
+        router.replace('/Login');
+      }, 100);
+    }
+  }, [isAuthenticated, authLoading]);
+
+  // Add token validation before API calls (same as Account screen)
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert("Session Expired", "Please login again");
+      return false;
+    }
+
+    return true;
+  };
+
+  const fetchOrders = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
+      const response = await ordersAPI.getOrders(authToken);
+      
+      if (response.success) {
+        setOrders(response.orders || []);
       } else {
-        throw new Error(data.message || 'Failed to fetch orders');
+        throw new Error(response.message || 'Failed to fetch orders');
       }
     } catch (error) {
-      console.error('Fetch Orders Error:', error);
-      Alert.alert('Error', error.message || 'Failed to fetch orders');
+      handleApiError(error, "Failed to fetch orders. Please try again.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -144,19 +218,65 @@ export default function OrdersScreen() {
     setExpandedOrder(expandedOrder === orderId ? null : orderId);
   };
 
+  // Enhanced logout handler (same as Account screen)
+  const handleLogout = async () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        { 
+          text: "Cancel", 
+          style: "cancel" 
+        },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              console.log('👋 User initiated logout...');
+              await logout();
+            } catch (error) {
+              console.error('❌ Logout error in UI:', error);
+              Alert.alert("Error", "Failed to logout. Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchOrders();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      console.log('❌ No auth token or not authenticated');
+      setLoading(false);
+    }
+  }, [authToken, authLoading, isAuthenticated]);
 
   // Filter orders based on activeFilter
   const filteredOrders = activeFilter === 'orders'
-    ? orders.filter(order => order.orderStatus !== 'delivered')
-    : orders.filter(order => order.orderStatus === 'delivered');
+    ? orders.filter(order => order.orderStatus !== 'delivered' && order.orderStatus !== 'cancelled')
+    : orders.filter(order => order.orderStatus === 'delivered' || order.orderStatus === 'cancelled');
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={ZomatoColors.primary} />
+        <Text style={styles.loadingText}>Loading orders...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Orders</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.headerTitle}>My Orders</Text>
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+            <MaterialIcons name="logout" size={20} color={ZomatoColors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.filterContainer}>
@@ -191,12 +311,7 @@ export default function OrdersScreen() {
           />
         }
       >
-        {loading && !refreshing ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={ZomatoColors.primary} />
-            <Text style={styles.loadingText}>Loading orders...</Text>
-          </View>
-        ) : filteredOrders.length === 0 ? (
+        {filteredOrders.length === 0 ? (
           <View style={styles.emptyContainer}>
             <MaterialIcons name="inventory" size={48} color={ZomatoColors.textSecondary} />
             <Text style={styles.emptyText}>
@@ -414,10 +529,20 @@ export default function OrdersScreen() {
   );
 }
 
+// Keep all your existing styles exactly as they were
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: ZomatoColors.background,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: ZomatoColors.textSecondary,
   },
   header: {
     paddingHorizontal: 16,
@@ -426,10 +551,18 @@ const styles = StyleSheet.create({
     borderBottomColor: ZomatoColors.border,
     backgroundColor: ZomatoColors.background,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: "700",
     color: ZomatoColors.text,
+  },
+  logoutButton: {
+    padding: 8,
   },
   filterContainer: {
     flexDirection: 'row',
@@ -475,16 +608,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 100,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: ZomatoColors.textSecondary,
   },
   emptyContainer: {
     alignItems: 'center',
