@@ -645,49 +645,7 @@ export default function Account() {
           </View>
         </View>
 
-        {/* Order History Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="receipt-outline" size={20} color={Colors.light.tint} />
-            <Text style={styles.sectionTitle}>Order History</Text>
-          </View>
-          <View style={styles.sectionContent}>
-            {loadingOrders ? (
-              <View style={styles.centered}>
-                <ActivityIndicator size="small" color={Colors.light.tint} />
-                <Text style={styles.loadingText}>Loading orders...</Text>
-              </View>
-            ) : orderHistory && orderHistory.length > 0 ? (
-              orderHistory.map((order) => (
-                <View key={order.id} style={styles.orderItem}>
-                  <View style={styles.orderHeader}>
-                    <Text style={styles.orderId}>Order #{order.id}</Text>
-                    <Text style={[styles.orderStatus, { color: getStatusColor(order.status) }]}>
-                      {order.status}
-                    </Text>
-                  </View>
-                  <View style={styles.orderDetails}>
-                    <Text style={styles.orderDate}>
-                      {new Date(order.createdAt).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </Text>
-                    <Text style={styles.orderTotal}>₹{order.totalAmount?.toFixed(2) || '0.00'}</Text>
-                  </View>
-                  {order.items && order.items.length > 0 && (
-                    <Text style={styles.orderItems}>
-                      {order.items.map(item => `${item.productName} (${item.quantity})`).join(', ')}
-                    </Text>
-                  )}
-                </View>
-              ))
-            ) : (
-              <Text style={styles.noOrdersText}>No orders found</Text>
-            )}
-          </View>
-        </View>
+       
 
         {/* Save and Cancel Buttons when editing */}
         {isEditing && (

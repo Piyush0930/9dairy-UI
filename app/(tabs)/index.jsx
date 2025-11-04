@@ -10,6 +10,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -79,6 +80,7 @@ export default function HomeScreen() {
   const [categories, setCategories] = useState([]);
   const [popularProducts, setPopularProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // API Base URL - corrected based on your Postman
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -145,6 +147,13 @@ export default function HomeScreen() {
 
     fetchData();
   }, []);
+
+  // Handle pull-to-refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchCategories(), fetchPopularProducts()]);
+    setRefreshing(false);
+  };
 
   // Create infinite loop arrays only when data is available
   const infiniteStoreCards = [...storeCards, ...storeCards, ...storeCards];
@@ -243,6 +252,14 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Colors.light.tint]}
+            tintColor={Colors.light.tint}
+          />
+        }
       >
         <View style={styles.searchSection}>
           <View style={styles.searchBar}>

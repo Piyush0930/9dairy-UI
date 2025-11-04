@@ -8,6 +8,7 @@ import {
   Dimensions,
   Image,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -57,6 +58,7 @@ export default function CategoriesScreen() {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // API Base URL
   const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
@@ -67,7 +69,7 @@ export default function CategoriesScreen() {
       const response = await fetch(`${API_BASE_URL}/catalog/categories`);
       const data = await response.json();
 
-      if (data.success !== false) {
+      if (response.ok && Array.isArray(data)) {
         setCategories(data);
       } else {
         setCategories([]);
@@ -85,8 +87,8 @@ export default function CategoriesScreen() {
       const response = await fetch(`${API_BASE_URL}/catalog/products`);
       const data = await response.json();
 
-      if (response.ok) {
-        setProducts(data || []);
+      if (response.ok && Array.isArray(data)) {
+        setProducts(data);
       } else {
         setProducts([]);
       }
@@ -107,6 +109,13 @@ export default function CategoriesScreen() {
 
     fetchData();
   }, []);
+
+  // Handle pull to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchCategories(), fetchProducts()]);
+    setRefreshing(false);
+  };
 
   let filteredProducts = selectedCategory === "all"
     ? products
@@ -291,6 +300,9 @@ export default function CategoriesScreen() {
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.productsList}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
           >
             {filteredProducts.length > 0 ? (
               filteredProducts.map((product) => (
