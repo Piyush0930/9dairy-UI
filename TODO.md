@@ -1,12 +1,3 @@
-# TODO: Move Share All Button to Header on Admin Orders Page
-
-## Tasks
-- [x] Remove the "Share All" button from inside the "Order History" tab in the filter container.
-- [x] Add a new header section above the filter tabs that displays the "Share All" button only when the "Order History" tab is active.
-- [x] Update styles to accommodate the new header and remove unnecessary styles for the button inside the tab.
-- [x] Test the UI to ensure no conflicts and proper visibility.
-
-## Notes
-- The button should only be visible when `activeFilter === 'history'`.
-- Use the existing `shareOverallInvoice` function for the button action.
-- Ensure the header is styled consistently with the rest of the UI.
+- [x] Update app/(tabs)/_layout.jsx to use useSafeAreaInsets for bottom padding in tabBarStyle
+- [x] Update app/(admin)/_layout.jsx to use useSafeAreaInsets for bottom padding in tabBarStyle
+- [x] Test the changes on different device simulators to ensure proper adjustment

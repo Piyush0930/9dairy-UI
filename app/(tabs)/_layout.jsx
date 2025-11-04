@@ -1,23 +1,44 @@
-import { Tabs } from "expo-router";
-import { Ionicons, FontAwesome, MaterialIcons, Feather } from "@expo/vector-icons";
-import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { useCart } from "@/contexts/CartContext";
-import { router } from "expo-router";
-import { usePathname } from "expo-router";
+import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { router, Tabs, usePathname } from "expo-router";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-function WalletBadge() {
-  return (
-    <View style={styles.walletBadge}>
-      <Text style={styles.walletBadgeText}>₹0.3k</Text>
-    </View>
-  );
-}
+
 
 export default function TabLayout() {
   const { getTotalItems } = useCart();
   const cartCount = getTotalItems();
   const pathname = usePathname();
+  const insets = useSafeAreaInsets();
+
+  const miniCartStyle = {
+    position: 'absolute',
+    bottom: 90 + insets.bottom,
+    left: 16,
+    right: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  };
+
+  const tabBarStyle = {
+    height: 70 + insets.bottom,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+    backgroundColor: "#F9FAFB",
+    paddingTop: 8,
+    paddingBottom: 8 + insets.bottom,
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -26,14 +47,7 @@ export default function TabLayout() {
           tabBarActiveTintColor: "#EF4444",
           tabBarInactiveTintColor: "#9E9E9E",
           headerShown: false,
-          tabBarStyle: {
-            height: 70,
-            borderTopWidth: 1,
-            borderTopColor: "#F0F0F0",
-            backgroundColor: "#FFFFFF",
-            paddingTop: 8,
-            paddingBottom: 8,
-          },
+          tabBarStyle,
           tabBarLabelStyle: {
             fontSize: 13,
             fontWeight: "600",
@@ -129,7 +143,7 @@ export default function TabLayout() {
 
       {cartCount > 0 && (pathname === "/" || pathname === "/categories") && (
         <TouchableOpacity
-          style={styles.miniCart}
+          style={miniCartStyle}
           onPress={() => router.push('/cart')}
           activeOpacity={0.9}
         >
@@ -163,39 +177,6 @@ const styles = StyleSheet.create({
   },
   iconContainerActive: {
     backgroundColor: "#EF4444",
-  },
-  walletBadge: {
-    position: "absolute",
-    top: -4,
-    right: -14,
-    backgroundColor: "#06B6D4",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    minWidth: 40,
-  },
-  walletBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  miniCart: {
-    position: 'absolute',
-    bottom: 90,
-    left: 16,
-    right: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
   },
   miniCartContent: {
     flexDirection: 'row',

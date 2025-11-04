@@ -14,7 +14,7 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://db9.vercel.app/",
+        "EXPO_PUBLIC_API_URL": "https://dairy9backend1.vercel.app",
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyDf1vfB2AGpVCGh1fdwB5mMZ-ClAnYh0ic"
       },
       "android": {

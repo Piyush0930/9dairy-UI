@@ -7,6 +7,7 @@ import { Alert, TouchableOpacity } from "react-native";
 export default function AdminLayout() {
   const { logout, isAuthenticated } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const handleLogout = () => {
     Alert.alert(
@@ -59,8 +60,8 @@ export default function AdminLayout() {
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1,
           borderTopColor: "#E0E0E0",
-          height: 60,
-          paddingBottom: 5,
+          height: 60 + insets.bottom,
+          paddingBottom: 5 + insets.bottom,
           paddingTop: 5,
         },
         tabBarActiveTintColor: "#2196F3",
