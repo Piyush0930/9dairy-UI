@@ -34,6 +34,12 @@ export default function Login() {
     Alert.alert(title, message, [{ text: 'OK' }]);
   };
 
+  const handleBackFromOtp = () => {
+    setOtpShown(false);
+    setOtp(['', '', '', '', '', '']);
+    setMobile('');
+  };
+
   const handleSendOTP = async () => {
     if (mobile.length !== 10 || !/^\d+$/.test(mobile)) {
       showAlert('Validation Error', 'Please enter a valid 10-digit mobile number');
@@ -56,6 +62,10 @@ export default function Login() {
       if (data.success) {
         setOtpShown(true);
         showAlert('Success', 'OTP sent to your mobile number');
+        
+        setTimeout(() => {
+          otpRefs.current[0]?.focus();
+        }, 100);
       } else {
         throw new Error(data.message || 'Failed to send OTP');
       }
@@ -67,6 +77,7 @@ export default function Login() {
     }
   };
 
+  // FIXED OTP HANDLING
   const handleOtpChange = (text, index) => {
     if (!/^\d?$/.test(text)) return;
 
@@ -74,24 +85,48 @@ export default function Login() {
     newOtp[index] = text;
     setOtp(newOtp);
 
+    // Auto move to next input when a digit is entered
     if (text && index < 5) {
       otpRefs.current[index + 1]?.focus();
-    } else if (!text && index > 0) {
-      otpRefs.current[index - 1]?.focus();
+    }
+    
+    // Auto submit when last digit is entered - USE setTimeout TO WAIT FOR STATE UPDATE
+    if (text && index === 5) {
+      // Wait for state to update then check if all digits are filled
+      setTimeout(() => {
+        const updatedOtp = [...newOtp]; // Use the latest newOtp array
+        const finalOtp = updatedOtp.join('');
+        console.log('Auto-checking OTP:', finalOtp, 'Length:', finalOtp.length);
+        
+        if (finalOtp.length === 6) {
+          console.log('All digits filled, auto-verifying...');
+          handleVerifyWithOtp(finalOtp); // Pass the complete OTP directly
+        }
+      }, 50);
     }
   };
 
-  const handleVerify = async () => {
-    const otpCode = otp.join('');
-    if (otpCode.length !== 6) {
+  // Handle backspace key press
+  const handleOtpKeyPress = (e, index) => {
+    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+      const newOtp = [...otp];
+      newOtp[index - 1] = '';
+      setOtp(newOtp);
+    }
+  };
+
+  // NEW: Separate function for verification that accepts OTP directly
+  const handleVerifyWithOtp = async (otpCode) => {
+    console.log('🔐 Verifying OTP:', otpCode, 'for mobile:', mobile);
+    
+    if (!otpCode || otpCode.length !== 6) {
       showAlert('Validation Error', 'Please enter complete 6-digit OTP');
       return;
     }
 
     setLoading(true);
     try {
-      console.log('🔐 Verifying OTP for:', mobile);
-
       const response = await fetch(`${API_BASE_URL}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,15 +138,11 @@ export default function Login() {
 
       if (data.success && data.token) {
         console.log('🚀 Calling AuthContext login...');
-        
-        // Use AuthContext login instead of direct AsyncStorage
         await login(data.user, data.token);
-        
         console.log('✅ AuthContext login completed');
         
         showAlert('Success', 'Login successful!');
 
-        // Backup navigation with small delay to ensure state is updated
         setTimeout(() => {
           console.log('📍 Navigating to appropriate screen...');
           const userRole = data.user?.role;
@@ -132,6 +163,14 @@ export default function Login() {
     }
   };
 
+  // ORIGINAL verify function (for manual button press)
+  const handleVerify = async () => {
+    const otpCode = otp.join('');
+    console.log('Manual verify - OTP:', otpCode, 'Length:', otpCode.length);
+    
+    await handleVerifyWithOtp(otpCode);
+  };
+
   // If already authenticated, redirect to appropriate screen
   if (isAuthenticated) {
     console.log('🔄 Already authenticated, redirecting...');
@@ -150,6 +189,21 @@ export default function Login() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
+      {/* Header with Back Button */}
+      {otpShown && (
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleBackFromOtp}
+            disabled={loading}
+          >
+            <Text style={styles.backButtonText}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Enter OTP</Text>
+          <View style={styles.headerPlaceholder} />
+        </View>
+      )}
+
       {/* Background Image */}
       <View style={styles.imageContainer}>
         <Image
@@ -167,36 +221,82 @@ export default function Login() {
         showsVerticalScrollIndicator={false}
         extraScrollHeight={100}
       >
-        {/* Spacer to push content below image */}
         <View style={styles.spacer} />
 
         {/* White Card */}
         <View style={styles.bottomCard}>
           {/* Logo */}
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>Dairy Nine</Text>
-          </View>
-
-          <Text style={styles.title}>Fresh dairy delivered daily</Text>
-          <Text style={styles.subtitle}>Sign in with your mobile number</Text>
-
-          {/* Mobile Input */}
-          <View style={styles.inputContainer}>
-            <View style={styles.flagContainer}>
-              <Text style={styles.flag}>India</Text>
-              <Text style={styles.countryCode}>+91</Text>
+          {!otpShown && (
+            <View style={styles.logoContainer}>
+              <Text style={styles.logoText}>Dairy Nine</Text>
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter mobile number"
-              placeholderTextColor="#94a3b8"
-              keyboardType="phone-pad"
-              maxLength={10}
-              value={mobile}
-              onChangeText={setMobile}
-              editable={!sendingOtp && !loading}
-            />
-          </View>
+          )}
+
+          <Text style={styles.title}>
+            {otpShown ? 'Enter OTP' : 'Fresh dairy delivered daily'}
+          </Text>
+          
+          <Text style={styles.subtitle}>
+            {otpShown 
+              ? `Sent to +91 ${mobile}` 
+              : 'Sign in with your mobile number'
+            }
+          </Text>
+
+          {/* Mobile Input or OTP Input */}
+          {!otpShown ? (
+            <View style={styles.inputContainer}>
+              <View style={styles.flagContainer}>
+                <Text style={styles.flag}>India</Text>
+                <Text style={styles.countryCode}>+91</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter mobile number"
+                placeholderTextColor="#94a3b8"
+                keyboardType="phone-pad"
+                maxLength={10}
+                value={mobile}
+                onChangeText={setMobile}
+                editable={!sendingOtp && !loading}
+              />
+            </View>
+          ) : (
+            <View style={styles.otpSection}>
+              <View style={styles.otpContainer}>
+                {otp.map((digit, index) => (
+                  <TextInput
+                    key={index}
+                    ref={(ref) => (otpRefs.current[index] = ref)}
+                    style={[styles.otpInput, digit ? styles.otpInputActive : null]}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    value={digit}
+                    onChangeText={(text) => handleOtpChange(text, index)}
+                    onKeyPress={(e) => handleOtpKeyPress(e, index)}
+                    textAlign="center"
+                    editable={!loading}
+                    selectTextOnFocus
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={styles.resendContainer}
+                onPress={handleSendOTP}
+                disabled={sendingOtp}
+              >
+                {sendingOtp ? (
+                  <ActivityIndicator color="#3b82f6" size="small" />
+                ) : (
+                  <Text style={styles.resendText}>
+                    Didn't receive OTP?{' '}
+                    <Text style={styles.resendTextBold}>Resend</Text>
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Conditional Rendering */}
           {!otpShown ? (
@@ -225,26 +325,6 @@ export default function Login() {
             </>
           ) : (
             <>
-              <Text style={styles.otpTitle}>Enter 6-digit OTP</Text>
-              <Text style={styles.otpSubtitle}>Sent to +91 {mobile || 'your number'}</Text>
-
-              <View style={styles.otpContainer}>
-                {otp.map((digit, index) => (
-                  <TextInput
-                    key={index}
-                    ref={(ref) => (otpRefs.current[index] = ref)}
-                    style={[styles.otpInput, digit ? styles.otpInputActive : null]}
-                    keyboardType="number-pad"
-                    maxLength={1}
-                    value={digit}
-                    onChangeText={(text) => handleOtpChange(text, index)}
-                    textAlign="center"
-                    editable={!loading}
-                    selectTextOnFocus
-                  />
-                ))}
-              </View>
-
               <TouchableOpacity
                 style={[styles.continueButton, loading && styles.buttonDisabled]}
                 onPress={handleVerify}
@@ -255,35 +335,6 @@ export default function Login() {
                 ) : (
                   <Text style={styles.buttonText}>Verify & Sign In</Text>
                 )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.resendContainer}
-                onPress={handleSendOTP}
-                disabled={sendingOtp}
-              >
-                {sendingOtp ? (
-                  <ActivityIndicator color="#3b82f6" size="small" />
-                ) : (
-                  <Text style={styles.resendText}>
-                    Didn't receive OTP?{' '}
-                    <Text style={styles.resendTextBold}>Resend</Text>
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.editNumberContainer}
-                onPress={() => {
-                  setOtpShown(false);
-                  setOtp(['', '', '', '', '', '']);
-                }}
-                disabled={loading}
-              >
-                <Text style={styles.editNumberText}>
-                  Wrong number?{' '}
-                  <Text style={styles.editNumberTextBold}>Edit</Text>
-                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity onPress={() => router.push('/Signup')} disabled={loading}>
@@ -303,11 +354,52 @@ export default function Login() {
   );
 }
 
-// ==================== STYLES ====================
+// ==================== STYLES (Same as before) ====================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f9ff',
+  },
+  header: {
+    position: 'absolute',
+    top: StatusBar.currentHeight || 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    zIndex: 1000,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backButtonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#3b82f6',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  headerPlaceholder: {
+    width: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -398,6 +490,40 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontWeight: '500',
   },
+  otpSection: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 8,
+    marginBottom: 16,
+  },
+  otpInput: {
+    width: 46,
+    height: 46,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    fontSize: 20,
+    fontWeight: '700',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    textAlign: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  otpInputActive: {
+    borderColor: '#3b82f6',
+    backgroundColor: '#f0f9ff',
+    shadowColor: '#3b82f6',
+    shadowOpacity: 0.2,
+  },
   continueButton: {
     backgroundColor: '#3b82f6',
     borderRadius: 12,
@@ -437,53 +563,16 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     paddingHorizontal: 16,
   },
-  otpTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 8,
-    textAlign: 'center',
+  resendContainer: { 
+    alignItems: 'center', 
+    marginBottom: 12 
   },
-  otpSubtitle: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 20,
-    textAlign: 'center',
+  resendText: { 
+    fontSize: 14, 
+    color: '#64748b' 
   },
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 8,
-    marginBottom: 24,
+  resendTextBold: { 
+    color: '#3b82f6', 
+    fontWeight: '600' 
   },
-  otpInput: {
-    width: 46,
-    height: 46,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    fontSize: 20,
-    fontWeight: '700',
-    backgroundColor: '#ffffff',
-    color: '#0f172a',
-    textAlign: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  otpInputActive: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#f0f9ff',
-    shadowColor: '#3b82f6',
-    shadowOpacity: 0.2,
-  },
-  resendContainer: { alignItems: 'center', marginBottom: 12 },
-  resendText: { fontSize: 14, color: '#64748b' },
-  resendTextBold: { color: '#3b82f6', fontWeight: '600' },
-  editNumberContainer: { alignItems: 'center', marginBottom: 16 },
-  editNumberText: { fontSize: 14, color: '#64748b' },
-  editNumberTextBold: { color: '#ef4444', fontWeight: '600' },
 });
