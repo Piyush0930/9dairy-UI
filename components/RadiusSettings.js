@@ -1,20 +1,21 @@
 // components/RadiusSettings.js
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Alert,
-  Modal,
-  ActivityIndicator,
-  ScrollView,
-  Dimensions 
-} from 'react-native';
-import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/contexts/ProfileContext'; // Add this import
+import { MaterialIcons } from '@expo/vector-icons';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -28,6 +29,15 @@ export default function RadiusSettings() {
   const [currentRadius, setCurrentRadius] = useState(50);
   const [retailerProfile, setRetailerProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
+
+  // Animation values
+  const sliderValue = useRef(new Animated.Value(50)).current;
+  const thumbScale = useRef(new Animated.Value(1)).current;
+  const fillWidth = useRef(new Animated.Value(50)).current;
+
+  // Slider dimensions
+  const sliderWidth = screenWidth * 0.95 - 40; // Account for margins
+  const sliderRef = useRef(null);
 
   useEffect(() => {
     fetchRetailerProfile();

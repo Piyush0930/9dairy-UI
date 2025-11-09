@@ -1,28 +1,25 @@
 // app/(admin)/profile.jsx
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  Image,
-  TextInput,
-  Modal,
-  Switch
-} from 'react-native';
+import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/contexts/ProfileContext'; // Add this import
-import Colors from '@/constants/colors';
-import { 
-  MaterialIcons, 
-  FontAwesome, 
-  Ionicons,
-  Feather 
+import {
+  MaterialIcons
 } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import RadiusSettings from '../../components/RadiusSettings';
 
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
@@ -275,7 +272,10 @@ const fetchProfile = async () => {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView 
+      {/* Add Radius Settings at the top */}
+      <RadiusSettings />
+
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
