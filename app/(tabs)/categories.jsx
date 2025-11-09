@@ -335,9 +335,13 @@ export default function CategoriesScreen() {
                     <FontAwesome name="heart" size={20} color="#EF4444" />
                   </TouchableOpacity>
                   <View style={styles.productHeader}>
-                    <View style={styles.offerBadge}>
-                      <Text style={styles.offerBadgeText}>12% OFF MRP</Text>
-                    </View>
+                    {product.discount > 0 && (
+                      <View style={styles.offerBadge}>
+                        <Text style={styles.offerBadgeText}>
+                          {product.discount}% OFF MRP
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   <View style={styles.productContent}>
@@ -365,10 +369,21 @@ export default function CategoriesScreen() {
 
                       <View style={styles.priceRow}>
                         <View style={styles.priceContainer}>
-                          <Text style={styles.price}>₹{product.price}</Text>
+                          {/* <Text style={styles.price}>₹{product.price}</Text>
                           <Text style={styles.priceOriginal}>
                             ₹{Math.round(product.price * 1.14)}
+                          </Text> */}
+
+                          <Text style={styles.price}>
+                            ₹
+                            {product.discountedPrice?.toFixed(2) ||
+                              product.price}
                           </Text>
+                          {product.discount > 0 && (
+                            <Text style={styles.priceOriginal}>
+                              ₹{product.price}
+                            </Text>
+                          )}
                         </View>
                         {product.bulkPrices &&
                           (product.bulkPrices[6] || product.bulkPrices[15]) && (
