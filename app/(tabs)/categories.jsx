@@ -14,13 +14,16 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const getImageSource = (imageName) => {
   // If it's a full URL (from Cloudinary/database), use it directly
-  if (imageName && (imageName.startsWith('http') || imageName.startsWith('https'))) {
+  if (
+    imageName &&
+    (imageName.startsWith("http") || imageName.startsWith("https"))
+  ) {
     return { uri: imageName };
   }
 
@@ -42,15 +45,16 @@ const getImageSource = (imageName) => {
   return imageMap[imageName] || require("../../assets/images/MilkCategory.png"); // fallback
 };
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 export default function CategoriesScreen() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [showSortModal, setShowSortModal] = useState(false);
   const [sortOption, setSortOption] = useState("relevance");
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const { getTotalItems, items, addToCart, removeFromCart, getItemQuantity } = useCart();
+  const { getTotalItems, items, addToCart, removeFromCart, getItemQuantity } =
+    useCart();
   const cartCount = getTotalItems();
   const insets = useSafeAreaInsets();
 
@@ -75,8 +79,8 @@ export default function CategoriesScreen() {
         setCategories([]);
       }
     } catch (error) {
-      console.error('Error fetching categories:', error);
-      Alert.alert('Error', 'Failed to load categories');
+      console.error("Error fetching categories:", error);
+      Alert.alert("Error", "Failed to load categories");
       setCategories([]);
     }
   };
@@ -93,8 +97,8 @@ export default function CategoriesScreen() {
         setProducts([]);
       }
     } catch (error) {
-      console.error('Error fetching products:', error);
-      Alert.alert('Error', 'Failed to load products');
+      console.error("Error fetching products:", error);
+      Alert.alert("Error", "Failed to load products");
       setProducts([]);
     }
   };
@@ -117,9 +121,10 @@ export default function CategoriesScreen() {
     setRefreshing(false);
   };
 
-  let filteredProducts = selectedCategory === "all"
-    ? products
-    : products.filter((p) => p.category._id.toString() === selectedCategory);
+  let filteredProducts =
+    selectedCategory === "all"
+      ? products
+      : products.filter((p) => p.category._id.toString() === selectedCategory);
 
   // Apply search filter
   if (searchQuery.trim()) {
@@ -134,10 +139,15 @@ export default function CategoriesScreen() {
   } else if (sortOption === "pricehigh") {
     filteredProducts = [...filteredProducts].sort((a, b) => b.price - a.price);
   } else if (sortOption === "rating") {
-    filteredProducts = [...filteredProducts].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    filteredProducts = [...filteredProducts].sort(
+      (a, b) => (b.rating || 0) - (a.rating || 0)
+    );
   }
 
-  const cartTotal = items.reduce((total, item) => total + (item.product.price * item.quantity), 0);
+  const cartTotal = items.reduce(
+    (total, item) => total + item.product.price * item.quantity,
+    0
+  );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -178,7 +188,11 @@ export default function CategoriesScreen() {
               placeholderTextColor={Colors.light.textSecondary}
             />
             <TouchableOpacity style={styles.searchIcon}>
-              <Ionicons name="search" size={20} color={Colors.light.textSecondary} />
+              <Ionicons
+                name="search"
+                size={20}
+                color={Colors.light.textSecondary}
+              />
             </TouchableOpacity>
           </View>
         )}
@@ -194,7 +208,7 @@ export default function CategoriesScreen() {
           <TouchableOpacity
             style={styles.gridButton}
             onPress={() => {
-              console.log('Grid view toggled');
+              console.log("Grid view toggled");
             }}
             activeOpacity={0.7}
           >
@@ -221,7 +235,7 @@ export default function CategoriesScreen() {
             <TouchableOpacity
               style={styles.filterButton}
               onPress={() => {
-                console.log('Rated 4.0+ filter toggled');
+                console.log("Rated 4.0+ filter toggled");
               }}
               activeOpacity={0.7}
             >
@@ -244,15 +258,17 @@ export default function CategoriesScreen() {
                 selectedCategory === "all" && styles.categoryItemActive,
               ]}
               onPress={() => {
-                console.log('All categories selected');
+                console.log("All categories selected");
                 setSelectedCategory("all");
               }}
               activeOpacity={0.7}
             >
-              <Text style={[
-                styles.categoryName,
-                selectedCategory === "all" && styles.categoryNameActive,
-              ]}>
+              <Text
+                style={[
+                  styles.categoryName,
+                  selectedCategory === "all" && styles.categoryNameActive,
+                ]}
+              >
                 All
               </Text>
             </TouchableOpacity>
@@ -262,7 +278,8 @@ export default function CategoriesScreen() {
                 key={`category-${category._id}-${index}`}
                 style={[
                   styles.categoryItem,
-                  selectedCategory === category._id && styles.categoryItemActive,
+                  selectedCategory === category._id &&
+                    styles.categoryItemActive,
                 ]}
                 onPress={() => {
                   console.log(`Category ${category.name} selected`);
@@ -285,7 +302,8 @@ export default function CategoriesScreen() {
                 <Text
                   style={[
                     styles.categoryName,
-                    selectedCategory === category._id && styles.categoryNameActive,
+                    selectedCategory === category._id &&
+                      styles.categoryNameActive,
                   ]}
                   numberOfLines={3}
                 >
@@ -317,9 +335,13 @@ export default function CategoriesScreen() {
                     <FontAwesome name="heart" size={20} color="#EF4444" />
                   </TouchableOpacity>
                   <View style={styles.productHeader}>
-                    <View style={styles.offerBadge}>
-                      <Text style={styles.offerBadgeText}>12% OFF MRP</Text>
-                    </View>
+                    {product.discount > 0 && (
+                      <View style={styles.offerBadge}>
+                        <Text style={styles.offerBadgeText}>
+                          {product.discount}% OFF MRP
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   <View style={styles.productContent}>
@@ -330,7 +352,11 @@ export default function CategoriesScreen() {
                       {product.rating && product.rating.average > 0 && (
                         <View style={styles.ratingRow}>
                           <View style={styles.ratingBadge}>
-                            <FontAwesome name="star" size={12} color="#FFFFFF" />
+                            <FontAwesome
+                              name="star"
+                              size={12}
+                              color="#FFFFFF"
+                            />
                             <Text style={styles.ratingText}>
                               {product.rating.average}
                             </Text>
@@ -343,35 +369,62 @@ export default function CategoriesScreen() {
 
                       <View style={styles.priceRow}>
                         <View style={styles.priceContainer}>
-                          <Text style={styles.price}>₹{product.price}</Text>
+                          {/* <Text style={styles.price}>₹{product.price}</Text>
                           <Text style={styles.priceOriginal}>
                             ₹{Math.round(product.price * 1.14)}
+                          </Text> */}
+
+                          <Text style={styles.price}>
+                            ₹
+                            {product.discountedPrice?.toFixed(2) ||
+                              product.price}
                           </Text>
+                          {product.discount > 0 && (
+                            <Text style={styles.priceOriginal}>
+                              ₹{product.price}
+                            </Text>
+                          )}
                         </View>
-                        {(product.bulkPrices && (product.bulkPrices[6] || product.bulkPrices[15])) && (
-                          <>
-                            <View style={styles.priceSeparator} />
-                            <View style={styles.bulkContainer}>
-                              {product.bulkPrices[6] && (
-                                <Text style={styles.bulkPrice}>
-                                  6+ @ ₹{product.bulkPrices[6]}
-                                </Text>
-                              )}
-                              {product.bulkPrices[15] && (
-                                <Text style={styles.bulkPrice}>
-                                  15+ @ ₹{product.bulkPrices[15]}
-                                </Text>
-                              )}
-                            </View>
-                          </>
-                        )}
+                        {product.bulkPrices &&
+                          (product.bulkPrices[6] || product.bulkPrices[15]) && (
+                            <>
+                              <View style={styles.priceSeparator} />
+                              <View style={styles.bulkContainer}>
+                                {product.bulkPrices[6] && (
+                                  <Text style={styles.bulkPrice}>
+                                    6+ @ ₹{product.bulkPrices[6]}
+                                  </Text>
+                                )}
+                                {product.bulkPrices[15] && (
+                                  <Text style={styles.bulkPrice}>
+                                    15+ @ ₹{product.bulkPrices[15]}
+                                  </Text>
+                                )}
+                              </View>
+                            </>
+                          )}
                       </View>
                     </View>
 
                     <View style={styles.productRight}>
-                      <View style={styles.productImagePlaceholder}>
-                        <Text style={styles.productImageText}>📦</Text>
-                      </View>
+                      {product.image || product.imageUrl ? (
+                        <Image
+                          source={getImageSource(
+                            product.image || product.imageUrl
+                          )}
+                          style={{
+                            width: 100,
+                            height: 100,
+                            borderRadius: 12,
+                            backgroundColor: "#F5F5F5",
+                          }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.productImagePlaceholder}>
+                          <Text style={styles.productImageText}>📦</Text>
+                        </View>
+                      )}
                     </View>
                   </View>
 
@@ -394,15 +447,25 @@ export default function CategoriesScreen() {
                           style={styles.qtyBtn}
                           activeOpacity={0.7}
                         >
-                          <Feather name="minus" size={16} color={Colors.light.tint} />
+                          <Feather
+                            name="minus"
+                            size={16}
+                            color={Colors.light.tint}
+                          />
                         </TouchableOpacity>
-                        <Text style={styles.qtyText}>{getItemQuantity(product._id)}</Text>
+                        <Text style={styles.qtyText}>
+                          {getItemQuantity(product._id)}
+                        </Text>
                         <TouchableOpacity
                           onPress={() => addToCart(product)}
                           style={styles.qtyBtn}
                           activeOpacity={0.7}
                         >
-                          <Feather name="plus" size={16} color={Colors.light.tint} />
+                          <Feather
+                            name="plus"
+                            size={16}
+                            color={Colors.light.tint}
+                          />
                         </TouchableOpacity>
                       </View>
                     )}
@@ -446,7 +509,7 @@ export default function CategoriesScreen() {
                   <TouchableOpacity
                     style={styles.requestButton}
                     onPress={() => {
-                      console.log('Request a product clicked');
+                      console.log("Request a product clicked");
                     }}
                     activeOpacity={0.8}
                   >
@@ -460,8 +523,6 @@ export default function CategoriesScreen() {
           </ScrollView>
         </View>
       </View>
-
-
 
       <Modal
         visible={showSortModal}
@@ -773,7 +834,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
-    position: 'relative',
+    position: "relative",
   },
   productHeader: {
     flexDirection: "row",
@@ -906,7 +967,7 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
   heartButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 8,
     right: 8,
     width: 36,

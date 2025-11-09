@@ -156,6 +156,7 @@ export default function Account() {
             onPress: () => logout()
           }
         ]
+        
       );
       return true; // Indicates auth error
     }
