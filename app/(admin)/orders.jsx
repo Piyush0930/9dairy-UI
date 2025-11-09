@@ -3,12 +3,23 @@
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  Modal,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import RadiusSettings from '@/components/RadiusSettings';
+import { CameraView, Camera } from "expo-camera";
+import { useRouter } from "expo-router";
 
 // Status Helpers
 function getStatusIcon(status) {
@@ -1667,4 +1678,4 @@ const styles = StyleSheet.create({
 //   continueBtnText: { color: "#FFF", fontWeight: "600", fontSize: 16 },
 
 
-// });
+});

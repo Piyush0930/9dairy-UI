@@ -10,7 +10,7 @@ export default function AdminLayout() {
   const { logout } = useAuth();
   const { openScanner } = useScanner();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets(); // Now this will work
 
   const handleLogout = () => {
     Alert.alert(
