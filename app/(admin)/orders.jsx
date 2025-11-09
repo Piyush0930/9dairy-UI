@@ -2,7 +2,9 @@
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
+import { useScanner } from "@/contexts/ScannerContext";
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Camera, CameraView } from "expo-camera";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -19,11 +21,8 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CameraView, Camera } from "expo-camera";
-import { useRouter } from "expo-router";
 
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
@@ -104,7 +103,7 @@ export default function AdminOrders() {
   const [offlineOrders, setOfflineOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('orders');
+  const [activeFilter, setActiveFilter] = useState("orders");
   const [expandedOrder, setExpandedOrder] = useState(null);
 
   // Scanner states
@@ -193,49 +192,30 @@ export default function AdminOrders() {
   };
 
   const validateAuthBeforeCall = async () => {
-    if (!authToken || !isAuthenticated) {
+    if (!authToken || !isAuthenticated) return false;
+    const ok = await validateToken();
+    if (!ok) {
       Alert.alert("Session Expired", "Please login again");
       return false;
     }
-
-    const isValid = await validateToken();
-    if (!isValid) {
-      Alert.alert("Session Expired", "Please login again");
-      return false;
-    }
-
     return true;
   };
 
   const fetchOrders = async () => {
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) {
+    if (!(await validateAuthBeforeCall())) {
       setLoading(false);
       setRefreshing(false);
       return;
     }
-
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/retailer/orders`, {
-        method: 'GET',
-        headers: { 
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json' 
-        },
+      const res = await fetch(`${API_BASE_URL}/admin/retailer/orders`, {
+        headers: { Authorization: `Bearer ${authToken}` },
       });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
-      
-      if (data.success) {
-        setOrders(data.orders || []);
-        console.log('Current radius:', data.currentRadius);
-      } else {
-        setOrders([]);
-      }
-    } catch (error) {
-      console.error('Fetch orders error:', error);
-      handleApiError(error, error.message || 'Failed to fetch orders');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed");
+      setOrders(data.orders || []);
+    } catch (e) {
+      handleApiError(e, "Failed to fetch orders");
       setOrders([]);
     } finally {
       setLoading(false);
@@ -418,15 +398,13 @@ export default function AdminOrders() {
 
   /* ---------- ORDER STATUS ACTIONS ---------- */
   const updateOrderStatus = async (orderId, newStatus) => {
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) return;
-
+    if (!(await validateAuthBeforeCall())) return;
     try {
       const res = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
-        method: 'PUT',
-        headers: { 
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json' 
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ status: newStatus }),
       });
@@ -439,16 +417,11 @@ export default function AdminOrders() {
   };
 
   const cancelOrder = async (orderId) => {
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) return;
-
+    if (!(await validateAuthBeforeCall())) return;
     try {
       const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
-        method: 'PUT',
-        headers: { 
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json' 
-        },
+        method: "PUT",
+        headers: { Authorization: `Bearer ${authToken}` },
       });
       if (!res.ok) throw new Error((await res.json()).message);
       Alert.alert("Success", "Order cancelled");
@@ -472,55 +445,45 @@ export default function AdminOrders() {
       ]);
       return;
     }
-
-    if (selectedIndex < currentIndex) {
-      Alert.alert('Invalid', 'Cannot revert status');
+    if (selIdx < curIdx) {
+      Alert.alert("Invalid", "Cannot revert status");
       return;
     }
-
-    Alert.alert('Update Status', `Change to ${getStatusText(selectedStatus)}?`, [
-      { text: 'Cancel' },
-      { text: 'Update', onPress: () => updateOrderStatus(orderId, selectedStatus) },
+    Alert.alert("Update Status", `Change to ${getStatusText(selectedStatus)}?`, [
+      { text: "Cancel" },
+      { text: "Update", onPress: () => updateOrderStatus(orderId, selectedStatus) },
     ]);
   };
 
   const shareOrderInvoice = async (orderId) => {
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) return;
-
+    if (!(await validateAuthBeforeCall())) return;
     try {
-      const fileUri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
-      const download = await FileSystem.downloadAsync(
+      const uri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
+      const dl = await FileSystem.downloadAsync(
         `${API_BASE_URL}/orders/${orderId}/invoice`,
-        fileUri,
-        { headers: { 'Authorization': `Bearer ${authToken}` } }
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
       );
-      if (download.status !== 200) throw new Error('Failed to download invoice');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
-      }
-    } catch (error) {
-      handleApiError(error, error.message || 'Failed to share invoice');
+      if (dl.status !== 200) throw new Error();
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share invoice");
     }
   };
 
   const shareOverallInvoice = async () => {
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) return;
-
+    if (!(await validateAuthBeforeCall())) return;
     try {
-      const fileUri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split('T')[0]}.pdf`;
-      const download = await FileSystem.downloadAsync(
+      const uri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split("T")[0]}.pdf`;
+      const dl = await FileSystem.downloadAsync(
         `${API_BASE_URL}/admin/invoices/pdf`,
-        fileUri,
-        { headers: { 'Authorization': `Bearer ${authToken}` } }
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
       );
-      if (download.status !== 200) throw new Error('Failed to download overall invoice');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, { mimeType: 'application/pdf' });
-      }
-    } catch (error) {
-      handleApiError(error, error.message || 'Failed to share overall invoice');
+      if (dl.status !== 200) throw new Error();
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share invoice");
     }
   };
 
@@ -543,25 +506,21 @@ export default function AdminOrders() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
-      {/* Add Radius Settings at the top */}
-      <RadiusSettings />
-
-      {/* Filter Tabs */}
+      {/* FILTER TABS */}
       <View style={styles.filterContainer}>
         <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'orders' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('orders')}
+          style={[styles.filterButton, activeFilter === "orders" && styles.filterButtonActive]}
+          onPress={() => setActiveFilter("orders")}
         >
-          <Text style={[styles.filterButtonText, activeFilter === 'orders' && styles.filterButtonTextActive]}>
+          <Text style={[styles.filterButtonText, activeFilter === "orders" && styles.filterButtonTextActive]}>
             Active Orders
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
-          style={[styles.filterButton, activeFilter === 'history' && styles.filterButtonActive]}
-          onPress={() => setActiveFilter('history')}
+          style={[styles.filterButton, activeFilter === "history" && styles.filterButtonActive]}
+          onPress={() => setActiveFilter("history")}
         >
-          <Text style={[styles.filterButtonText, activeFilter === 'history' && styles.filterButtonTextActive]}>
+          <Text style={[styles.filterButtonText, activeFilter === "history" && styles.filterButtonTextActive]}>
             Order History
           </Text>
         </TouchableOpacity>
@@ -596,7 +555,7 @@ export default function AdminOrders() {
             <ActivityIndicator size="large" color={Colors.light.accent} />
             <Text style={styles.loadingText}>Loading orders...</Text>
           </View>
-        ) : !filteredOrders || filteredOrders.length === 0 ? (
+        ) : filteredOrders.length === 0 ? (
           <View style={styles.emptyContainer}>
             <MaterialIcons name="inventory" size={48} color={Colors.light.textSecondary} />
             <Text style={styles.emptyText}>
@@ -611,43 +570,34 @@ export default function AdminOrders() {
             </TouchableOpacity>
           </View>
         ) : (
-          filteredOrders.map((order) => {
+          filteredOrders.map(order => {
             if (!order) return null;
-
-            const customerName = order.customerName || 
-                               order.customer?.personalInfo?.fullName || 
-                               order.customer?.fullName || 
-                               'N/A';
-            const customerPhone = order.customer?.personalInfo?.phone || 
-                                order.customer?.phone || 
-                                'N/A';
-            const subtotal = order.totalAmount || 0;
-            const discount = order.discount || 0;
-            const finalAmount = order.finalAmount || subtotal;
             const isExpanded = expandedOrder === order._id;
-
+            const finalAmount = order.finalAmount || order.totalAmount || 0;
             return (
               <TouchableOpacity
-                key={order._id || order.orderId}
+                key={order._id}
                 style={styles.orderCard}
-                onPress={() => toggleOrderExpansion(order._id)}
+                onPress={() => setExpandedOrder(isExpanded ? null : order._id)}
                 activeOpacity={0.7}
               >
                 {/* CARD HEADER */}
                 <View style={styles.orderHeader}>
                   <View style={styles.orderIdRow}>
-                    <Text style={styles.orderIdLarge}>Order #{order.orderId || 'N/A'}</Text>
+                    <Text style={styles.orderIdLarge}>Order #{order.orderId}</Text>
                     <Text style={styles.orderDate}>
-                      {order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN") : 'N/A'}
+                      {new Date(order.createdAt).toLocaleDateString("en-IN")}
                     </Text>
                   </View>
-                  <View style={[
-                    styles.statusBadge,
-                    { 
-                      backgroundColor: getStatusBackgroundColor(order.orderStatus), 
-                      borderColor: getStatusColor(order.orderStatus) 
-                    }
-                  ]}>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      {
+                        backgroundColor: getStatusBackgroundColor(order.orderStatus),
+                        borderColor: getStatusColor(order.orderStatus),
+                      },
+                    ]}
+                  >
                     {getStatusIcon(order.orderStatus)}
                     <Text style={[styles.statusText, { color: getStatusColor(order.orderStatus) }]}>
                       {getStatusText(order.orderStatus)}
@@ -673,22 +623,20 @@ export default function AdminOrders() {
                 {order.distance && (
                   <View style={styles.distanceSection}>
                     <MaterialIcons name="location-pin" size={14} color={Colors.light.accent} />
-                    <Text style={styles.distanceText}>
-                      {order.distance} km away
-                    </Text>
+                    <Text style={styles.distanceText}>{order.distance} km away</Text>
                   </View>
                 )}
 
                 {/* ITEMS SUMMARY */}
                 <View style={styles.itemsSection}>
                   <Text style={styles.sectionTitleSmall}>Items:</Text>
-                  {order.items && order.items.slice(0, 2).map((item, idx) => (
-                    <Text key={idx} style={styles.itemText}>
-                      {item.product?.name || item.name || 'Product'} - {item.quantity}x {item.unit || 'unit'}
+                  {order.items?.slice(0, 2).map((it, i) => (
+                    <Text key={i} style={styles.itemText}>
+                      {it.product?.name || it.name} - {it.quantity}x {it.unit || "unit"}
                     </Text>
                   ))}
-                  {order.items && order.items.length > 2 && (
-                    <Text style={styles.moreItemsText}>+{order.items.length - 2} more items</Text>
+                  {order.items?.length > 2 && (
+                    <Text style={styles.moreItemsText}>+{order.items.length - 2} more</Text>
                   )}
                 </View>
 
@@ -704,7 +652,8 @@ export default function AdminOrders() {
                 <View style={styles.deliverySection}>
                   <MaterialIcons name="schedule" size={14} color={Colors.light.textSecondary} />
                   <Text style={styles.deliveryLabel}>
-                    Delivery: {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("en-IN") : 'N/A'} at {order.deliveryTime || 'N/A'}
+                    Delivery: {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("en-IN") : "N/A"} at{" "}
+                    {order.deliveryTime || "N/A"}
                   </Text>
                 </View>
 
@@ -724,32 +673,32 @@ export default function AdminOrders() {
                 {/* EXPANDED CONTENT */}
                 {isExpanded && (
                   <View style={styles.expandedContent}>
-                    {/* Items */}
+                    {/* ALL ITEMS */}
                     <View style={styles.detailedItemsSection}>
                       <Text style={styles.sectionTitleSmall}>All Items:</Text>
-                      {order.items && order.items.map((item, idx) => (
-                        <View key={idx} style={styles.detailedItemRow}>
-                          <Text style={styles.detailedItemText}>{item.product?.name || item.name || 'Product'}</Text>
+                      {order.items?.map((it, i) => (
+                        <View key={i} style={styles.detailedItemRow}>
+                          <Text style={styles.detailedItemText}>{it.product?.name || it.name}</Text>
                           <Text style={styles.detailedItemText}>
-                            {item.quantity}x {item.unit || 'unit'} @ ₹{item.price || 'N/A'}
+                            {it.quantity}x {it.unit || "unit"} @ ₹{it.price}
                           </Text>
                           <Text style={styles.detailedItemTotal}>
-                            ₹{((item.quantity || 0) * (item.price || 0)).toFixed(2)}
+                            ₹{((it.quantity || 0) * (it.price || 0)).toFixed(2)}
                           </Text>
                         </View>
                       ))}
                     </View>
 
-                    {/* Billing */}
+                    {/* BILLING DETAIL */}
                     <View style={styles.detailedBillingSection}>
                       <View style={styles.billingRow}>
                         <Text style={styles.billingLabel}>Subtotal:</Text>
-                        <Text style={styles.billingValue}>₹{subtotal.toFixed(2)}</Text>
+                        <Text style={styles.billingValue}>₹{order.totalAmount?.toFixed(2) || "0.00"}</Text>
                       </View>
-                      {discount > 0 && (
+                      {order.discount > 0 && (
                         <View style={styles.billingRow}>
                           <Text style={styles.billingLabel}>Discount:</Text>
-                          <Text style={styles.discountText}>-₹{discount.toFixed(2)}</Text>
+                          <Text style={styles.discountText}>-₹{order.discount.toFixed(2)}</Text>
                         </View>
                       )}
                       <View style={[styles.billingRow, styles.totalRow]}>
@@ -758,14 +707,14 @@ export default function AdminOrders() {
                       </View>
                     </View>
 
-                    {/* Address */}
+                    {/* ADDRESS */}
                     {order.deliveryAddress && (
                       <View style={styles.addressSection}>
                         <Text style={styles.sectionTitleSmall}>Delivery Address:</Text>
-                        <Text style={styles.addressText}>
-                          {order.deliveryAddress.addressLine1}
-                          {order.deliveryAddress.addressLine2 ? `, ${order.deliveryAddress.addressLine2}` : ''}
-                        </Text>
+                        <Text style={styles.addressText}>{order.deliveryAddress.addressLine1}</Text>
+                        {order.deliveryAddress.addressLine2 && (
+                          <Text style={styles.addressText}>{order.deliveryAddress.addressLine2}</Text>
+                        )}
                         <Text style={styles.addressText}>
                           {order.deliveryAddress.city}, {order.deliveryAddress.state} - {order.deliveryAddress.pincode}
                         </Text>
@@ -775,14 +724,14 @@ export default function AdminOrders() {
                       </View>
                     )}
 
-                    {/* Payment */}
+                    {/* PAYMENT */}
                     <View style={styles.paymentSection}>
                       <Text style={styles.sectionTitleSmall}>Payment:</Text>
-                      <Text style={styles.paymentText}>Method: {order.paymentMethod || 'N/A'}</Text>
-                      <Text style={styles.paymentText}>Status: {order.paymentStatus || 'N/A'}</Text>
+                      <Text style={styles.paymentText}>Method: {order.paymentMethod || "N/A"}</Text>
+                      <Text style={styles.paymentText}>Status: {order.paymentStatus || "N/A"}</Text>
                     </View>
 
-                    {/* Instructions */}
+                    {/* INSTRUCTIONS */}
                     {order.specialInstructions && (
                       <View style={styles.instructionsSection}>
                         <Text style={styles.sectionTitleSmall}>Instructions:</Text>
@@ -795,35 +744,48 @@ export default function AdminOrders() {
                       <View style={styles.progressContainer}>
                         <Text style={styles.sectionTitleSmall}>Order Progress:</Text>
                         <View style={styles.progressBar}>
-                          {statusOrder.map((status, idx) => {
-                            const currentIdx = statusOrder.indexOf(order.orderStatus);
-                            const isDone = idx <= currentIdx;
-                            const isCurrent = idx === currentIdx;
-                            const canClick = idx >= currentIdx;
+                          {statusOrder.map((st, idx) => {
+                            const cur = statusOrder.indexOf(order.orderStatus);
+                            const done = idx <= cur;
+                            const current = idx === cur;
+                            const clickable = idx >= cur;
                             return (
-                              <View key={status} style={styles.progressStep}>
+                              <View key={st} style={styles.progressStep}>
                                 <TouchableOpacity
-                                  style={[styles.progressDot, isDone && styles.progressDotCompleted, isCurrent && styles.progressDotCurrent]}
-                                  onPress={() => canClick && handleStatusChange(order.orderId, status)}
-                                  disabled={!canClick}
+                                  style={[
+                                    styles.progressDot,
+                                    done && styles.progressDotCompleted,
+                                    current && styles.progressDotCurrent,
+                                  ]}
+                                  onPress={() => clickable && handleStatusChange(order.orderId, st)}
+                                  disabled={!clickable}
                                 >
-                                  {isDone && <FontAwesome name="check" size={10} color="#FFF" />}
+                                  {done && <FontAwesome name="check" size={10} color="#FFF" />}
                                 </TouchableOpacity>
                                 {idx < statusOrder.length - 1 && (
-                                  <View style={[styles.progressLine, isDone && styles.progressLineCompleted]} />
+                                  <View
+                                    style={[styles.progressLine, done && styles.progressLineCompleted]}
+                                  />
                                 )}
                               </View>
                             );
                           })}
                         </View>
                         <View style={styles.progressLabels}>
-                          {statusOrder.map((status, idx) => {
-                            const currentIdx = statusOrder.indexOf(order.orderStatus);
-                            const isDone = idx <= currentIdx;
-                            const isCurrent = idx === currentIdx;
+                          {statusOrder.map((st, idx) => {
+                            const cur = statusOrder.indexOf(order.orderStatus);
+                            const done = idx <= cur;
+                            const current = idx === cur;
                             return (
-                              <Text key={status} style={[styles.progressLabel, isDone && styles.progressLabelCompleted, isCurrent && styles.progressLabelCurrent]}>
-                                {getStatusText(status)}
+                              <Text
+                                key={st}
+                                style={[
+                                  styles.progressLabel,
+                                  done && styles.progressLabelCompleted,
+                                  current && styles.progressLabelCurrent,
+                                ]}
+                              >
+                                {getStatusText(st)}
                               </Text>
                             );
                           })}
@@ -831,16 +793,19 @@ export default function AdminOrders() {
                       </View>
                     )}
 
-                    {/* Admin Actions */}
+                    {/* ADMIN ACTIONS */}
                     <View style={styles.adminActions}>
                       <TouchableOpacity style={styles.actionButton} onPress={() => shareOrderInvoice(order.orderId)}>
                         <MaterialIcons name="share" size={18} color={Colors.light.accent} />
                         <Text style={styles.actionButtonText}>Share Invoice</Text>
                       </TouchableOpacity>
-                      {order.orderStatus !== 'cancelled' && order.orderStatus !== 'delivered' && (
-                        <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={() => cancelOrder(order.orderId)}>
+                      {order.orderStatus !== "cancelled" && order.orderStatus !== "delivered" && (
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.cancelButton]}
+                          onPress={() => cancelOrder(order.orderId)}
+                        >
                           <MaterialIcons name="cancel" size={18} color="#F44336" />
-                          <Text style={[styles.actionButtonText, { color: '#F44336' }]}>Cancel Order</Text>
+                          <Text style={[styles.actionButtonText, { color: "#F44336" }]}>Cancel Order</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -956,21 +921,22 @@ export default function AdminOrders() {
   );
 }
 
+/* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   centered: { justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
   filterContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 4,
-    backgroundColor: '#FFF',
+    backgroundColor: "#FFF",
     borderRadius: 12,
     padding: 4,
     borderWidth: 1,
     borderColor: Colors.light.border,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -982,24 +948,19 @@ const styles = StyleSheet.create({
   filterButtonTextActive: { color: "#FFF" },
   headerContainer: { marginHorizontal: 16, marginTop: 8, marginBottom: 8, alignItems: "flex-end" },
   shareAllHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: Colors.light.accent,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    shadowColor: Colors.light.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
   shareAllHeaderText: { color: "#FFF", fontSize: 14, fontWeight: "600", marginLeft: 6 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
-  loadingContainer: { alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: 'center' },
+  loadingContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
+  emptyContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
+  emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: "center" },
   refreshButton: { marginTop: 16, backgroundColor: Colors.light.accent, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
   refreshButtonText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
   orderCard: {
@@ -1009,15 +970,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: Colors.light.border,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  orderHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
   orderIdRow: { flex: 1, marginRight: 12 },
-  orderIdLarge: { fontSize: 16, fontWeight: '700', color: Colors.light.text, marginBottom: 4 },
+  orderIdLarge: { fontSize: 16, fontWeight: "700", color: Colors.light.text, marginBottom: 4 },
   orderDate: { fontSize: 13, color: Colors.light.textSecondary },
   statusBadge: {
     flexDirection: "row",
@@ -1028,38 +989,45 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     minWidth: 100,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   statusText: { fontSize: 12, fontWeight: "700" },
   customerSection: { marginBottom: 12 },
   itemsSection: { marginBottom: 12 },
-  sectionTitleSmall: { fontSize: 14, fontWeight: '600', color: Colors.light.text, marginBottom: 6 },
+  sectionTitleSmall: { fontSize: 14, fontWeight: "600", color: Colors.light.text, marginBottom: 6 },
   itemText: { fontSize: 14, color: Colors.light.textSecondary, marginBottom: 4 },
-  moreItemsText: { fontSize: 12, color: Colors.light.textSecondary, fontStyle: 'italic' },
+  moreItemsText: { fontSize: 12, color: Colors.light.textSecondary, fontStyle: "italic" },
   billingSection: { marginBottom: 12 },
-  billingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  billingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
   billingLabel: { fontSize: 14, color: Colors.light.textSecondary },
   billingValue: { fontSize: 14, color: Colors.light.text },
   totalRow: { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 8, marginTop: 4 },
-  totalLabel: { fontSize: 16, fontWeight: '600', color: Colors.light.text },
-  totalValue: { fontSize: 16, fontWeight: '700', color: Colors.light.accent },
-  discountText: { fontSize: 14, color: '#4CAF50', fontWeight: '600' },
-  deliverySection: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 6 },
+  totalLabel: { fontSize: 16, fontWeight: "600", color: Colors.light.text },
+  totalValue: { fontSize: 16, fontWeight: "700", color: Colors.light.accent },
+  discountText: { fontSize: 14, color: "#4CAF50", fontWeight: "600" },
+  deliverySection: { flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 6 },
   deliveryLabel: { fontSize: 14, color: Colors.light.textSecondary },
-  expandButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.light.border },
-  expandButtonText: { fontSize: 14, fontWeight: '600', color: Colors.light.accent, marginRight: 8 },
+  expandButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.border,
+  },
+  expandButtonText: { fontSize: 14, fontWeight: "600", color: Colors.light.accent, marginRight: 8 },
   expandedContent: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.light.border },
   detailedItemsSection: { marginBottom: 16 },
-  detailedItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, paddingLeft: 8 },
+  detailedItemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6, paddingLeft: 8 },
   detailedItemText: { fontSize: 13, color: Colors.light.textSecondary, flex: 1 },
-  detailedItemTotal: { fontSize: 13, fontWeight: '600', color: Colors.light.text, width: 80, textAlign: 'right' },
+  detailedItemTotal: { fontSize: 13, fontWeight: "600", color: Colors.light.text, width: 80, textAlign: "right" },
   detailedBillingSection: {
-    backgroundColor: 'rgba(33, 150, 243, 0.05)',
+    backgroundColor: "rgba(33, 150, 243, 0.05)",
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(33, 150, 243, 0.1)',
+    borderColor: "rgba(33, 150, 243, 0.1)",
   },
   addressSection: { marginBottom: 16 },
   addressText: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
@@ -1068,11 +1036,18 @@ const styles = StyleSheet.create({
   instructionsSection: { marginBottom: 16 },
   instructionsText: { fontSize: 13, color: Colors.light.textSecondary, fontStyle: "italic" },
   progressContainer: { marginTop: 8 },
-  progressBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, marginTop: 8 },
-  progressStep: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  progressDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.light.border, alignItems: 'center', justifyContent: 'center' },
+  progressBar: { flexDirection: "row", alignItems: "center", marginBottom: 4, marginTop: 8 },
+  progressStep: { flexDirection: "row", alignItems: "center", flex: 1 },
+  progressDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.light.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   progressDotCompleted: { backgroundColor: Colors.light.accent },
-  progressDotCurrent: { backgroundColor: Colors.light.accent, borderWidth: 2, borderColor: '#FFF', shadowColor: Colors.light.accent, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+  progressDotCurrent: { backgroundColor: Colors.light.accent, borderWidth: 2, borderColor: "#FFF" },
   progressLine: { flex: 1, height: 2, backgroundColor: Colors.light.border, marginHorizontal: 4 },
   progressLineCompleted: { backgroundColor: Colors.light.accent },
   progressLabels: { flexDirection: "row", justifyContent: "space-between" },
