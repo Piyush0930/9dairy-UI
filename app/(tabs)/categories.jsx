@@ -58,6 +58,20 @@ export default function CategoriesScreen() {
   const cartCount = getTotalItems();
   const insets = useSafeAreaInsets();
 
+  //for favourite products ---
+  const [favoriteProducts, setFavoriteProducts] = useState([]);
+  const toggleFavorite = (productId) => {
+    setFavoriteProducts((prev) => {
+      if (prev.includes(productId)) {
+        // If already favorited → remove it
+        return prev.filter((id) => id !== productId);
+      } else {
+        // If not favorited → add it
+        return [...prev, productId];
+      }
+    });
+  };
+
   // State for dynamic data
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -327,20 +341,29 @@ export default function CategoriesScreen() {
                 <View key={product._id} style={styles.productCard}>
                   <TouchableOpacity
                     style={styles.heartButton}
-                    onPress={() => {
-                      console.log(`${product.name} added to favorites`);
-                    }}
+                    onPress={() => toggleFavorite(product._id)}
                     activeOpacity={0.6}
                   >
-                    <FontAwesome name="heart" size={20} color="#EF4444" />
+                    <FontAwesome
+                      name={
+                        favoriteProducts.includes(product._id)
+                          ? "heart"
+                          : "heart-o"
+                      }
+                      size={20}
+                      color="#EF4444"
+                    />
                   </TouchableOpacity>
                   <View style={styles.productHeader}>
-                    {product.discount > 0 && (
+                    {product.discount > 0 ? (
                       <View style={styles.offerBadge}>
                         <Text style={styles.offerBadgeText}>
                           {product.discount}% OFF MRP
                         </Text>
                       </View>
+                    ) : (
+                      // Empty placeholder to maintain spacing
+                      <View style={{ height: 22 }} />
                     )}
                   </View>
 
