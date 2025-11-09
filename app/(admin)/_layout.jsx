@@ -1,13 +1,13 @@
-// app/(admin)/_layout.jsx - Update the tabs
 import { useAuth } from "@/contexts/AuthContext";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
 import { Alert, TouchableOpacity } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // Add this import
 
 export default function AdminLayout() {
   const { logout, isAuthenticated } = useAuth();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets(); // Now this will work
 
   const handleLogout = () => {
     Alert.alert(
