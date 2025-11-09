@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
 import { Alert, TouchableOpacity } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function AdminLayout() {
   const { logout, isAuthenticated } = useAuth();

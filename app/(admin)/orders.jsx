@@ -1,14 +1,14 @@
 // C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\(admin)\orders.jsx
 
-import Colors from "@/constants/colors";
-import { useAuth } from "@/contexts/AuthContext";
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import RadiusSettings from '@/components/RadiusSettings';
+import RadiusSettings from '../../components/RadiusSettings';
+import Colors from "../../constants/colors";
+import { useAuth } from "../../contexts/AuthContext";
 
 // Status Helpers
 function getStatusIcon(status) {
