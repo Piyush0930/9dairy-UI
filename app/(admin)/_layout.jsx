@@ -86,6 +86,13 @@ export default function AdminLayout() {
         }}
       />
       <Tabs.Screen
+        name="inventory"
+        options={{
+          title: "Inventory",
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="inventory-2" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="categories"
         options={{
           title: "Categories",
