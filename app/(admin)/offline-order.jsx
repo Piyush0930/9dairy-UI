@@ -1,21 +1,21 @@
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
-import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  TextInput,
-  FlatList,
-  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
 
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
@@ -68,10 +68,9 @@ export default function OfflineOrder() {
     scannedItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
 
   const calculateSubtotal = () => calculateTotal();
-  const calculateTax = () => Math.round(calculateTotal() * 0.05); // 5% GST
   const calculateDiscount = () => 0;
   const calculateFinalTotal = () =>
-    calculateSubtotal() + calculateTax() - calculateDiscount();
+    calculateSubtotal() - calculateDiscount();
 
   /* ------------------------------------------------------------------ */
   /* Submit offline order                                               */
@@ -95,13 +94,9 @@ export default function OfflineOrder() {
       const orderData = {
         items: scannedItems.map((it) => ({
           productId: it.productId,
-          name: it.name,
-          price: it.price,
           quantity: it.quantity,
-          unit: "unit",
         })),
-        totalAmount: calculateFinalTotal(),
-        orderType: "offline",
+        paymentMethod: "cash",
       };
 
       const res = await fetch(`${API_BASE_URL}/orders/offline`, {
@@ -121,7 +116,7 @@ export default function OfflineOrder() {
       const data = await res.json();
       Alert.alert(
         "Success",
-        `Offline order created! Order ID: ${data.orderId}`,
+        `Offline order created! Order ID: ${data.order.orderId}`,
         [
           {
             text: "OK",
@@ -265,6 +260,8 @@ export default function OfflineOrder() {
           )}
         </View>
 
+
+
         {/* ---------------------- Bill Summary ---------------------- */}
         {scannedItems.length > 0 && (
           <View style={styles.billSection}>
@@ -279,12 +276,7 @@ export default function OfflineOrder() {
               </Text>
             </View>
 
-            <View style={styles.billRow}>
-              <Text style={styles.billLabel}>GST (5%)</Text>
-              <Text style={styles.billValue}>
-                ₹{calculateTax().toFixed(2)}
-              </Text>
-            </View>
+
 
             {calculateDiscount() > 0 && (
               <View style={styles.billRow}>
@@ -527,6 +519,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
     marginLeft: 8,
+  },
+
+  /* ---------- Customer Details ---------- */
+  customerSection: {
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.light.text,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  inputLabel: {
+    width: 60,
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.light.text,
+  },
+  inputField: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    backgroundColor: "#F9F9F9",
   },
 
   /* ---------- Footer ---------- */
