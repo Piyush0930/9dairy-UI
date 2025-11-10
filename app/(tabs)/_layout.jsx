@@ -76,7 +76,7 @@ export default function TabLayout() {
               </View>
             ),
           }}
-        />
+        />``
         <Tabs.Screen
           name="categories"
           options={{
