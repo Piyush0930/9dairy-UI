@@ -1,10 +1,5 @@
-# TODO: Separate Quantity Setting into Dedicated Offline Order Page
+# TODO: Add Inventory Tab to Admin Dashboard
 
-## Tasks
-- [x] Create new page `9dairy-UI/app/(admin)/offline-order.jsx` with cart-like quantity handling
-- [ ] Move quantity modal logic from orders.jsx to offline-order.jsx
-- [ ] Update orders.jsx to navigate to offline-order after scanning instead of opening quantity modal
-- [ ] Remove quantity modal from orders.jsx
-- [ ] Test navigation and functionality
-- [ ] Implement actual offline order creation (placeholder currently)
-- [ ] Ensure consistent styling and user experience
+- [x] Create a new file `9dairy-UI/app/(admin)/inventory.jsx` with a basic placeholder screen displaying "Inventory" text.
+- [x] Update `9dairy-UI/app/(admin)/_layout.jsx` to add a new Tabs.Screen for "inventory" with title "Inventory" and an inventory icon.
+- [ ] Test the app to ensure the new tab appears and navigates correctly.

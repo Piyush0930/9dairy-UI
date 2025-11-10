@@ -1,16 +1,19 @@
 // app/(admin)/orders.jsx
+
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useScanner } from "@/contexts/ScannerContext";
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Camera, CameraView } from "expo-camera";
 import * as FileSystem from "expo-file-system/legacy";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Modal,
   RefreshControl,
   ScrollView,
@@ -22,20 +25,36 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
-const statusOrder = ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"];
+
+const statusOrder = [
+  "pending",
+  "confirmed",
+  "preparing",
+  "out_for_delivery",
+  "delivered",
+];
 
 /* ---------- STATUS HELPERS ---------- */
+
 function getStatusIcon(status) {
   switch (status) {
-    case "delivered": return <FontAwesome name="check-circle" size={16} color="#4CAF50" />;
-    case "out_for_delivery": return <MaterialIcons name="local-shipping" size={16} color={Colors.light.accent} />;
-    case "pending": return <Ionicons name="time-outline" size={16} color="#FF9800" />;
-    case "confirmed": return <FontAwesome name="check" size={16} color="#4CAF50" />;
-    case "preparing": return <MaterialIcons name="build" size={16} color="#FF9800" />;
-    case "cancelled": return <MaterialIcons name="cancel" size={16} color="#F44336" />;
-    default: return <Ionicons name="time-outline" size={16} color="#FF9800" />;
+    case "delivered":
+      return <FontAwesome name="check-circle" size={16} color="#4CAF50" />;
+    case "out_for_delivery":
+      return <MaterialIcons name="local-shipping" size={16} color={Colors.light.accent} />;
+    case "pending":
+      return <Ionicons name="time-outline" size={16} color="#FF9800" />;
+    case "confirmed":
+      return <FontAwesome name="check" size={16} color="#4CAF50" />;
+    case "preparing":
+      return <MaterialIcons name="build" size={16} color="#FF9800" />;
+    case "cancelled":
+      return <MaterialIcons name="cancel" size={16} color="#F44336" />;
+    default:
+      return <Ionicons name="time-outline" size={16} color="#FF9800" />;
   }
 }
+
 function getStatusText(status) {
   switch (status) {
     case "delivered": return "Delivered";
@@ -47,6 +66,7 @@ function getStatusText(status) {
     default: return "Pending";
   }
 }
+
 function getStatusColor(status) {
   switch (status) {
     case "delivered": return "#4CAF50";
@@ -58,6 +78,7 @@ function getStatusColor(status) {
     default: return "#FF9800";
   }
 }
+
 function getStatusBackgroundColor(status) {
   switch (status) {
     case "delivered": return "rgba(76, 175, 80, 0.1)";
@@ -71,14 +92,15 @@ function getStatusBackgroundColor(status) {
 }
 
 /* ---------- MAIN COMPONENT ---------- */
+
 export default function AdminOrders() {
   const insets = useSafeAreaInsets();
-  const { authToken, isLoading: authLoading, isAuthenticated, validateToken, logout } = useAuth();
+  const { authToken, isLoading: authLoading, isAuthenticated, validateToken } = useAuth();
   const { isScannerOpen, openScanner, closeScanner } = useScanner();
   const router = useRouter();
-  const { scanner } = router.params || {};  // ← FIXED        // <-- URL param
-
+  const { scanner } = router.params || {};
   const [orders, setOrders] = useState([]);
+  const [offlineOrders, setOfflineOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState("orders");
@@ -88,29 +110,29 @@ export default function AdminOrders() {
   const [hasPermission, setHasPermission] = useState(null);
   const [scannedItems, setScannedItems] = useState([]);
   const [torchOn, setTorchOn] = useState(false);
-  const [scanFeedback, setScanFeedback] = useState(false);
-  const [lastScanTime, setLastScanTime] = useState(0);
-  const [isProcessingScan, setIsProcessingScan] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(false); // "success" | "duplicate" | false
+  const [isScanningLocked, setIsScanningLocked] = useState(false);
+  
+  // Animation refs
+  const blinkTimeoutRef = useRef(null);
+  const scanCooldownRef = useRef(null);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [scannedProduct, setScannedProduct] = useState(null);
 
   /* ---------- OPEN SCANNER FROM URL ---------- */
   useEffect(() => {
     if (scanner === "open") {
-      if (hasPermission === null) {
-        // Request permission if not yet done
-        (async () => {
-          const { status } = await Camera.requestCameraPermissionsAsync();
-          setHasPermission(status === "granted");
-          if (status === "granted") {
-            setScannedItems([]);
-            openScanner();
-            router.replace("/(admin)/orders"); // clean URL
-          }
-        })();
-      } else if (hasPermission) {
-        setScannedItems([]);
-        openScanner();
-        router.replace("/(admin)/orders"); // clean URL
-      }
+      (async () => {
+        const { status } = await Camera.requestCameraPermissionsAsync();
+        setHasPermission(status === "granted");
+        if (status === "granted") {
+          setScannedItems([]);
+          openScanner();
+          router.replace("/(admin)/orders");
+        }
+      })();
     }
   }, [scanner, hasPermission, router, openScanner]);
 
@@ -129,27 +151,46 @@ export default function AdminOrders() {
     })();
   }, []);
 
-   if (hasPermission === false) {
-  return (
-    <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-      <Text style={{ color: 'red', textAlign: 'center', marginBottom: 20 }}>
-        Camera permission is required to scan QR codes.
-      </Text>
-      <TouchableOpacity
-        style={{ backgroundColor: Colors.light.accent, padding: 12, borderRadius: 8 }}
-        onPress={() => Camera.requestCameraPermissionsAsync()}
-      >
-        <Text style={{ color: '#FFF', fontWeight: '600' }}>Grant Permission</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (blinkTimeoutRef.current) clearTimeout(blinkTimeoutRef.current);
+      if (scanCooldownRef.current) clearTimeout(scanCooldownRef.current);
+    };
+  }, []);
+
+  // Reset animations when scanner opens
+  useEffect(() => {
+    if (isScannerOpen) {
+      slideAnim.setValue(0);
+      scaleAnim.setValue(0);
+      fadeAnim.setValue(0);
+      setScannedProduct(null);
+    }
+  }, [isScannerOpen]);
+
+  if (hasPermission === false) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={{ color: "red", textAlign: "center", marginBottom: 20 }}>
+          Camera permission is required to scan QR codes.
+        </Text>
+        <TouchableOpacity
+          style={{ backgroundColor: Colors.light.accent, padding: 12, borderRadius: 8 }}
+          onPress={() => Camera.requestCameraPermissionsAsync()}
+        >
+          <Text style={{ color: "#FFF", fontWeight: "600" }}>Grant Permission</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   /* ---------- API HELPERS ---------- */
-  const handleApiError = (error, msg = null) => {
+  const handleApiError = (error, msg) => {
     console.error("API Error:", error);
     Alert.alert("Error", msg || "Something went wrong.");
   };
+
   const validateAuthBeforeCall = async () => {
     if (!authToken || !isAuthenticated) return false;
     const ok = await validateToken();
@@ -181,69 +222,179 @@ export default function AdminOrders() {
       setRefreshing(false);
     }
   };
+
+  const fetchOfflineOrders = async () => {
+    if (!(await validateAuthBeforeCall())) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/orders/retailer/order-history?type=offline`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed");
+      setOfflineOrders(data.orders || []);
+    } catch (e) {
+      handleApiError(e, "Failed to fetch offline orders");
+      setOfflineOrders([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchOrders();
+    if (activeFilter === "offline") await fetchOfflineOrders();
+    else await fetchOrders();
   };
+
+  /* ---------- LOAD DATA ON FILTER CHANGE ---------- */
+  useEffect(() => {
+    if (!authLoading && authToken && isAuthenticated) {
+      if (activeFilter === "offline") fetchOfflineOrders();
+      else fetchOrders();
+    } else if (!authLoading) {
+      setLoading(false);
+    }
+  }, [activeFilter, authToken, authLoading, isAuthenticated]);
 
   /* ---------- SCANNER LOGIC ---------- */
   const closeScannerLocal = () => {
     closeScanner();
     setTorchOn(false);
+    setIsScanningLocked(false);
+    if (blinkTimeoutRef.current) clearTimeout(blinkTimeoutRef.current);
+    if (scanCooldownRef.current) clearTimeout(scanCooldownRef.current);
   };
-  const handleBarCodeScanned = async ({ data }) => {
-    const now = Date.now();
-    if (now - lastScanTime < 1000 || isProcessingScan) return; // Debounce: prevent scans within 1 second and concurrent processing
 
-    setIsProcessingScan(true);
+  const showProductAnimation = (productName) => {
+    setScannedProduct(productName);
+    
+    // Reset animations
+    slideAnim.setValue(-100);
+    scaleAnim.setValue(0);
+    fadeAnim.setValue(0);
+
+    // Slide in animation
+    Animated.parallel([
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      })
+    ]).start();
+
+    // Auto hide after 2 seconds
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 100,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      ]).start(() => {
+        setScannedProduct(null);
+      });
+    }, 2000);
+  };
+
+  const handleBarCodeScanned = async ({ data }) => {
+    // Prevent rapid scanning
+    if (isScanningLocked) return;
+    
+    setIsScanningLocked(true);
+    
     try {
       const payload = JSON.parse(data);
       if (!payload.productId) throw new Error("No productId");
 
       const existing = scannedItems.find(i => i.productId === payload.productId);
       if (existing) {
-        // Do not increment quantity; just show feedback
-        setScanFeedback(true);
-        setTimeout(() => setScanFeedback(false), 500);
-        setLastScanTime(now);
+        // Duplicate - just haptic feedback and visual border, no pause
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setScanFeedback("duplicate");
+        
+        blinkTimeoutRef.current = setTimeout(() => {
+          setScanFeedback(false);
+        }, 1000);
+        
+        // Very short cooldown for duplicates
+        scanCooldownRef.current = setTimeout(() => {
+          setIsScanningLocked(false);
+        }, 500);
         return;
       }
 
-      // fetch product name/price if not in payload
       const res = await fetch(`${API_BASE_URL}/catalog/products/${payload.productId}`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const prod = await res.json();
-
       const item = {
         productId: payload.productId,
         name: prod.product?.name || payload.name || "Unknown",
         price: prod.product?.price || payload.price || 0,
         quantity: 1,
       };
+
       setScannedItems(prev => [...prev, item]);
-      setScanFeedback(true);
-      setTimeout(() => setScanFeedback(false), 500);
-      setLastScanTime(now);
+      
+      // Success - haptic feedback and animation
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setScanFeedback("success");
+      showProductAnimation(item.name);
+
+      // Short cooldown for successful scans
+      blinkTimeoutRef.current = setTimeout(() => {
+        setScanFeedback(false);
+      }, 1000);
+      
+      scanCooldownRef.current = setTimeout(() => {
+        setIsScanningLocked(false);
+      }, 800);
+
     } catch {
+      // Error - haptic feedback
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Invalid QR", "Could not read product.");
-    } finally {
-      setIsProcessingScan(false);
+      
+      // Short cooldown for errors
+      scanCooldownRef.current = setTimeout(() => {
+        setIsScanningLocked(false);
+      }, 500);
     }
   };
+
   const openQuantityModal = () => {
     if (scannedItems.length === 0) {
       Alert.alert("No Items", "Scan at least one product first.");
       return;
     }
     closeScanner();
-    // Navigate to offline-order page with scannedItems
     router.push({
       pathname: "/(admin)/offline-order",
       params: { scannedItems: JSON.stringify(scannedItems) },
     });
   };
-
 
   /* ---------- ORDER STATUS ACTIONS ---------- */
   const updateOrderStatus = async (orderId, newStatus) => {
@@ -259,11 +410,12 @@ export default function AdminOrders() {
       });
       if (!res.ok) throw new Error((await res.json()).message);
       Alert.alert("Success", "Status updated");
-      fetchOrders();
+      activeFilter === "offline" ? fetchOfflineOrders() : fetchOrders();
     } catch (e) {
       handleApiError(e);
     }
   };
+
   const cancelOrder = async (orderId) => {
     if (!(await validateAuthBeforeCall())) return;
     try {
@@ -273,17 +425,19 @@ export default function AdminOrders() {
       });
       if (!res.ok) throw new Error((await res.json()).message);
       Alert.alert("Success", "Order cancelled");
-      fetchOrders();
+      activeFilter === "offline" ? fetchOfflineOrders() : fetchOrders();
     } catch (e) {
       handleApiError(e);
     }
   };
+
   const handleStatusChange = (orderId, selectedStatus) => {
-    const order = orders.find(o => o.orderId === orderId);
+    const order = activeFilter === "offline"
+      ? offlineOrders.find(o => o.orderId === orderId)
+      : orders.find(o => o.orderId === orderId);
     if (!order) return;
     const curIdx = statusOrder.indexOf(order.orderStatus);
     const selIdx = statusOrder.indexOf(selectedStatus);
-
     if (selectedStatus === "cancelled") {
       Alert.alert("Cancel Order", "Are you sure?", [
         { text: "No" },
@@ -316,6 +470,7 @@ export default function AdminOrders() {
       handleApiError(e, "Failed to share invoice");
     }
   };
+
   const shareOverallInvoice = async () => {
     if (!(await validateAuthBeforeCall())) return;
     try {
@@ -332,16 +487,13 @@ export default function AdminOrders() {
     }
   };
 
-  /* ---------- LOAD ORDERS ON AUTH ---------- */
-  useEffect(() => {
-    if (!authLoading && authToken && isAuthenticated) fetchOrders();
-    else if (!authLoading) setLoading(false);
-  }, [authToken, authLoading, isAuthenticated]);
-
+  /* ---------- FILTERED DATA ---------- */
   const filteredOrders =
     activeFilter === "orders"
       ? (orders || []).filter(o => o.orderStatus !== "delivered")
-      : (orders || []).filter(o => o.orderStatus === "delivered");
+      : activeFilter === "history"
+        ? (orders || []).filter(o => o.orderStatus === "delivered")
+        : offlineOrders;
 
   if (authLoading) {
     return (
@@ -372,8 +524,17 @@ export default function AdminOrders() {
             Order History
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterButton, activeFilter === "offline" && styles.filterButtonActive]}
+          onPress={() => setActiveFilter("offline")}
+        >
+          <Text style={[styles.filterButtonText, activeFilter === "offline" && styles.filterButtonTextActive]}>
+            Offline Orders
+          </Text>
+        </TouchableOpacity>
       </View>
 
+      {/* Share All Button (only in History) */}
       {activeFilter === "history" && (
         <View style={styles.headerContainer}>
           <TouchableOpacity onPress={shareOverallInvoice} style={styles.shareAllHeaderBtn}>
@@ -398,7 +559,11 @@ export default function AdminOrders() {
           <View style={styles.emptyContainer}>
             <MaterialIcons name="inventory" size={48} color={Colors.light.textSecondary} />
             <Text style={styles.emptyText}>
-              {activeFilter === "orders" ? "No active orders" : "No order history"}
+              {activeFilter === "orders"
+                ? "No active orders"
+                : activeFilter === "history"
+                  ? "No order history"
+                  : "No offline orders"}
             </Text>
             <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
               <Text style={styles.refreshButtonText}>Refresh</Text>
@@ -416,7 +581,7 @@ export default function AdminOrders() {
                 onPress={() => setExpandedOrder(isExpanded ? null : order._id)}
                 activeOpacity={0.7}
               >
-                {/* ---- CARD HEADER ---- */}
+                {/* CARD HEADER */}
                 <View style={styles.orderHeader}>
                   <View style={styles.orderIdRow}>
                     <Text style={styles.orderIdLarge}>Order #{order.orderId}</Text>
@@ -440,7 +605,7 @@ export default function AdminOrders() {
                   </View>
                 </View>
 
-                {/* ---- CUSTOMER ---- */}
+                {/* CUSTOMER */}
                 <View style={styles.customerSection}>
                   <Text style={styles.sectionTitleSmall}>Customer:</Text>
                   <Text style={styles.itemText}>
@@ -450,11 +615,11 @@ export default function AdminOrders() {
                       "N/A"}
                   </Text>
                   <Text style={styles.itemText}>
-                    {order.customer?.personalInfo?.phone || order.customer?.phone || "N/A"}
+                    {order.customer?.personalInfo?.phone || order.customer?.phone || order.customerPhone || "N/A"}
                   </Text>
                 </View>
 
-                {/* ---- DISTANCE ---- */}
+                {/* DISTANCE */}
                 {order.distance && (
                   <View style={styles.distanceSection}>
                     <MaterialIcons name="location-pin" size={14} color={Colors.light.accent} />
@@ -462,7 +627,7 @@ export default function AdminOrders() {
                   </View>
                 )}
 
-                {/* ---- ITEMS SUMMARY ---- */}
+                {/* ITEMS SUMMARY */}
                 <View style={styles.itemsSection}>
                   <Text style={styles.sectionTitleSmall}>Items:</Text>
                   {order.items?.slice(0, 2).map((it, i) => (
@@ -475,7 +640,7 @@ export default function AdminOrders() {
                   )}
                 </View>
 
-                {/* ---- BILLING ---- */}
+                {/* BILLING */}
                 <View style={styles.billingSection}>
                   <View style={styles.billingRow}>
                     <Text style={styles.billingLabel}>Total Amount:</Text>
@@ -483,7 +648,7 @@ export default function AdminOrders() {
                   </View>
                 </View>
 
-                {/* ---- DELIVERY ---- */}
+                {/* DELIVERY */}
                 <View style={styles.deliverySection}>
                   <MaterialIcons name="schedule" size={14} color={Colors.light.textSecondary} />
                   <Text style={styles.deliveryLabel}>
@@ -492,7 +657,7 @@ export default function AdminOrders() {
                   </Text>
                 </View>
 
-                {/* ---- EXPAND BUTTON ---- */}
+                {/* EXPAND BUTTON */}
                 <TouchableOpacity
                   style={styles.expandButton}
                   onPress={() => setExpandedOrder(isExpanded ? null : order._id)}
@@ -505,7 +670,7 @@ export default function AdminOrders() {
                   />
                 </TouchableOpacity>
 
-                {/* ---- EXPANDED CONTENT ---- */}
+                {/* EXPANDED CONTENT */}
                 {isExpanded && (
                   <View style={styles.expandedContent}>
                     {/* ALL ITEMS */}
@@ -574,8 +739,8 @@ export default function AdminOrders() {
                       </View>
                     )}
 
-                    {/* PROGRESS BAR (only for active orders) */}
-                    {activeFilter === "orders" && order.orderStatus !== "cancelled" && (
+                    {/* PROGRESS BAR */}
+                    {activeFilter !== "offline" && order.orderStatus !== "cancelled" && (
                       <View style={styles.progressContainer}>
                         <Text style={styles.sectionTitleSmall}>Order Progress:</Text>
                         <View style={styles.progressBar}>
@@ -653,42 +818,105 @@ export default function AdminOrders() {
       </ScrollView>
 
       {/* ---------- QR SCANNER MODAL ---------- */}
-      <Modal visible={isScannerOpen} animationType="slide" onRequestClose={closeScanner}>
+      <Modal visible={isScannerOpen} animationType="slide" onRequestClose={closeScannerLocal}>
         <View style={styles.scannerContainer}>
-          <View style={styles.scannerHeader}>
-            <Text style={styles.scannerTitle}>Scan Products</Text>
-            <TouchableOpacity onPress={closeScanner}>
-              <MaterialIcons name="close" size={28} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-
+          {/* CAMERA */}
           <CameraView
-            onBarcodeScanned={isScannerOpen ? handleBarCodeScanned : undefined}
+            onBarcodeScanned={isScannerOpen && !isScanningLocked ? handleBarCodeScanned : undefined}
             style={StyleSheet.absoluteFillObject}
             torch={torchOn ? "on" : "off"}
             barcodeTypes={["qr"]}
           />
 
-          <View style={styles.scannerOverlay}>
-            <View style={[styles.scannerFrame, scanFeedback && styles.scannerFrameFeedback]} />
-            <Text style={styles.scannerText}>Align QR code within frame</Text>
-            {scanFeedback && <Text style={styles.scanFeedbackText}>Item Scanned!</Text>}
+          {/* HEADER */}
+          <View style={styles.scannerHeader}>
+            <Text style={styles.scannerTitle}>Scan Products</Text>
+            <TouchableOpacity onPress={closeScannerLocal}>
+              <MaterialIcons name="close" size={28} color="#FFF" />
+            </TouchableOpacity>
           </View>
 
+          {/* MASK + FRAME */}
+          <View style={styles.maskOverlay}>
+            <View style={styles.maskTop} />
+            <View style={styles.maskMiddleRow}>
+              <View style={styles.maskSide} />
+              <View
+                style={[
+                  styles.focusFrame,
+                  scanFeedback === "success" && styles.focusFrameSuccess,
+                  scanFeedback === "duplicate" && styles.focusFrameDuplicate,
+                ]}
+              />
+              <View style={styles.maskSide} />
+            </View>
+            <View style={styles.maskBottom} />
+          </View>
+
+          {/* SCANNED PRODUCT ANIMATION */}
+          {scannedProduct && (
+            <Animated.View 
+              style={[
+                styles.productPopup,
+                {
+                  transform: [
+                    { translateY: slideAnim },
+                    { scale: scaleAnim }
+                  ],
+                  opacity: fadeAnim
+                }
+              ]}
+            >
+              <View style={styles.productPopupContent}>
+                <MaterialIcons name="check-circle" size={24} color="#4CAF50" />
+                <Text style={styles.productPopupText}>{scannedProduct}</Text>
+                <Text style={styles.productPopupSubtext}>Added to cart</Text>
+              </View>
+            </Animated.View>
+          )}
+
+          {/* INSTRUCTIONS */}
+          <View style={styles.instructionContainer}>
+            <Text style={styles.scannerText}>Align QR code within frame</Text>
+          </View>
+
+          {/* ITEMS COUNTER */}
+          <Animated.View style={[styles.itemsCounter, { opacity: fadeAnim }]}>
+            <Text style={styles.itemsCounterText}>
+              {scannedItems.length} item{scannedItems.length !== 1 ? 's' : ''} scanned
+            </Text>
+          </Animated.View>
+
+          {/* FOOTER */}
           <View style={styles.scannerFooter}>
-            <TouchableOpacity style={styles.torchBtn} onPress={() => setTorchOn(!torchOn)}>
-              <Ionicons name={torchOn ? "flash" : "flash-off"} size={24} color="#FFF" />
+            <TouchableOpacity
+              style={[styles.torchBtn, torchOn && styles.torchBtnActive]}
+              onPress={() => setTorchOn(prev => !prev)}
+            >
+              <Ionicons name={torchOn ? "flash" : "flash-off"} size={24} color={torchOn ? "#FFD700" : "#FFF"} />
+              <Text style={styles.torchBtnText}>{torchOn ? "On" : "Off"}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.continueBtn} onPress={openQuantityModal}>
-              <Text style={styles.continueBtnText}>
-                Continue ({scannedItems.reduce((s, i) => s + i.quantity, 0)} items)
+            
+            <TouchableOpacity 
+              style={[
+                styles.continueBtn, 
+                scannedItems.length > 0 && styles.continueBtnActive
+              ]} 
+              onPress={openQuantityModal}
+            >
+              <Text style={[
+                styles.continueBtnText,
+                scannedItems.length > 0 && styles.continueBtnTextActive
+              ]}>
+                Continue ({scannedItems.reduce((s, i) => s + i.quantity, 0)})
               </Text>
+              {scannedItems.length > 0 && (
+                <MaterialIcons name="arrow-forward" size={20} color="#FFF" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-
-
     </View>
   );
 }
@@ -698,7 +926,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   centered: { justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
-
   filterContainer: {
     flexDirection: "row",
     marginHorizontal: 16,
@@ -719,7 +946,6 @@ const styles = StyleSheet.create({
   filterButtonActive: { backgroundColor: Colors.light.accent },
   filterButtonText: { fontSize: 14, fontWeight: "600", color: Colors.light.textSecondary },
   filterButtonTextActive: { color: "#FFF" },
-
   headerContainer: { marginHorizontal: 16, marginTop: 8, marginBottom: 8, alignItems: "flex-end" },
   shareAllHeaderBtn: {
     flexDirection: "row",
@@ -730,7 +956,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   shareAllHeaderText: { color: "#FFF", fontSize: 14, fontWeight: "600", marginLeft: 6 },
-
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
   loadingContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
@@ -738,7 +963,6 @@ const styles = StyleSheet.create({
   emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: "center" },
   refreshButton: { marginTop: 16, backgroundColor: Colors.light.accent, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
   refreshButtonText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
-
   orderCard: {
     backgroundColor: "#FFF",
     borderRadius: 16,
@@ -768,7 +992,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   statusText: { fontSize: 12, fontWeight: "700" },
-
   customerSection: { marginBottom: 12 },
   itemsSection: { marginBottom: 12 },
   sectionTitleSmall: { fontSize: 14, fontWeight: "600", color: Colors.light.text, marginBottom: 6 },
@@ -794,7 +1017,6 @@ const styles = StyleSheet.create({
   },
   expandButtonText: { fontSize: 14, fontWeight: "600", color: Colors.light.accent, marginRight: 8 },
   expandedContent: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.light.border },
-
   detailedItemsSection: { marginBottom: 16 },
   detailedItemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6, paddingLeft: 8 },
   detailedItemText: { fontSize: 13, color: Colors.light.textSecondary, flex: 1 },
@@ -813,7 +1035,6 @@ const styles = StyleSheet.create({
   paymentText: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
   instructionsSection: { marginBottom: 16 },
   instructionsText: { fontSize: 13, color: Colors.light.textSecondary, fontStyle: "italic" },
-
   progressContainer: { marginTop: 8 },
   progressBar: { flexDirection: "row", alignItems: "center", marginBottom: 4, marginTop: 8 },
   progressStep: { flexDirection: "row", alignItems: "center", flex: 1 },
@@ -833,7 +1054,6 @@ const styles = StyleSheet.create({
   progressLabel: { fontSize: 10, color: Colors.light.textSecondary, textAlign: "center", flex: 1 },
   progressLabelCompleted: { color: Colors.light.accent, fontWeight: "600" },
   progressLabelCurrent: { color: Colors.light.accent, fontWeight: "700" },
-
   adminActions: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -855,11 +1075,10 @@ const styles = StyleSheet.create({
   },
   cancelButton: { backgroundColor: "rgba(244, 67, 54, 0.1)", marginRight: 0, marginLeft: 8 },
   actionButtonText: { marginLeft: 6, fontSize: 14, fontWeight: "600", color: Colors.light.accent },
-
   distanceSection: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 6 },
   distanceText: { fontSize: 13, color: Colors.light.accent, fontWeight: "600" },
 
-  /* SCANNER MODAL */
+  /* ---------- SCANNER MODAL ---------- */
   scannerContainer: { flex: 1, backgroundColor: "#000" },
   scannerHeader: {
     position: "absolute",
@@ -873,33 +1092,155 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   scannerTitle: { fontSize: 18, fontWeight: "600", color: "#FFF" },
-  scannerOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
-  scannerFrame: {
+
+  /* MASK & FRAME */
+  maskOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  maskTop: { flex: 1, width: "100%", backgroundColor: "rgba(0,0,0,0.75)" },
+  maskMiddleRow: { flexDirection: "row", alignItems: "center" },
+  maskSide: { flex: 1, height: "100%", backgroundColor: "rgba(0,0,0,0.75)" },
+  maskBottom: { flex: 1, width: "100%", backgroundColor: "rgba(0,0,0,0.75)" },
+  focusFrame: {
     width: 250,
     height: 250,
     borderWidth: 3,
     borderColor: Colors.light.accent,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: "transparent",
   },
-  scannerFrameFeedback: {
-    borderColor: "#4CAF50", // Green border for feedback
+  focusFrameSuccess: {
+    borderColor: "#4CAF50",
+    shadowColor: "#4CAF50",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  scannerText: { marginTop: 20, color: "#FFF", fontSize: 16 },
-  scanFeedbackText: { marginTop: 10, color: "#4CAF50", fontSize: 18, fontWeight: "600" },
+  focusFrameDuplicate: {
+    borderColor: "#FF4444",
+    shadowColor: "#FF4444",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+
+  /* PRODUCT POPUP ANIMATION */
+  productPopup: {
+    position: "absolute",
+    top: 120,
+    left: 20,
+    right: 20,
+    zIndex: 20,
+  },
+  productPopupContent: {
+    backgroundColor: "rgba(255,255,255,0.95)",
+    padding: 16,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  productPopupText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginLeft: 12,
+    flex: 1,
+  },
+  productPopupSubtext: {
+    fontSize: 12,
+    color: "#666",
+    marginLeft: 12,
+  },
+
+  /* ITEMS COUNTER */
+  itemsCounter: {
+    position: "absolute",
+    top: 200,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 15,
+  },
+  itemsCounterText: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "500",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+
+  instructionContainer: {
+    position: "absolute",
+    top: "50%",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    marginTop: 140,
+  },
+  scannerText: { color: "#FFF", fontSize: 16, fontWeight: "500" },
+
   scannerFooter: {
     position: "absolute",
     bottom: 40,
     left: 0,
     right: 0,
     flexDirection: "row",
-    justifyContent: "center",
+    justifyContent: "space-between",
     alignItems: "center",
-    gap: 20,
+    paddingHorizontal: 20,
   },
-  torchBtn: { backgroundColor: "rgba(255,255,255,0.2)", padding: 14, borderRadius: 30 },
-  continueBtn: { backgroundColor: Colors.light.accent, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 30 },
-  continueBtnText: { color: "#FFF", fontWeight: "600", fontSize: 16 },
-
-
+  torchBtn: { 
+    backgroundColor: "rgba(255,255,255,0.15)", 
+    padding: 16,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    width: 70,
+    height: 70,
+  },
+  torchBtnActive: {
+    backgroundColor: "rgba(255,215,0,0.3)",
+  },
+  torchBtnText: {
+    color: "#FFF",
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: "500",
+  },
+  continueBtn: { 
+    backgroundColor: "rgba(255,255,255,0.15)", 
+    paddingHorizontal: 24, 
+    paddingVertical: 16, 
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 150,
+    justifyContent: "center",
+  },
+  continueBtnActive: {
+    backgroundColor: Colors.light.accent,
+    borderColor: Colors.light.accent,
+  },
+  continueBtnText: { 
+    color: "rgba(255,255,255,0.8)", 
+    fontWeight: "600", 
+    fontSize: 16,
+    marginRight: 8,
+  },
+  continueBtnTextActive: {
+    color: "#FFF",
+  },
 });
