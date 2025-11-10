@@ -104,11 +104,6 @@ export default function Signup() {
       return false;
     }
     
-    if (userType === 'admin' && !shopName.trim()) {
-      showAlert('Validation Error', 'Please enter shop name');
-      return false;
-    }
-    
     return true;
   };
 
@@ -189,7 +184,6 @@ export default function Signup() {
       address: locationData?.formattedAddress || address,
       contactNo,
       userType,
-      ...(userType === 'admin' && { shopName }),
       ...locationParams  // ✅ Direct parameters, NOT nested under location
     };
 
@@ -334,28 +328,6 @@ export default function Signup() {
 
         {/* Main Content */}
         <View style={styles.mainContent}>
-          {/* User Type Toggle */}
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[styles.toggleButton, userType === 'customer' && styles.toggleButtonActive]}
-              onPress={() => setUserType('customer')}
-              disabled={loading}
-            >
-              <Text style={[styles.toggleText, userType === 'customer' && styles.toggleTextActive]}>
-                Customer
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleButton, userType === 'admin' && styles.toggleButtonActive]}
-              onPress={() => setUserType('admin')}
-              disabled={loading}
-            >
-              <Text style={[styles.toggleText, userType === 'admin' && styles.toggleTextActive]}>
-                Retailer
-              </Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Form Fields */}
           <View style={styles.formContainer}>
             <View style={styles.inputContainer}>
@@ -397,20 +369,6 @@ export default function Signup() {
                 returnKeyType="next"
               />
             </View>
-
-            {userType === 'admin' && (
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Shop Name *"
-                  placeholderTextColor="#94a3b8"
-                  value={shopName}
-                  onChangeText={setShopName}
-                  editable={!loading && !otpShown}
-                  returnKeyType="done"
-                />
-              </View>
-            )}
 
             {!otpShown ? (
               <TouchableOpacity
@@ -540,30 +498,6 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 32,
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  toggleButtonActive: {
-    backgroundColor: '#3b82f6',
-  },
-  toggleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  toggleTextActive: {
-    color: '#ffffff',
   },
   formContainer: {
     marginBottom: 32,

@@ -22,11 +22,14 @@ const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 export default function Login() {
   const [mobile, setMobile] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [secretCode, setSecretCode] = useState(['', '', '', '', '', '']);
   const [otpShown, setOtpShown] = useState(false);
+  const [secretCodeShown, setSecretCodeShown] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const router = useRouter();
   const otpRefs = useRef([]);
+  const secretCodeRefs = useRef([]);
   
   const { login, isAuthenticated } = useAuth();
 
@@ -34,10 +37,21 @@ export default function Login() {
     Alert.alert(title, message, [{ text: 'OK' }]);
   };
 
+  // 🔐 SUPERADMIN SECRETS
+  const SUPERADMIN_NUMBER = '6767676767';
+  const SUPERADMIN_SECRET_CODE = '123456';
+
   const handleBackFromOtp = () => {
     setOtpShown(false);
+    setSecretCodeShown(false);
     setOtp(['', '', '', '', '', '']);
+    setSecretCode(['', '', '', '', '', '']);
     setMobile('');
+  };
+
+  const handleBackFromSecretCode = () => {
+    setSecretCodeShown(false);
+    setSecretCode(['', '', '', '', '', '']);
   };
 
   const handleSendOTP = async () => {
@@ -46,6 +60,22 @@ export default function Login() {
       return;
     }
 
+    // Check if it's SuperAdmin number
+    const isSuperAdmin = mobile === SUPERADMIN_NUMBER;
+
+    // 🔐 FOR SUPERADMIN: Direct OTP without API call
+    if (isSuperAdmin) {
+      console.log('🔐 SuperAdmin direct OTP flow');
+      setOtpShown(true);
+      showAlert('SuperAdmin Access', 'Enter any 6-digit OTP to continue');
+      
+      setTimeout(() => {
+        otpRefs.current[0]?.focus();
+      }, 100);
+      return;
+    }
+
+    // Normal user OTP flow (API call)
     setSendingOtp(true);
     try {
       console.log('Sending OTP to:', mobile);
@@ -77,7 +107,7 @@ export default function Login() {
     }
   };
 
-  // FIXED OTP HANDLING
+  // OTP HANDLING
   const handleOtpChange = (text, index) => {
     if (!/^\d?$/.test(text)) return;
 
@@ -85,28 +115,45 @@ export default function Login() {
     newOtp[index] = text;
     setOtp(newOtp);
 
-    // Auto move to next input when a digit is entered
     if (text && index < 5) {
       otpRefs.current[index + 1]?.focus();
     }
     
-    // Auto submit when last digit is entered - USE setTimeout TO WAIT FOR STATE UPDATE
     if (text && index === 5) {
-      // Wait for state to update then check if all digits are filled
       setTimeout(() => {
-        const updatedOtp = [...newOtp]; // Use the latest newOtp array
+        const updatedOtp = [...newOtp];
         const finalOtp = updatedOtp.join('');
-        console.log('Auto-checking OTP:', finalOtp, 'Length:', finalOtp.length);
-        
         if (finalOtp.length === 6) {
-          console.log('All digits filled, auto-verifying...');
-          handleVerifyWithOtp(finalOtp); // Pass the complete OTP directly
+          handleVerifyOTP(finalOtp);
         }
       }, 50);
     }
   };
 
-  // Handle backspace key press
+  // SECRET CODE HANDLING
+  const handleSecretCodeChange = (text, index) => {
+    if (!/^\d?$/.test(text)) return;
+
+    const newSecretCode = [...secretCode];
+    newSecretCode[index] = text;
+    setSecretCode(newSecretCode);
+
+    if (text && index < 5) {
+      secretCodeRefs.current[index + 1]?.focus();
+    }
+    
+    if (text && index === 5) {
+      setTimeout(() => {
+        const updatedSecretCode = [...newSecretCode];
+        const finalSecretCode = updatedSecretCode.join('');
+        if (finalSecretCode.length === 6) {
+          handleVerifySuperAdmin(finalSecretCode);
+        }
+      }, 50);
+    }
+  };
+
+  // Handle backspace for OTP
   const handleOtpKeyPress = (e, index) => {
     if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
       otpRefs.current[index - 1]?.focus();
@@ -116,8 +163,18 @@ export default function Login() {
     }
   };
 
-  // NEW: Separate function for verification that accepts OTP directly
-  const handleVerifyWithOtp = async (otpCode) => {
+  // Handle backspace for Secret Code
+  const handleSecretCodeKeyPress = (e, index) => {
+    if (e.nativeEvent.key === 'Backspace' && !secretCode[index] && index > 0) {
+      secretCodeRefs.current[index - 1]?.focus();
+      const newSecretCode = [...secretCode];
+      newSecretCode[index - 1] = '';
+      setSecretCode(newSecretCode);
+    }
+  };
+
+  // STEP 1: Verify OTP (for both normal users and SuperAdmin)
+  const handleVerifyOTP = async (otpCode) => {
     console.log('🔐 Verifying OTP:', otpCode, 'for mobile:', mobile);
     
     if (!otpCode || otpCode.length !== 6) {
@@ -125,6 +182,21 @@ export default function Login() {
       return;
     }
 
+    const isSuperAdmin = mobile === SUPERADMIN_NUMBER;
+
+    // 🔐 FOR SUPERADMIN: Accept any OTP (since no API)
+    if (isSuperAdmin) {
+      console.log('✅ SuperAdmin OTP accepted, moving to secret code verification');
+      setOtpShown(false);
+      setSecretCodeShown(true);
+      
+      setTimeout(() => {
+        secretCodeRefs.current[0]?.focus();
+      }, 100);
+      return;
+    }
+
+    // Normal user verification (API call)
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/verify-otp`, {
@@ -163,15 +235,71 @@ export default function Login() {
     }
   };
 
-  // ORIGINAL verify function (for manual button press)
-  const handleVerify = async () => {
-    const otpCode = otp.join('');
-    console.log('Manual verify - OTP:', otpCode, 'Length:', otpCode.length);
+  // STEP 2: Verify Secret Code (SuperAdmin only) - FIXED NAVIGATION
+  const handleVerifySuperAdmin = async (secretCodeValue) => {
+    console.log('🔐 Verifying SuperAdmin Secret Code:', secretCodeValue);
     
-    await handleVerifyWithOtp(otpCode);
+    if (!secretCodeValue || secretCodeValue.length !== 6) {
+      showAlert('Validation Error', 'Please enter complete 6-digit secret code');
+      return;
+    }
+
+    // Verify Secret Code
+    if (secretCodeValue === SUPERADMIN_SECRET_CODE) {
+      console.log('✅ SuperAdmin secret code verified');
+      
+      // Create dummy SuperAdmin user object
+      const superAdminUser = {
+        id: 'superadmin-001',
+        phone: SUPERADMIN_NUMBER,
+        fullName: 'Super Admin',
+        role: 'superadmin',
+        isSuperAdmin: true
+      };
+
+      // Create dummy token
+      const superAdminToken = 'superadmin-dummy-token-' + Date.now();
+
+      setLoading(true);
+      try {
+        console.log('🚀 Calling AuthContext login for SuperAdmin...');
+        await login(superAdminUser, superAdminToken);
+        console.log('✅ SuperAdmin login completed');
+        
+        showAlert('Success', 'SuperAdmin access granted!');
+
+        // 🔥 FIXED NAVIGATION - Navigate to SuperAdmin dashboard
+        setTimeout(() => {
+          console.log('📍 Navigating to SuperAdmin dashboard...');
+          router.replace('/supadmin');
+        }, 300);
+      } catch (error) {
+        console.error('❌ SuperAdmin login error:', error);
+        showAlert('Error', 'Failed to login as SuperAdmin');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      showAlert('Access Denied', 'Invalid secret code. Please contact developer.');
+      setSecretCode(['', '', '', '', '', '']);
+      setTimeout(() => {
+        secretCodeRefs.current[0]?.focus();
+      }, 100);
+    }
   };
 
-  // If already authenticated, redirect to appropriate screen
+  // Manual verify functions
+  const handleVerify = async () => {
+    const otpCode = otp.join('');
+    await handleVerifyOTP(otpCode);
+  };
+
+  const handleVerifySecretCode = async () => {
+    const secretCodeValue = secretCode.join('');
+    await handleVerifySuperAdmin(secretCodeValue);
+  };
+
+  // If already authenticated, redirect
   if (isAuthenticated) {
     console.log('🔄 Already authenticated, redirecting...');
     setTimeout(() => {
@@ -190,16 +318,18 @@ export default function Login() {
       <StatusBar barStyle="light-content" />
 
       {/* Header with Back Button */}
-      {otpShown && (
+      {(otpShown || secretCodeShown) && (
         <View style={styles.header}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={handleBackFromOtp}
+            onPress={secretCodeShown ? handleBackFromSecretCode : handleBackFromOtp}
             disabled={loading}
           >
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Enter OTP</Text>
+          <Text style={styles.headerTitle}>
+            {secretCodeShown ? 'Enter Secret Code' : 'Enter OTP'}
+          </Text>
           <View style={styles.headerPlaceholder} />
         </View>
       )}
@@ -226,25 +356,32 @@ export default function Login() {
         {/* White Card */}
         <View style={styles.bottomCard}>
           {/* Logo */}
-          {!otpShown && (
+          {!otpShown && !secretCodeShown && (
             <View style={styles.logoContainer}>
               <Text style={styles.logoText}>Dairy Nine</Text>
             </View>
           )}
 
           <Text style={styles.title}>
-            {otpShown ? 'Enter OTP' : 'Fresh dairy delivered daily'}
+            {secretCodeShown 
+              ? 'SuperAdmin Secret Code' 
+              : otpShown 
+                ? 'Enter OTP' 
+                : 'Fresh dairy delivered daily'
+            }
           </Text>
           
           <Text style={styles.subtitle}>
-            {otpShown 
-              ? `Sent to +91 ${mobile}` 
-              : 'Sign in with your mobile number'
+            {secretCodeShown 
+              ? 'Enter the secret code provided by developer'
+              : otpShown 
+                ? `Sent to +91 ${mobile}` 
+                : 'Sign in with your mobile number'
             }
           </Text>
 
-          {/* Mobile Input or OTP Input */}
-          {!otpShown ? (
+          {/* Mobile Input or OTP Input or Secret Code Input */}
+          {!otpShown && !secretCodeShown ? (
             <View style={styles.inputContainer}>
               <View style={styles.flagContainer}>
                 <Text style={styles.flag}>India</Text>
@@ -260,6 +397,31 @@ export default function Login() {
                 onChangeText={setMobile}
                 editable={!sendingOtp && !loading}
               />
+            </View>
+          ) : secretCodeShown ? (
+            <View style={styles.otpSection}>
+              <View style={styles.otpContainer}>
+                {secretCode.map((digit, index) => (
+                  <TextInput
+                    key={index}
+                    ref={(ref) => (secretCodeRefs.current[index] = ref)}
+                    style={[styles.otpInput, digit ? styles.secretCodeInputActive : null]}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    value={digit}
+                    onChangeText={(text) => handleSecretCodeChange(text, index)}
+                    onKeyPress={(e) => handleSecretCodeKeyPress(e, index)}
+                    textAlign="center"
+                    editable={!loading}
+                    selectTextOnFocus
+                    secureTextEntry={true}
+                  />
+                ))}
+              </View>
+
+              <Text style={styles.secretCodeHint}>
+                🔒 Secret code provided by developer
+              </Text>
             </View>
           ) : (
             <View style={styles.otpSection}>
@@ -281,25 +443,35 @@ export default function Login() {
                 ))}
               </View>
 
-              <TouchableOpacity
-                style={styles.resendContainer}
-                onPress={handleSendOTP}
-                disabled={sendingOtp}
-              >
-                {sendingOtp ? (
-                  <ActivityIndicator color="#3b82f6" size="small" />
-                ) : (
-                  <Text style={styles.resendText}>
-                    Didn't receive OTP?{' '}
-                    <Text style={styles.resendTextBold}>Resend</Text>
-                  </Text>
-                )}
-              </TouchableOpacity>
+              {/* Show resend only for normal users, not SuperAdmin */}
+              {mobile !== SUPERADMIN_NUMBER && (
+                <TouchableOpacity
+                  style={styles.resendContainer}
+                  onPress={handleSendOTP}
+                  disabled={sendingOtp}
+                >
+                  {sendingOtp ? (
+                    <ActivityIndicator color="#3b82f6" size="small" />
+                  ) : (
+                    <Text style={styles.resendText}>
+                      Didn't receive OTP?{' '}
+                      <Text style={styles.resendTextBold}>Resend</Text>
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              {/* SuperAdmin OTP Hint */}
+              {mobile === SUPERADMIN_NUMBER && (
+                <Text style={styles.superadminHint}>
+                  🔐 SuperAdmin: Enter any 6-digit OTP to continue
+                </Text>
+              )}
             </View>
           )}
 
           {/* Conditional Rendering */}
-          {!otpShown ? (
+          {!otpShown && !secretCodeShown ? (
             <>
               <TouchableOpacity
                 style={[styles.continueButton, sendingOtp && styles.buttonDisabled]}
@@ -313,14 +485,42 @@ export default function Login() {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => router.push('/Signup')} disabled={sendingOtp}>
-                <Text style={styles.createAccountText}>
-                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
+              {/* Hide "Create Account" for SuperAdmin number */}
+              {mobile !== SUPERADMIN_NUMBER && (
+                <TouchableOpacity onPress={() => router.push('/Signup')} disabled={sendingOtp}>
+                  <Text style={styles.createAccountText}>
+                    New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* SuperAdmin message */}
+              {mobile === SUPERADMIN_NUMBER && (
+                <Text style={styles.superadminMessage}>
+                  🔐 SuperAdmin Access - Direct Login Only
                 </Text>
-              </TouchableOpacity>
+              )}
 
               <Text style={styles.footerText}>
                 By continuing, you agree to our Terms & Privacy Policy
+              </Text>
+            </>
+          ) : secretCodeShown ? (
+            <>
+              <TouchableOpacity
+                style={[styles.continueButton, loading && styles.buttonDisabled]}
+                onPress={handleVerifySecretCode}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Verify Secret Code</Text>
+                )}
+              </TouchableOpacity>
+
+              <Text style={styles.footerText}>
+                SuperAdmin access requires developer-provided secret code
               </Text>
             </>
           ) : (
@@ -333,15 +533,18 @@ export default function Login() {
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.buttonText}>Verify & Sign In</Text>
+                  <Text style={styles.buttonText}>Verify OTP</Text>
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => router.push('/Signup')} disabled={loading}>
-                <Text style={styles.createAccountText}>
-                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
-                </Text>
-              </TouchableOpacity>
+              {/* Hide "Create Account" for SuperAdmin */}
+              {mobile !== SUPERADMIN_NUMBER && (
+                <TouchableOpacity onPress={() => router.push('/Signup')} disabled={loading}>
+                  <Text style={styles.createAccountText}>
+                    New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               <Text style={styles.footerText}>
                 By continuing, you agree to our Terms & Privacy Policy
@@ -354,7 +557,7 @@ export default function Login() {
   );
 }
 
-// ==================== STYLES (Same as before) ====================
+// ==================== STYLES ====================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -524,6 +727,12 @@ const styles = StyleSheet.create({
     shadowColor: '#3b82f6',
     shadowOpacity: 0.2,
   },
+  secretCodeInputActive: {
+    borderColor: '#10b981',
+    backgroundColor: '#f0fdf4',
+    shadowColor: '#10b981',
+    shadowOpacity: 0.2,
+  },
   continueButton: {
     backgroundColor: '#3b82f6',
     borderRadius: 12,
@@ -574,5 +783,26 @@ const styles = StyleSheet.create({
   resendTextBold: { 
     color: '#3b82f6', 
     fontWeight: '600' 
+  },
+  secretCodeHint: {
+    fontSize: 12,
+    color: '#10b981',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  superadminHint: {
+    fontSize: 12,
+    color: '#f59e0b',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  superadminMessage: {
+    fontSize: 12,
+    color: '#dc2626',
+    textAlign: 'center',
+    fontWeight: '600',
+    marginBottom: 12,
   },
 });
