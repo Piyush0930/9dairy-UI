@@ -2,6 +2,7 @@
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { CartProvider } from '@/contexts/CartContext';
 import { ProfileProvider } from '@/contexts/ProfileContext'; // Add this import
+import { ScannerProvider } from '@/contexts/ScannerContext';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
@@ -81,8 +82,10 @@ export default function RootLayout() {
     <AuthProvider>
       <ProfileProvider>
       <CartProvider>
-        <NavigationHandler />
-        <Slot />
+        <ScannerProvider>
+          <NavigationHandler />
+          <Slot />
+        </ScannerProvider>
       </CartProvider>
       </ProfileProvider>
     </AuthProvider>
