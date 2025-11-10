@@ -49,13 +49,13 @@ export default function TabLayout() {
           headerShown: false,
           tabBarStyle,
           tabBarLabelStyle: {
-            fontSize: 13,
+            fontSize: 16,
             fontWeight: "600",
             marginTop: 4,
-            marginBottom: 4,
+            marginBottom: 2,
           },
           tabBarIconStyle: {
-            marginTop: 4,
+            marginTop: 2,
           },
         }}
       >
