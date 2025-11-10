@@ -530,56 +530,101 @@ export default function ProductsManagement() {
   const renderProduct = ({ item }) => {
     const isOutOfStock = item.stock <= 0;
     const discount = item.discount > 0 ? `${item.discount}% off` : null;
+    const unitDisplay = item.unitSize ? `${item.unitSize}${item.unit}` : item.unit;
+    
     return (
-      <View style={styles.productCard}>
-        <Image
-          source={{ uri: item.image || 'https://via.placeholder.com/80' }}
-          style={styles.productImage}
-          resizeMode="cover"
-        />
+      <TouchableOpacity 
+        style={styles.productCard}
+        onPress={() => openEditModal(item)}
+        activeOpacity={0.7}
+      >
+        {/* Product Image */}
+        <View style={styles.imageContainer}>
+          <Image
+            source={{ 
+              uri: item.image || 'https://via.placeholder.com/100'
+            }}
+            style={styles.productImage}
+            resizeMode="cover"
+          />
+          {/* Featured Badge */}
+          {item.isFeatured && (
+            <View style={styles.featuredBadge}>
+              <Ionicons name="star" size={12} color="#FFF" />
+              <Text style={styles.featuredText}>Featured</Text>
+            </View>
+          )}
+          {/* Out of Stock Overlay */}
+          {isOutOfStock && (
+            <View style={styles.outOfStockOverlay}>
+              <Text style={styles.outOfStockText}>Out of Stock</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Product Info */}
         <View style={styles.productInfo}>
-          <Text style={styles.productName} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text style={styles.productCategory}>
+          {/* Title Row */}
+          <View style={styles.titleRow}>
+            <Text style={styles.productName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.unitText}>{unitDisplay}</Text>
+          </View>
+
+          {/* Category */}
+          <Text style={styles.productCategory} numberOfLines={1}>
             {item.category?.name || 'Uncategorized'}
           </Text>
+
+          {/* Description */}
           {item.description && (
             <Text style={styles.productDescription} numberOfLines={2}>
               {item.description}
             </Text>
           )}
-          <View style={styles.priceRow}>
-            <Text style={styles.productPrice}>₹{item.price}</Text>
-            {discount && <Text style={styles.discountBadge}>{discount}</Text>}
+
+          {/* Price & Stock Row */}
+          <View style={styles.bottomRow}>
+            <View style={styles.priceSection}>
+              <Text style={styles.productPrice}>₹{item.price}</Text>
+              {discount && (
+                <View style={styles.discountContainer}>
+                  <Text style={styles.discountBadge}>{discount}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[
+              styles.stockText, 
+              isOutOfStock && styles.outOfStockText
+            ]}>
+              {item.stock} in stock
+            </Text>
           </View>
-          <Text
-            style={[styles.stockText, isOutOfStock && styles.outOfStockText]}
-          >
-            Stock: {item.stock} {item.unit}
-          </Text>
         </View>
-        <View style={styles.categoryActions}>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.actionButton, styles.qrButton]}
-            onPress={() => openQrModal(item)}
+            onPress={(e) => {
+              e.stopPropagation();
+              openQrModal(item);
+            }}
           >
-            <Ionicons name="qr-code-outline" size={18} color={Colors.light.accent} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.editButton]}
-            onPress={() => openEditModal(item)}
-          >
-            <Feather name="edit-2" size={18} color={Colors.light.accent} />
+            <Ionicons name="qr-code-outline" size={20} color={Colors.light.accent} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, styles.deleteButton]}
-            onPress={() => handleDelete(item._id)}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDelete(item._id);
+            }}
           >
             <Feather name="trash-2" size={18} color="#F44336" />
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -618,7 +663,14 @@ export default function ProductsManagement() {
   // MAIN RETURN
   // ──────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* PROFESSIONAL HEADER */}
+      <View style={styles.professionalHeader}>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Products</Text>
+        </View>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchFilterContainer}>
         <View style={styles.searchInputContainer}>
@@ -1014,7 +1066,7 @@ export default function ProductsManagement() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// STYLES (Merged & Enhanced)
+// STYLES (Improved Product Card Layout)
 // ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
@@ -1035,9 +1087,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
   },
+
+  /* PROFESSIONAL HEADER */
+  professionalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: Colors.light.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+    minHeight: 72,
+    justifyContent: 'center',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 40,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+
+  /* Search Bar */
   searchFilterContainer: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 8,
     paddingBottom: 8,
     backgroundColor: Colors.light.background,
   },
@@ -1059,10 +1136,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.light.text,
   },
+
+  /* Product List */
   listContent: {
     padding: 16,
+    paddingTop: 8,
     paddingBottom: 100,
   },
+
+  /* Improved Product Card */
   productCard: {
     backgroundColor: '#FFF',
     borderRadius: 16,
@@ -1071,84 +1153,146 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.light.border,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowRadius: 4,
     elevation: 3,
   },
-  productImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
+  imageContainer: {
+    position: 'relative',
     marginRight: 12,
   },
+  productImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+  },
+  featuredBadge: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  featuredText: {
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  outOfStockOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  outOfStockText: {
+    fontSize: 11,
+    color: '#F44336',
+    fontWeight: '600',
+  },
+
+  /* Product Info */
   productInfo: {
     flex: 1,
+    marginRight: 12,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
   },
   productName: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.text,
-    marginBottom: 2,
+    flex: 1,
+    marginRight: 8,
+  },
+  unitText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    fontWeight: '500',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   productCategory: {
     fontSize: 13,
     color: Colors.light.textSecondary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   productDescription: {
     fontSize: 13,
     color: Colors.light.textSecondary,
-    marginBottom: 4,
+    lineHeight: 16,
+    marginBottom: 8,
   },
-  priceRow: {
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  priceSection: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 4,
   },
   productPrice: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: Colors.light.accent,
   },
-  discountBadge: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontWeight: '600',
+  discountContainer: {
     backgroundColor: '#E8F5E9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  stockText: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-  },
-  outOfStockText: {
-    color: '#F44336',
+  discountBadge: {
+    fontSize: 11,
+    color: '#4CAF50',
     fontWeight: '600',
   },
-  categoryActions: {
-    flexDirection: 'row',
+  stockText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+
+  /* Action Buttons */
+  actionButtons: {
+    alignItems: 'center',
     gap: 8,
   },
   actionButton: {
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   qrButton: {
     backgroundColor: '#E3F2FD',
   },
-  editButton: {
-    backgroundColor: '#E8F5E9',
-  },
   deleteButton: {
     backgroundColor: '#FFEBEE',
   },
+
+  /* FAB */
   fab: {
     position: 'absolute',
     right: 20,
@@ -1165,6 +1309,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
   },
+
+  /* Empty State */
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1194,6 +1340,8 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '600',
   },
+
+  /* Modal Styles (unchanged) */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -1416,6 +1564,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  /* QR Modal */
   qrModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
@@ -1467,9 +1617,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 230,
     width: '100%',
-  },
-  loadingContainer: {
-    alignItems: 'center',
   },
   qrPlaceholderText: {
     fontSize: 16,

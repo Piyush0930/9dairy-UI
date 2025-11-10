@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useScanner } from "@/contexts/ScannerContext";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
-import { Alert, TouchableOpacity, View } from "react-native";
+import { Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function AdminLayout() {
@@ -42,22 +42,7 @@ export default function AdminLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: "#FFFFFF" },
-        headerTintColor: "#000000",
-        headerTitleStyle: { fontWeight: "bold" },
-        headerRight: () => (
-          <View style={{ flexDirection: "row", alignItems: "center", marginRight: 15 }}>
-            {/* Scanner */}
-            <TouchableOpacity onPress={handleOpenScanner} style={{ marginRight: 16 }}>
-              <Ionicons name="qr-code" size={24} color="#000" />
-            </TouchableOpacity>
-
-            {/* Logout */}
-            <TouchableOpacity onPress={handleLogout}>
-              <MaterialIcons name="logout" size={24} color="#000" />
-            </TouchableOpacity>
-          </View>
-        ),
+        headerShown: false,
         tabBarStyle: {
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1,

@@ -4,7 +4,7 @@
     "slug": "dairy-nine",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo.jpeg",
+    "icon": "./assets/images/applogo.jpg",
     "scheme": "dairynine",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -18,9 +18,9 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/logo.jpeg",
+        "foregroundImage": "./assets/images/applogo.jpg",
         "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/logo.jpeg"
+        "monochromeImage": "./assets/images/applogo.jpg"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -31,14 +31,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/logo.jpeg"
+      "favicon": "./assets/images/applogo.jpg"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/logo.jpeg",
+          "image": "./assets/images/applogo.jpg",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

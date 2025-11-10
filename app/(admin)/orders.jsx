@@ -487,6 +487,30 @@ export default function AdminOrders() {
     }
   };
 
+  const shareOfflineOrders = async () => {
+    if (!(await validateAuthBeforeCall())) return;
+    try {
+      const uri = FileSystem.documentDirectory + `offline-orders-${new Date().toISOString().split("T")[0]}.pdf`;
+      const dl = await FileSystem.downloadAsync(
+        `${API_BASE_URL}/admin/invoices/offline-orders`,
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      if (dl.status !== 200) throw new Error();
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share offline orders");
+    }
+  };
+
+  const handleShareAll = () => {
+    if (activeFilter === "history") {
+      shareOverallInvoice();
+    } else if (activeFilter === "offline") {
+      shareOfflineOrders();
+    }
+  };
+
   /* ---------- FILTERED DATA ---------- */
   const filteredOrders =
     activeFilter === "orders"
@@ -505,7 +529,22 @@ export default function AdminOrders() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* PROFESSIONAL HEADER */}
+      <View style={styles.professionalHeader}>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Orders</Text>
+          {(activeFilter === "history" || activeFilter === "offline") && (
+            <TouchableOpacity 
+              style={styles.shareButton} 
+              onPress={handleShareAll}
+            >
+              <MaterialIcons name="share" size={20} color={Colors.light.accent} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       {/* FILTER TABS */}
       <View style={styles.filterContainer}>
         <TouchableOpacity
@@ -533,16 +572,6 @@ export default function AdminOrders() {
           </Text>
         </TouchableOpacity>
       </View>
-
-      {/* Share All Button (only in History) */}
-      {activeFilter === "history" && (
-        <View style={styles.headerContainer}>
-          <TouchableOpacity onPress={shareOverallInvoice} style={styles.shareAllHeaderBtn}>
-            <MaterialIcons name="share" size={18} color="#FFF" />
-            <Text style={styles.shareAllHeaderText}>Share All</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       <ScrollView
         style={styles.scrollView}
@@ -829,7 +858,7 @@ export default function AdminOrders() {
           />
 
           {/* HEADER */}
-          <View style={styles.scannerHeader}>
+          <View style={styles.modalScannerHeader}>
             <Text style={styles.scannerTitle}>Scan Products</Text>
             <TouchableOpacity onPress={closeScannerLocal}>
               <MaterialIcons name="close" size={28} color="#FFF" />
@@ -917,20 +946,59 @@ export default function AdminOrders() {
           </View>
         </View>
       </Modal>
+
+      {/* Floating Scanner Button */}
+      <TouchableOpacity style={styles.floatingScannerButton} onPress={() => openScanner()}>
+        <Ionicons name="qr-code" size={24} color="#FFF" />
+      </TouchableOpacity>
+
     </View>
   );
 }
-
 /* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   centered: { justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
+  
+  /* PROFESSIONAL HEADER */
+  professionalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: Colors.light.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+    minHeight: 72,
+    justifyContent: 'center',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 40,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+  shareButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(33, 150, 243, 0.2)',
+  },
+
   filterContainer: {
     flexDirection: "row",
     marginHorizontal: 16,
     marginTop: 8,
-    marginBottom: 4,
+    marginBottom: 16,
     backgroundColor: "#FFF",
     borderRadius: 12,
     padding: 4,
@@ -946,18 +1014,12 @@ const styles = StyleSheet.create({
   filterButtonActive: { backgroundColor: Colors.light.accent },
   filterButtonText: { fontSize: 14, fontWeight: "600", color: Colors.light.textSecondary },
   filterButtonTextActive: { color: "#FFF" },
-  headerContainer: { marginHorizontal: 16, marginTop: 8, marginBottom: 8, alignItems: "flex-end" },
-  shareAllHeaderBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  shareAllHeaderText: { color: "#FFF", fontSize: 14, fontWeight: "600", marginLeft: 6 },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
+  scrollContent: { 
+    paddingHorizontal: 16, 
+    paddingTop: 8,
+    paddingBottom: 100 
+  },
   loadingContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
   emptyContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
   emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: "center" },
@@ -976,6 +1038,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+
+  // ... rest of your existing styles remain the same
   orderHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
   orderIdRow: { flex: 1, marginRight: 12 },
   orderIdLarge: { fontSize: 16, fontWeight: "700", color: Colors.light.text, marginBottom: 4 },
@@ -1080,7 +1144,7 @@ const styles = StyleSheet.create({
 
   /* ---------- SCANNER MODAL ---------- */
   scannerContainer: { flex: 1, backgroundColor: "#000" },
-  scannerHeader: {
+  modalScannerHeader: {
     position: "absolute",
     top: 40,
     left: 0,
@@ -1242,5 +1306,21 @@ const styles = StyleSheet.create({
   },
   continueBtnTextActive: {
     color: "#FFF",
+  },
+  floatingScannerButton: {
+    position: "absolute",
+    bottom: 20,
+    right: 20,
+    backgroundColor: Colors.light.accent,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
