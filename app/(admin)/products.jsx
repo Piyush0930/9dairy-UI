@@ -1,6 +1,7 @@
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -48,10 +49,14 @@ export default function ProductsManagement() {
   const [currentAdditionalImages, setCurrentAdditionalImages] = useState([]);
   const [deletedAdditionalImages, setDeletedAdditionalImages] = useState([]);
 
-  // QR Modal
-  const [qrModalVisible, setQrModalVisible] = useState(false);
-  const [selectedProductForQr, setSelectedProductForQr] = useState(null);
-  const [qrLoading, setQrLoading] = useState(false);
+  // Barcode Modal & Camera
+  const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
+  const [selectedProductForBarcode, setSelectedProductForBarcode] = useState(null);
+  const [barcodeScanning, setBarcodeScanning] = useState(false);
+  const [barcodeData, setBarcodeData] = useState(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [showCamera, setShowCamera] = useState(false);
+  const cameraRef = useRef();
   const viewShotRef = useRef();
 
   const [formData, setFormData] = useState({
@@ -451,48 +456,203 @@ export default function ProductsManagement() {
   };
 
   // ──────────────────────────────────────────────────────────────
-  // QR MODAL
+  // BARCODE FUNCTIONS - MIGRATED FROM QR CODE
   // ──────────────────────────────────────────────────────────────
-  const openQrModal = (product) => {
-    setSelectedProductForQr(product);
-    setQrLoading(false);
-    setQrModalVisible(true);
+  const openBarcodeModal = (product) => {
+    setSelectedProductForBarcode(product);
+    // Use barcodeId from backend or fallback to barcode
+    const displayBarcode = product.barcodeId || product.barcode;
+    setBarcodeData(displayBarcode);
+    setBarcodeModalVisible(true);
   };
 
-  const generateQr = async () => {
-    if (!selectedProductForQr?._id) return;
+  const closeBarcodeModal = () => {
+    setBarcodeModalVisible(false);
+    setSelectedProductForBarcode(null);
+    setBarcodeData(null);
+    setShowCamera(false);
+  };
+
+  const requestCameraPermissions = async () => {
+    if (!cameraPermission?.granted) {
+      const { status } = await requestCameraPermission();
+      return status === 'granted';
+    }
+    return true;
+  };
+
+  const startBarcodeScan = async () => {
+    const hasPermission = await requestCameraPermissions();
+    if (!hasPermission) {
+      Alert.alert('Permission Required', 'Camera permission is needed to scan barcodes');
+      return;
+    }
+    setShowCamera(true);
+    setBarcodeScanning(true);
+  };
+
+  const stopBarcodeScan = () => {
+    setShowCamera(false);
+    setBarcodeScanning(false);
+  };
+
+  const onBarcodeScanned = async ({ data }) => {
+    if (!data || !selectedProductForBarcode) return;
+
+    try {
+      setBarcodeScanning(false);
+      setBarcodeData(data);
+
+      console.log('📱 FRONTEND BARCODE SCAN DEBUG:');
+      console.log('📦 Scanned barcode data:', data);
+      console.log('📦 Selected product ID:', selectedProductForBarcode._id);
+
+      // Assign the scanned barcode to the product
+      const response = await fetch(
+        `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ barcode: data }),
+        }
+      );
+
+      const result = await response.json();
+      
+      console.log('🔍 FULL RESPONSE ANALYSIS:');
+      console.log('Response success:', result.success);
+      console.log('Response message:', result.message);
+      console.log('Barcode in response:', result.product?.barcodeId);
+      
+      if (response.ok) {
+        Alert.alert('Success', 'Barcode assigned successfully!');
+        // Update local state - use barcodeId from response
+        setProducts(prev => 
+          prev.map(p => 
+            p._id === selectedProductForBarcode._id 
+              ? { 
+                  ...p, 
+                  barcode: result.product.barcodeId, // Use the barcode from response
+                  barcodeId: result.product.barcodeId, // Also update barcodeId
+                  barcodeUrl: result.product.barcodeUrl // Update barcode image URL
+                }
+              : p
+          )
+        );
+        setSelectedProductForBarcode(prev => ({ 
+          ...prev, 
+          barcode: result.product.barcodeId,
+          barcodeId: result.product.barcodeId,
+          barcodeUrl: result.product.barcodeUrl
+        }));
+        setBarcodeData(result.product.barcodeId);
+      } else {
+        Alert.alert('Error', result.message || 'Failed to assign barcode');
+      }
+    } catch (error) {
+      console.error('Barcode Assignment Error:', error);
+      handleApiError(error, 'Failed to assign barcode');
+    } finally {
+      setShowCamera(false);
+    }
+  };
+
+  const removeBarcode = async () => {
+    if (!selectedProductForBarcode?._id) return;
+
+    // Determine if barcode is generated or scanned
+    const isGenerated = selectedProductForBarcode.barcodeId === selectedProductForBarcode._id.toString();
+    const endpoint = isGenerated ? 'generated-barcode' : 'scanned-barcode';
+
+    Alert.alert('Remove Barcode', 'Are you sure you want to remove this barcode?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const response = await fetch(
+              `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/${endpoint}`,
+              {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+              }
+            );
+
+            if (response.ok) {
+              Alert.alert('Success', 'Barcode removed successfully!');
+              setBarcodeData(null);
+              // Update local state
+              setProducts(prev =>
+                prev.map(p =>
+                  p._id === selectedProductForBarcode._id
+                    ? { ...p, barcode: null, barcodeId: null, barcodeUrl: null }
+                    : p
+                )
+              );
+              setSelectedProductForBarcode(prev => ({
+                ...prev,
+                barcode: null,
+                barcodeId: null,
+                barcodeUrl: null
+              }));
+            } else {
+              const result = await response.json();
+              Alert.alert('Error', result.message || 'Failed to remove barcode');
+            }
+          } catch (error) {
+            handleApiError(error, 'Failed to remove barcode');
+          }
+        },
+      },
+    ]);
+  };
+
+  const generateBarcode = async () => {
+    if (!selectedProductForBarcode?._id) return;
     const ok = await validateAuthBeforeCall();
     if (!ok) return;
 
     try {
-      setQrLoading(true);
+      setBarcodeScanning(true);
       const res = await fetch(
-        `${API_BASE_URL}/api/catalog/products/generate/${selectedProductForQr._id}`,
+        `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generate-barcode`,
         {
           method: 'POST',
           headers: getAuthHeaders(),
         }
       );
       const data = await res.json();
-      if (res.ok && data.qrCodeUrl) {
+      if (res.ok && data.barcodeUrl) {
         setProducts((p) =>
           p.map((i) =>
-            i._id === selectedProductForQr._id ? { ...i, qrCodeUrl: data.qrCodeUrl } : i
+            i._id === selectedProductForBarcode._id 
+              ? { 
+                  ...i, 
+                  barcodeUrl: data.barcodeUrl,
+                  barcodeId: selectedProductForBarcode._id.toString()
+                } 
+              : i
           )
         );
-        setSelectedProductForQr((prev) => ({ ...prev, qrCodeUrl: data.qrCodeUrl }));
+        setSelectedProductForBarcode((prev) => ({ 
+          ...prev, 
+          barcodeUrl: data.barcodeUrl,
+          barcodeId: prev._id.toString()
+        }));
+        setBarcodeData(selectedProductForBarcode._id.toString());
       } else {
-        Alert.alert('Info', data.message || 'QR already exists.');
+        Alert.alert('Info', data.message || 'Barcode already exists.');
       }
     } catch (e) {
-      handleApiError(e, 'Failed to generate QR.');
+      handleApiError(e, 'Failed to generate barcode.');
     } finally {
-      setQrLoading(false);
+      setBarcodeScanning(false);
     }
   };
 
-  const downloadQr = async () => {
-    if (!selectedProductForQr?.qrCodeUrl) return;
+  const downloadBarcode = async () => {
+    if (!selectedProductForBarcode?.barcodeUrl) return;
     try {
       const capturedUri = await viewShotRef.current?.capture?.();
       if (!capturedUri) throw new Error('Capture failed');
@@ -512,25 +672,27 @@ export default function ProductsManagement() {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(finalUri, {
           mimeType: finalUri.endsWith('.jpg') ? 'image/jpeg' : 'image/png',
-          dialogTitle: 'Save QR Code',
+          dialogTitle: 'Save Barcode',
           UTI: finalUri.endsWith('.jpg') ? 'public.jpeg' : 'public.png',
         });
       } else {
-        Alert.alert('Saved', 'QR code is in your device cache.');
+        Alert.alert('Saved', 'Barcode is in your device cache.');
       }
     } catch (e) {
-      console.error('QR download error:', e);
-      Alert.alert('Error', 'Could not share QR code');
+      console.error('Barcode download error:', e);
+      Alert.alert('Error', 'Could not share barcode');
     }
   };
 
   // ──────────────────────────────────────────────────────────────
-  // RENDER PRODUCT CARD
+  // RENDER PRODUCT CARD - UPDATED FOR BARCODE
   // ──────────────────────────────────────────────────────────────
   const renderProduct = ({ item }) => {
     const isOutOfStock = item.stock <= 0;
     const discount = item.discount > 0 ? `${item.discount}% off` : null;
     const unitDisplay = item.unitSize ? `${item.unitSize}${item.unit}` : item.unit;
+    // Use barcodeId from backend or fallback to barcode
+    const displayBarcode = item.barcodeId || item.barcode;
     
     return (
       <TouchableOpacity 
@@ -584,6 +746,16 @@ export default function ProductsManagement() {
             </Text>
           )}
 
+          {/* Barcode Info */}
+          {displayBarcode && (
+            <View style={styles.barcodeInfo}>
+              <Ionicons name="barcode-outline" size={12} color={Colors.light.textSecondary} />
+              <Text style={styles.barcodeText} numberOfLines={1}>
+                {displayBarcode}
+              </Text>
+            </View>
+          )}
+
           {/* Price & Stock Row */}
           <View style={styles.bottomRow}>
             <View style={styles.priceSection}>
@@ -606,13 +778,13 @@ export default function ProductsManagement() {
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.qrButton]}
+            style={[styles.actionButton, styles.barcodeButton]}
             onPress={(e) => {
               e.stopPropagation();
-              openQrModal(item);
+              openBarcodeModal(item);
             }}
           >
-            <Ionicons name="qr-code-outline" size={20} color={Colors.light.accent} />
+            <Ionicons name="barcode-outline" size={20} color="#4CAF50" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, styles.deleteButton]}
@@ -1000,63 +1172,171 @@ export default function ProductsManagement() {
         </View>
       </Modal>
 
-      {/* QR Code Modal */}
+      {/* Barcode Modal */}
       <Modal
-        visible={qrModalVisible}
+        visible={barcodeModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setQrModalVisible(false)}
+        onRequestClose={closeBarcodeModal}
       >
-        <View style={styles.qrModalOverlay}>
-          <View style={styles.qrModalContent}>
-            <View style={styles.qrModalHeader}>
-              <Text style={styles.qrModalTitle}>Product QR Code</Text>
-              <TouchableOpacity onPress={() => setQrModalVisible(false)}>
+        <View style={styles.barcodeModalOverlay}>
+          <View style={styles.barcodeModalContent}>
+            <View style={styles.barcodeModalHeader}>
+              <Text style={styles.barcodeModalTitle}>Product Barcode</Text>
+              <TouchableOpacity onPress={closeBarcodeModal}>
                 <MaterialIcons name="close" size={24} color={Colors.light.text} />
               </TouchableOpacity>
             </View>
 
-            <ViewShot
-              ref={viewShotRef}
-              options={{ format: 'png', quality: 1 }}
-              style={styles.qrContainer}
-            >
-              {selectedProductForQr?.qrCodeUrl ? (
-                <Image
-                  source={{ uri: selectedProductForQr.qrCodeUrl }}
-                  style={styles.qrImage}
-                  resizeMode="contain"
+            {showCamera ? (
+              <View style={styles.cameraContainer}>
+                <CameraView
+                  style={styles.camera}
+                  facing={'back'}
+                  barcodeScannerSettings={{
+                    barcodeTypes: [
+                      'ean13',
+                      'ean8',
+                      'upc_a',
+                      'upc_e',
+                      'code39',
+                      'code128',
+                      'itf14'
+                    ],
+                  }}
+                  onBarcodeScanned={barcodeScanning ? onBarcodeScanned : undefined}
+                  ref={cameraRef}
                 />
-              ) : (
-                <View style={styles.qrPlaceholder}>
-                  {qrLoading ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color={Colors.light.accent} />
-                      <Text style={styles.loadingTextSmall}>Generating QR…</Text>
+                <View style={styles.cameraOverlay}>
+                  <Text style={styles.cameraInstruction}>
+                    Point camera at barcode to scan
+                  </Text>
+                  <View style={styles.scanFrame} />
+                  <TouchableOpacity
+                    style={styles.cancelScanButton}
+                    onPress={stopBarcodeScan}
+                  >
+                    <Text style={styles.cancelScanButtonText}>Cancel Scan</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <View style={styles.barcodeInfoContainer}>
+                  {selectedProductForBarcode?.barcodeUrl ? (
+                    <ViewShot
+                      ref={viewShotRef}
+                      options={{ format: 'png', quality: 1 }}
+                      style={styles.barcodeContainer}
+                    >
+                      <Image
+                        source={{ uri: selectedProductForBarcode.barcodeUrl }}
+                        style={styles.barcodeImage}
+                        resizeMode="contain"
+                      />
+                    </ViewShot>
+                  ) : barcodeData ? (
+                    <View style={styles.barcodeAssigned}>
+                      <Ionicons name="checkmark-circle" size={48} color="#4CAF50" />
+                      <Text style={styles.barcodeAssignedText}>Barcode Assigned</Text>
+                      <Text style={styles.barcodeValue}>{barcodeData}</Text>
+                      <Text style={styles.barcodeNote}>
+                        This barcode is now linked to the product
+                      </Text>
                     </View>
                   ) : (
+                    <View style={styles.barcodeEmpty}>
+                      <Ionicons name="barcode-outline" size={48} color={Colors.light.textSecondary} />
+                      <Text style={styles.barcodeEmptyText}>No Barcode</Text>
+                      <Text style={styles.barcodeEmptySubtext}>
+                        Generate or scan a barcode for this product
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {selectedProductForBarcode && (
+                  <Text style={styles.barcodeProductName}>
+                    {selectedProductForBarcode.name}
+                  </Text>
+                )}
+
+                <View style={styles.barcodeActions}>
+                  {selectedProductForBarcode?.barcodeUrl ? (
                     <>
-                      <Ionicons name="qr-code-outline" size={60} color={Colors.light.textSecondary} />
-                      <Text style={styles.qrPlaceholderText}>QR not generated yet</Text>
-                      <TouchableOpacity style={styles.generateQrButton} onPress={generateQr}>
-                        <Ionicons name="sparkles" size={18} color="#FFF" />
-                        <Text style={styles.generateQrButtonText}>Generate QR Code</Text>
+                      <TouchableOpacity 
+                        style={styles.downloadBarcodeButton} 
+                        onPress={downloadBarcode}
+                      >
+                        <Ionicons name="download-outline" size={20} color="#FFF" />
+                        <Text style={styles.downloadBarcodeButtonText}>Save Barcode</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.scanBarcodeButton} 
+                        onPress={startBarcodeScan}
+                      >
+                        <Ionicons name="scan-outline" size={20} color="#FFF" />
+                        <Text style={styles.scanBarcodeButtonText}>Rescan Barcode</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.removeBarcodeButton} 
+                        onPress={removeBarcode}
+                      >
+                        <Ionicons name="trash-outline" size={20} color="#F44336" />
+                        <Text style={styles.removeBarcodeButtonText}>Remove Barcode</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : barcodeData ? (
+                    <>
+                      <TouchableOpacity 
+                        style={styles.generateBarcodeButton} 
+                        onPress={generateBarcode}
+                        disabled={barcodeScanning}
+                      >
+                        {barcodeScanning ? (
+                          <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                          <>
+                            <Ionicons name="sparkles" size={20} color="#FFF" />
+                            <Text style={styles.generateBarcodeButtonText}>Generate Barcode</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.scanBarcodeButton} 
+                        onPress={startBarcodeScan}
+                      >
+                        <Ionicons name="scan-outline" size={20} color="#FFF" />
+                        <Text style={styles.scanBarcodeButtonText}>Scan Barcode</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <TouchableOpacity 
+                        style={styles.generateBarcodeButton} 
+                        onPress={generateBarcode}
+                        disabled={barcodeScanning}
+                      >
+                        {barcodeScanning ? (
+                          <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                          <>
+                            <Ionicons name="sparkles" size={20} color="#FFF" />
+                            <Text style={styles.generateBarcodeButtonText}>Generate Barcode</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.scanBarcodeButton} 
+                        onPress={startBarcodeScan}
+                      >
+                        <Ionicons name="scan-outline" size={20} color="#FFF" />
+                        <Text style={styles.scanBarcodeButtonText}>Scan Barcode</Text>
                       </TouchableOpacity>
                     </>
                   )}
                 </View>
-              )}
-            </ViewShot>
-
-            {selectedProductForQr && (
-              <Text style={styles.qrProductName}>{selectedProductForQr.name}</Text>
-            )}
-
-            {selectedProductForQr?.qrCodeUrl && (
-              <TouchableOpacity style={styles.downloadQrButton} onPress={downloadQr}>
-                <Ionicons name="download-outline" size={20} color="#FFF" />
-                <Text style={styles.downloadQrButtonText}>Save QR (JPG/PNG)</Text>
-              </TouchableOpacity>
+              </>
             )}
           </View>
         </View>
@@ -1066,7 +1346,7 @@ export default function ProductsManagement() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// STYLES (Improved Product Card Layout)
+// STYLES - UPDATED FOR BARCODE
 // ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
@@ -1242,6 +1522,17 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: 8,
   },
+  barcodeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 4,
+  },
+  barcodeText: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    fontFamily: 'monospace',
+  },
   bottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1285,8 +1576,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  qrButton: {
-    backgroundColor: '#E3F2FD',
+  barcodeButton: {
+    backgroundColor: '#E8F5E9',
   },
   deleteButton: {
     backgroundColor: '#FFEBEE',
@@ -1341,7 +1632,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  /* Modal Styles (unchanged) */
+  /* Modal Styles */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -1565,14 +1856,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  /* QR Modal */
-  qrModalOverlay: {
+  /* Barcode Modal Styles */
+  barcodeModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  qrModalContent: {
+  barcodeModalContent: {
     backgroundColor: '#FFF',
     borderRadius: 20,
     padding: 24,
@@ -1585,19 +1876,19 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 16,
   },
-  qrModalHeader: {
+  barcodeModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
     marginBottom: 20,
   },
-  qrModalTitle: {
+  barcodeModalTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: Colors.light.text,
   },
-  qrContainer: {
+  barcodeContainer: {
     padding: 20,
     backgroundColor: '#F9F9F9',
     borderRadius: 16,
@@ -1607,64 +1898,181 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
   },
-  qrImage: {
+  barcodeImage: {
     width: 230,
     height: 230,
     borderRadius: 12,
   },
-  qrPlaceholder: {
+  barcodeInfoContainer: {
+    padding: 20,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.light.border,
+    marginBottom: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 230,
     width: '100%',
+    minHeight: 200,
+    justifyContent: 'center',
   },
-  qrPlaceholderText: {
+  barcodeAssigned: {
+    alignItems: 'center',
+  },
+  barcodeAssignedText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#4CAF50',
+    marginTop: 12,
+  },
+  barcodeValue: {
     fontSize: 16,
+    fontFamily: 'monospace',
+    color: Colors.light.text,
+    marginTop: 8,
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  barcodeNote: {
+    fontSize: 14,
     color: Colors.light.textSecondary,
-    marginVertical: 16,
+    marginTop: 12,
     textAlign: 'center',
   },
-  generateQrButton: {
-    flexDirection: 'row',
+  barcodeEmpty: {
     alignItems: 'center',
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
   },
-  generateQrButtonText: {
-    color: '#FFF',
+  barcodeEmptyText: {
+    fontSize: 18,
     fontWeight: '600',
-    fontSize: 16,
+    color: Colors.light.text,
+    marginTop: 12,
   },
-  qrProductName: {
+  barcodeEmptySubtext: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  barcodeProductName: {
     fontSize: 17,
     fontWeight: '600',
     color: Colors.light.text,
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  downloadQrButton: {
+  barcodeActions: {
+    width: '100%',
+    gap: 12,
+  },
+  generateBarcodeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 28,
+    justifyContent: 'center',
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 12,
     gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
   },
-  downloadQrButtonText: {
+  generateBarcodeButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  scanBarcodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
+  },
+  scanBarcodeButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  downloadBarcodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
+  },
+  downloadBarcodeButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  removeBarcodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFEBEE',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  removeBarcodeButtonText: {
+    color: '#F44336',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+
+  /* Camera Styles */
+  cameraContainer: {
+    width: '100%',
+    height: 400,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraInstruction: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 20,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  scanFrame: {
+    width: 250,
+    height: 150,
+    borderWidth: 2,
+    borderColor: '#FFF',
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+  },
+  cancelScanButton: {
+    marginTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  cancelScanButtonText: {
     color: '#FFF',
     fontWeight: '600',
     fontSize: 16,

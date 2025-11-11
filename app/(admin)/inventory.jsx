@@ -20,7 +20,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/retailer/inventory`;
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/retailer/inventory`;
 
 // Full list from your controller
 const TRANSACTION_TYPES = [
