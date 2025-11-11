@@ -513,7 +513,7 @@ export default function ProductsManagement() {
         {
           method: 'POST',
           headers: getAuthHeaders(),
-          body: JSON.stringify({ barcode: data }),
+          body: JSON.stringify({ scannedBarcodeId: data }),
         }
       );
 
