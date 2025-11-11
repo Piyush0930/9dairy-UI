@@ -1,48 +1,44 @@
 {
   "expo": {
-    "name": "dairy-app",
-    "slug": "dairy-app",
+    "name": "Dairy Nine",
+    "slug": "dairy-nine",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo.jpeg",
-    "scheme": "dairyapp",
+    "icon": "./assets/images/applogo.jpg",
+    "scheme": "dairynine",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.dairyapp",
+      "bundleIdentifier": "com.anonymous.dairynine",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow Dairy App to scan product QR codes."
       }
     },
-
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/logo.jpeg",
+        "foregroundImage": "./assets/images/applogo.jpg",
         "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/logo.jpeg"
+        "monochromeImage": "./assets/images/applogo.jpg"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.dairyapp",
+      "package": "com.anonymous.dairynine",
       "permissions": [
         "CAMERA"
       ]
     },
-
     "web": {
       "output": "static",
-      "favicon": "./assets/images/logo.jpeg"
+      "favicon": "./assets/images/applogo.jpg"
     },
-
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/logo.jpeg",
+          "image": "./assets/images/applogo.jpg",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -52,16 +48,14 @@
         }
       ]
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "6753b0cd-ec8e-4287-91cf-b1c0a8bde89a"
+        "projectId": "277338d5-df08-4d23-95a8-61104b4e82f6"
       }
     }
   }
