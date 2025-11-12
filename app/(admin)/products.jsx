@@ -1,5 +1,8 @@
+import Colors from '@/constants/colors';
+import { useAuth } from '@/contexts/AuthContext';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
-import * as ImageManipulator from 'expo-image-manipulator'; // ← optional, keep if you want real JPEG
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -10,23 +13,28 @@ import {
   FlatList,
   Image,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
-import Colors from '../../constants/colors';
-import { useAuth } from '../../contexts/AuthContext';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function ProductsManagement() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authToken, isLoading: authLoading, isAuthenticated, validateToken, logout } = useAuth();
+  const {
+    authToken,
+    isLoading: authLoading,
+    isAuthenticated,
+    validateToken,
+    logout,
+  } = useAuth();
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -41,18 +49,32 @@ export default function ProductsManagement() {
   const [currentAdditionalImages, setCurrentAdditionalImages] = useState([]);
   const [deletedAdditionalImages, setDeletedAdditionalImages] = useState([]);
 
-  // QR Modal
-  const [qrModalVisible, setQrModalVisible] = useState(false);
-  const [selectedProductForQr, setSelectedProductForQr] = useState(null);
-  const [qrLoading, setQrLoading] = useState(false);
+  // Barcode Modal & Camera
+  const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
+  const [selectedProductForBarcode, setSelectedProductForBarcode] = useState(null);
+  const [barcodeScanning, setBarcodeScanning] = useState(false);
+  const [barcodeData, setBarcodeData] = useState(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [showCamera, setShowCamera] = useState(false);
+  const cameraRef = useRef();
   const viewShotRef = useRef();
 
   const [formData, setFormData] = useState({
-    name: '', description: '', price: '', category: '', unit: 'liter', unitSize: '', stock: '',
-    milkType: 'Cow', image: null, discount: '', isFeatured: false, isAvailable: true,
-    nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' }, tags: '',
+    name: '',
+    description: '',
+    price: '',
+    category: '',
+    unit: 'liter',
+    unitSize: '',
+    stock: '',
+    milkType: 'Cow',
+    image: null,
+    discount: '',
+    isFeatured: false,
+    isAvailable: true,
+    nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' },
+    tags: '',
   });
-
   const [imageUri, setImageUri] = useState('');
 
   // ──────────────────────────────────────────────────────────────
@@ -60,8 +82,14 @@ export default function ProductsManagement() {
   // ──────────────────────────────────────────────────────────────
   const handleApiError = (error, customMessage = null) => {
     console.error('API Error:', error);
-    if (error.message?.includes('401') || error.response?.status === 401) {
-      Alert.alert('Session Expired', 'Please login again.', [{ text: 'OK', onPress: () => logout() }]);
+    if (
+      error.message?.includes('401') ||
+      error.response?.status === 401 ||
+      error.message?.includes('Unauthorized')
+    ) {
+      Alert.alert('Session Expired', 'Please login again.', [
+        { text: 'OK', onPress: () => logout() },
+      ]);
       return true;
     }
     Alert.alert('Error', customMessage || 'Something went wrong.');
@@ -69,7 +97,10 @@ export default function ProductsManagement() {
   };
 
   const validateAuthBeforeCall = async () => {
-    if (!authToken || !isAuthenticated) return false;
+    if (!authToken || !isAuthenticated) {
+      Alert.alert('Session Expired', 'Please login again');
+      return false;
+    }
     const isValid = await validateToken();
     if (!isValid) {
       Alert.alert('Session Expired', 'Please login again');
@@ -88,46 +119,68 @@ export default function ProductsManagement() {
   // DATA FETCHING
   // ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!authLoading && authToken && isAuthenticated) fetchData();
-    else if (!authLoading && (!authToken || !isAuthenticated)) setLoading(false);
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchData();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      setLoading(false);
+    }
   }, [authToken, authLoading, isAuthenticated]);
 
   const fetchData = async () => {
-    const ok = await validateAuthBeforeCall();
-    if (!ok) return;
-
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const [prodRes, catRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/catalog/products`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/api/catalog/categories`, { headers: getAuthHeaders() }),
+      const [productsRes, categoriesRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/catalog/products`, {
+          headers: getAuthHeaders(),
+        }),
+        fetch(`${API_BASE_URL}/api/catalog/categories`, {
+          headers: getAuthHeaders(),
+        }),
       ]);
 
-      if (!prodRes.ok) throw new Error('Failed to fetch products');
-      const prodJson = await prodRes.json();
-      const catJson = await catRes.json();
+      if (!productsRes.ok) throw new Error('Failed to fetch products');
 
-      setProducts(Array.isArray(prodJson.products) ? prodJson.products : prodJson || []);
-      setCategories(Array.isArray(catJson.categories) ? catJson.categories : catJson || []);
-    } catch (e) {
-      handleApiError(e, 'Failed to load data.');
+      const productsData = await productsRes.json();
+      const categoriesData = await categoriesRes.json();
+
+      setProducts(
+        Array.isArray(productsData) ? productsData : productsData.products || []
+      );
+      setCategories(
+        Array.isArray(categoriesData)
+          ? categoriesData
+          : categoriesData.categories || []
+      );
+    } catch (error) {
+      handleApiError(error, 'Failed to load data.');
+      setProducts([]);
+      setCategories([]);
     } finally {
       setLoading(false);
     }
   };
 
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return products;
-    const q = searchQuery.toLowerCase();
-    return products.filter(p =>
-      p.name?.toLowerCase().includes(q) ||
-      p.category?.name?.toLowerCase().includes(q) ||
-      p.tags?.some(t => t.toLowerCase().includes(q))
-    );
+    let filtered = products;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          p.category?.name?.toLowerCase().includes(query) ||
+          p.tags?.some((tag) => tag.toLowerCase().includes(query))
+      );
+    }
+    return filtered;
   }, [products, searchQuery]);
 
   // ──────────────────────────────────────────────────────────────
-  // FORM MODAL HANDLERS (unchanged – omitted for brevity)
+  // FORM MODAL HANDLERS
   // ──────────────────────────────────────────────────────────────
   const openCreateModal = () => {
     setEditingProduct(null);
@@ -153,8 +206,18 @@ export default function ProductsManagement() {
       discount: product.discount?.toString() || '0',
       isFeatured: product.isFeatured || false,
       isAvailable: product.isAvailable !== false,
-      nutritionalInfo: product.nutritionalInfo || { fat: '', protein: '', calories: '', carbohydrates: '' },
-      tags: Array.isArray(product.tags) ? product.tags.join(', ') : (typeof product.tags === 'string' ? product.tags : ''),
+      nutritionalInfo:
+        product.nutritionalInfo || {
+          fat: '',
+          protein: '',
+          calories: '',
+          carbohydrates: '',
+        },
+      tags: Array.isArray(product.tags)
+        ? product.tags.join(', ')
+        : typeof product.tags === 'string'
+        ? product.tags
+        : '',
     });
     setImageUri(product.image || '');
     setNewAdditionalImages([]);
@@ -165,9 +228,20 @@ export default function ProductsManagement() {
 
   const resetForm = () => {
     setFormData({
-      name: '', description: '', price: '', category: '', unit: 'liter', unitSize: '', stock: '',
-      milkType: 'Cow', image: null, discount: '', isFeatured: false, isAvailable: true,
-      nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' }, tags: '',
+      name: '',
+      description: '',
+      price: '',
+      category: '',
+      unit: 'liter',
+      unitSize: '',
+      stock: '',
+      milkType: 'Cow',
+      image: null,
+      discount: '',
+      isFeatured: false,
+      isAvailable: true,
+      nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' },
+      tags: '',
     });
     setImageUri('');
   };
@@ -182,11 +256,14 @@ export default function ProductsManagement() {
   };
 
   // ──────────────────────────────────────────────────────────────
-  // IMAGE PICKERS (unchanged)
+  // IMAGE PICKERS
   // ──────────────────────────────────────────────────────────────
   const pickImage = async () => {
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) return Alert.alert('Permission required', 'Camera roll access needed');
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permission required', 'Permission to access camera roll is required!');
+      return;
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -195,19 +272,26 @@ export default function ProductsManagement() {
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets?.length) {
-      const img = result.assets[0];
-      setFormData(prev => ({
-        ...prev,
-        image: { uri: img.uri, type: 'image/jpeg', fileName: img.fileName || `img-${Date.now()}.jpg` },
-      }));
-      setImageUri(img.uri);
+    if (!result.canceled && result.assets?.length > 0) {
+      const selectedImage = result.assets[0];
+      setFormData({
+        ...formData,
+        image: {
+          uri: selectedImage.uri,
+          type: 'image/jpeg',
+          fileName: selectedImage.fileName || `product-${Date.now()}.jpg`,
+        },
+      });
+      setImageUri(selectedImage.uri);
     }
   };
 
   const pickAdditionalImages = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) return Alert.alert('Permission required', 'Camera roll access needed');
+    if (!granted) {
+      Alert.alert('Permission required', 'Camera roll access needed');
+      return;
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -216,77 +300,363 @@ export default function ProductsManagement() {
     });
 
     if (!result.canceled && result.assets?.length) {
-      const imgs = result.assets.map(a => ({
+      const imgs = result.assets.map((a) => ({
         uri: a.uri,
         type: 'image/jpeg',
-        fileName: a.fileName || `add-${Date.now()}.jpg`,
+        fileName: a.fileName || `add-${Date.now()}-${Math.random()}.jpg`,
+        isNew: true,
       }));
-      setNewAdditionalImages(p => [...p, ...imgs]);
+      setNewAdditionalImages((p) => [...p, ...imgs]);
     }
   };
 
   const handleRemoveImage = (item) => {
     if (item.isNew) {
-      setNewAdditionalImages(p => p.filter(i => i.uri !== item.uri));
+      setNewAdditionalImages((p) => p.filter((i) => i.uri !== item.uri));
     } else {
-      setCurrentAdditionalImages(p => p.filter(i => i._id !== item._id));
-      setDeletedAdditionalImages(p => [...p, item._id]);
+      setCurrentAdditionalImages((p) => p.filter((i) => i._id !== item._id));
+      setDeletedAdditionalImages((p) => [...p, item._id]);
     }
   };
 
   // ──────────────────────────────────────────────────────────────
-  // PRODUCT SAVE / DELETE (unchanged – omitted for brevity)
+  // PRODUCT SAVE / DELETE
   // ──────────────────────────────────────────────────────────────
-  const handleSubmit = async () => { /* ... same as before ... */ };
-  const handleDelete = async (id) => { /* ... same as before ... */ };
+  const handleSubmit = async () => {
+    if (!formData.name.trim() || !formData.price || !formData.category) {
+      Alert.alert('Error', 'Name, Price, and Category are required.');
+      return;
+    }
 
-  // ──────────────────────────────────────────────────────────────
-  // QR MODAL
-  // ──────────────────────────────────────────────────────────────
-  const openQrModal = (product) => {
-    setSelectedProductForQr(product);
-    setQrLoading(false);
-    setQrModalVisible(true);
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
+    try {
+      setUploading(true);
+      const url = editingProduct
+        ? `${API_BASE_URL}/api/catalog/products/${editingProduct._id}`
+        : `${API_BASE_URL}/api/catalog/products`;
+      const method = editingProduct ? 'PUT' : 'POST';
+      const submitFormData = new FormData();
+
+      submitFormData.append('name', formData.name);
+      submitFormData.append('description', formData.description);
+      submitFormData.append('price', parseFloat(formData.price).toString());
+      submitFormData.append('category', formData.category);
+      submitFormData.append('unit', formData.unit);
+      submitFormData.append('unitSize', (parseInt(formData.unitSize) || 0).toString());
+      submitFormData.append('stock', (parseInt(formData.stock) || 0).toString());
+      submitFormData.append('milkType', formData.milkType);
+      submitFormData.append('discount', (parseFloat(formData.discount) || 0).toString());
+      submitFormData.append('isFeatured', formData.isFeatured.toString());
+      submitFormData.append('isAvailable', formData.isAvailable.toString());
+
+      if (formData.tags) {
+        submitFormData.append('tags', formData.tags);
+      }
+
+      if (
+        formData.nutritionalInfo.fat ||
+        formData.nutritionalInfo.protein ||
+        formData.nutritionalInfo.calories ||
+        formData.nutritionalInfo.carbohydrates
+      ) {
+        Object.keys(formData.nutritionalInfo).forEach((key) => {
+          submitFormData.append(
+            `nutritionalInfo[${key}]`,
+            (parseFloat(formData.nutritionalInfo[key]) || 0).toString()
+          );
+        });
+      }
+
+      if (formData.image) {
+        submitFormData.append('image', {
+          uri: formData.image.uri,
+          type: formData.image.type || 'image/jpeg',
+          name: formData.image.fileName,
+        });
+      }
+
+      // Additional Images
+      newAdditionalImages.forEach((img, index) => {
+        submitFormData.append('additionalImages', {
+          uri: img.uri,
+          type: img.type,
+          name: img.fileName,
+        });
+      });
+
+      if (deletedAdditionalImages.length > 0) {
+        submitFormData.append('deletedImages', JSON.stringify(deletedAdditionalImages));
+      }
+
+      const response = await fetch(url, {
+        method,
+        headers: getAuthHeaders(true),
+        body: submitFormData,
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        Alert.alert(
+          'Success',
+          `Product ${editingProduct ? 'updated' : 'added'} successfully!`
+        );
+        closeModal();
+        fetchData();
+      } else {
+        handleApiError(
+          { message: data.message, response },
+          data.message || 'Failed to save product.'
+        );
+      }
+    } catch (error) {
+      console.error('Submit error:', error);
+      handleApiError(error, 'Failed to save product.');
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const generateQr = async () => {
-    if (!selectedProductForQr?._id) return;
+  const handleDelete = async (productId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
+    Alert.alert('Delete Product', 'This action cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const response = await fetch(
+              `${API_BASE_URL}/api/catalog/products/${productId}`,
+              {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+              }
+            );
+
+            if (response.ok) {
+              Alert.alert('Success', 'Product deleted.');
+              fetchData();
+            } else {
+              const data = await response.json();
+              handleApiError(
+                { message: data.message, response },
+                data.message || 'Failed to delete.'
+              );
+            }
+          } catch (error) {
+            handleApiError(error, 'Failed to delete product.');
+          }
+        },
+      },
+    ]);
+  };
+
+  // ──────────────────────────────────────────────────────────────
+  // BARCODE FUNCTIONS - MIGRATED FROM QR CODE
+  // ──────────────────────────────────────────────────────────────
+  const openBarcodeModal = (product) => {
+    setSelectedProductForBarcode(product);
+    // Use barcodeId from backend or fallback to barcode
+    const displayBarcode = product.barcodeId || product.barcode;
+    setBarcodeData(displayBarcode);
+    setBarcodeModalVisible(true);
+  };
+
+  const closeBarcodeModal = () => {
+    setBarcodeModalVisible(false);
+    setSelectedProductForBarcode(null);
+    setBarcodeData(null);
+    setShowCamera(false);
+  };
+
+  const requestCameraPermissions = async () => {
+    if (!cameraPermission?.granted) {
+      const { status } = await requestCameraPermission();
+      return status === 'granted';
+    }
+    return true;
+  };
+
+  const startBarcodeScan = async () => {
+    const hasPermission = await requestCameraPermissions();
+    if (!hasPermission) {
+      Alert.alert('Permission Required', 'Camera permission is needed to scan barcodes');
+      return;
+    }
+    setShowCamera(true);
+    setBarcodeScanning(true);
+  };
+
+  const stopBarcodeScan = () => {
+    setShowCamera(false);
+    setBarcodeScanning(false);
+  };
+
+  const onBarcodeScanned = async ({ data }) => {
+    if (!data || !selectedProductForBarcode) return;
+
+    try {
+      setBarcodeScanning(false);
+      setBarcodeData(data);
+
+      console.log('📱 FRONTEND BARCODE SCAN DEBUG:');
+      console.log('📦 Scanned barcode data:', data);
+      console.log('📦 Selected product ID:', selectedProductForBarcode._id);
+
+      // Assign the scanned barcode to the product
+      const response = await fetch(
+        `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ scannedBarcodeId: data }),
+        }
+      );
+
+      const result = await response.json();
+      
+      console.log('🔍 FULL RESPONSE ANALYSIS:');
+      console.log('Response success:', result.success);
+      console.log('Response message:', result.message);
+      console.log('Barcode in response:', result.product?.barcodeId);
+      
+      if (response.ok) {
+        Alert.alert('Success', 'Barcode assigned successfully!');
+        // Update local state - use barcodeId from response
+        setProducts(prev => 
+          prev.map(p => 
+            p._id === selectedProductForBarcode._id 
+              ? { 
+                  ...p, 
+                  barcode: result.product.barcodeId, // Use the barcode from response
+                  barcodeId: result.product.barcodeId, // Also update barcodeId
+                  barcodeUrl: result.product.barcodeUrl // Update barcode image URL
+                }
+              : p
+          )
+        );
+        setSelectedProductForBarcode(prev => ({ 
+          ...prev, 
+          barcode: result.product.barcodeId,
+          barcodeId: result.product.barcodeId,
+          barcodeUrl: result.product.barcodeUrl
+        }));
+        setBarcodeData(result.product.barcodeId);
+      } else {
+        Alert.alert('Error', result.message || 'Failed to assign barcode');
+      }
+    } catch (error) {
+      console.error('Barcode Assignment Error:', error);
+      handleApiError(error, 'Failed to assign barcode');
+    } finally {
+      setShowCamera(false);
+    }
+  };
+
+  const removeBarcode = async () => {
+    if (!selectedProductForBarcode?._id) return;
+
+    // Determine if barcode is generated or scanned
+    const isGenerated = selectedProductForBarcode.barcodeId === selectedProductForBarcode._id.toString();
+    const endpoint = isGenerated ? 'generated-barcode' : 'scanned-barcode';
+
+    Alert.alert('Remove Barcode', 'Are you sure you want to remove this barcode?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const response = await fetch(
+              `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/${endpoint}`,
+              {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+              }
+            );
+
+            if (response.ok) {
+              Alert.alert('Success', 'Barcode removed successfully!');
+              setBarcodeData(null);
+              // Update local state
+              setProducts(prev =>
+                prev.map(p =>
+                  p._id === selectedProductForBarcode._id
+                    ? { ...p, barcode: null, barcodeId: null, barcodeUrl: null }
+                    : p
+                )
+              );
+              setSelectedProductForBarcode(prev => ({
+                ...prev,
+                barcode: null,
+                barcodeId: null,
+                barcodeUrl: null
+              }));
+            } else {
+              const result = await response.json();
+              Alert.alert('Error', result.message || 'Failed to remove barcode');
+            }
+          } catch (error) {
+            handleApiError(error, 'Failed to remove barcode');
+          }
+        },
+      },
+    ]);
+  };
+
+  const generateBarcode = async () => {
+    if (!selectedProductForBarcode?._id) return;
     const ok = await validateAuthBeforeCall();
     if (!ok) return;
 
     try {
-      setQrLoading(true);
-      const res = await fetch(`${API_BASE_URL}/api/catalog/products/generate/${selectedProductForQr._id}`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      });
+      setBarcodeScanning(true);
+      const res = await fetch(
+        `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generate-barcode`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }
+      );
       const data = await res.json();
-
-      if (res.ok && data.qrCodeUrl) {
-        setProducts(p => p.map(i => (i._id === selectedProductForQr._id ? { ...i, qrCodeUrl: data.qrCodeUrl } : i)));
-        setSelectedProductForQr(prev => ({ ...prev, qrCodeUrl: data.qrCodeUrl }));
+      if (res.ok && data.barcodeUrl) {
+        setProducts((p) =>
+          p.map((i) =>
+            i._id === selectedProductForBarcode._id 
+              ? { 
+                  ...i, 
+                  barcodeUrl: data.barcodeUrl,
+                  barcodeId: selectedProductForBarcode._id.toString()
+                } 
+              : i
+          )
+        );
+        setSelectedProductForBarcode((prev) => ({ 
+          ...prev, 
+          barcodeUrl: data.barcodeUrl,
+          barcodeId: prev._id.toString()
+        }));
+        setBarcodeData(selectedProductForBarcode._id.toString());
       } else {
-        Alert.alert('Info', data.message || 'QR already exists.');
+        Alert.alert('Info', data.message || 'Barcode already exists.');
       }
     } catch (e) {
-      handleApiError(e, 'Failed to generate QR.');
+      handleApiError(e, 'Failed to generate barcode.');
     } finally {
-      setQrLoading(false);
+      setBarcodeScanning(false);
     }
   };
 
-  // ──────────────────────────────────────────────────────────────
-  // NEW: SIMPLE QR DOWNLOAD (no FileSystem!)
-  // ──────────────────────────────────────────────────────────────
-  const downloadQr = async () => {
-    if (!selectedProductForQr?.qrCodeUrl) return;
-
+  const downloadBarcode = async () => {
+    if (!selectedProductForBarcode?.barcodeUrl) return;
     try {
-      // 1. Capture the rendered QR (PNG in cache)
       const capturedUri = await viewShotRef.current?.capture?.();
       if (!capturedUri) throw new Error('Capture failed');
 
-      // 2. OPTIONAL: Convert to real JPEG (smaller file)
       let finalUri = capturedUri;
       try {
         const manip = await ImageManipulator.manipulateAsync(
@@ -299,65 +669,147 @@ export default function ProductsManagement() {
         console.warn('JPEG conversion skipped', e);
       }
 
-      // 3. Share – system handles saving to Photos, WhatsApp, etc.
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(finalUri, {
           mimeType: finalUri.endsWith('.jpg') ? 'image/jpeg' : 'image/png',
-          dialogTitle: 'Save QR Code',
+          dialogTitle: 'Save Barcode',
           UTI: finalUri.endsWith('.jpg') ? 'public.jpeg' : 'public.png',
         });
       } else {
-        Alert.alert('Saved', 'QR code is in your device cache.');
+        Alert.alert('Saved', 'Barcode is in your device cache.');
       }
     } catch (e) {
-      console.error('QR download error:', e);
-      Alert.alert('Error', 'Could not share QR code');
+      console.error('Barcode download error:', e);
+      Alert.alert('Error', 'Could not share barcode');
     }
   };
 
   // ──────────────────────────────────────────────────────────────
-  // RENDER PRODUCT CARD (unchanged)
+  // RENDER PRODUCT CARD - UPDATED FOR BARCODE
   // ──────────────────────────────────────────────────────────────
   const renderProduct = ({ item }) => {
-    const out = item.stock <= 0;
-    const disc = item.discount > 0 ? `${item.discount}% off` : null;
-
+    const isOutOfStock = item.stock <= 0;
+    const discount = item.discount > 0 ? `${item.discount}% off` : null;
+    const unitDisplay = item.unitSize ? `${item.unitSize}${item.unit}` : item.unit;
+    // Use barcodeId from backend or fallback to barcode
+    const displayBarcode = item.barcodeId || item.barcode;
+    
     return (
-      <View style={styles.productCard}>
-        <Image source={{ uri: item.image || 'https://via.placeholder.com/80' }} style={styles.productImage} resizeMode="cover" />
-        <View style={styles.productInfo}>
-          <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.productCategory}>{item.category?.name || 'Uncategorized'}</Text>
-          {item.description && <Text style={styles.productDescription} numberOfLines={2}>{item.description}</Text>}
-          <View style={styles.priceRow}>
-            <Text style={styles.productPrice}>₹{item.price}</Text>
-            {disc && <Text style={styles.discountBadge}>{disc}</Text>}
-          </View>
-          <Text style={[styles.stockText, out && styles.outOfStockText]}>
-            Stock: {item.stock} {item.unit}
-          </Text>
+      <TouchableOpacity 
+        style={styles.productCard}
+        onPress={() => openEditModal(item)}
+        activeOpacity={0.7}
+      >
+        {/* Product Image */}
+        <View style={styles.imageContainer}>
+          <Image
+            source={{ 
+              uri: item.image || 'https://via.placeholder.com/100'
+            }}
+            style={styles.productImage}
+            resizeMode="cover"
+          />
+          {/* Featured Badge */}
+          {item.isFeatured && (
+            <View style={styles.featuredBadge}>
+              <Ionicons name="star" size={12} color="#FFF" />
+              <Text style={styles.featuredText}>Featured</Text>
+            </View>
+          )}
+          {/* Out of Stock Overlay */}
+          {isOutOfStock && (
+            <View style={styles.outOfStockOverlay}>
+              <Text style={styles.outOfStockText}>Out of Stock</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.categoryActions}>
-          <TouchableOpacity style={[styles.actionButton, styles.qrButton]} onPress={() => openQrModal(item)}>
-            <Ionicons name="qr-code-outline" size={18} color={Colors.light.accent} />
+
+        {/* Product Info */}
+        <View style={styles.productInfo}>
+          {/* Title Row */}
+          <View style={styles.titleRow}>
+            <Text style={styles.productName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.unitText}>{unitDisplay}</Text>
+          </View>
+
+          {/* Category */}
+          <Text style={styles.productCategory} numberOfLines={1}>
+            {item.category?.name || 'Uncategorized'}
+          </Text>
+
+          {/* Description */}
+          {item.description && (
+            <Text style={styles.productDescription} numberOfLines={2}>
+              {item.description}
+            </Text>
+          )}
+
+          {/* Barcode Info */}
+          {displayBarcode && (
+            <View style={styles.barcodeInfo}>
+              <Ionicons name="barcode-outline" size={12} color={Colors.light.textSecondary} />
+              <Text style={styles.barcodeText} numberOfLines={1}>
+                {displayBarcode}
+              </Text>
+            </View>
+          )}
+
+          {/* Price & Stock Row */}
+          <View style={styles.bottomRow}>
+            <View style={styles.priceSection}>
+              <Text style={styles.productPrice}>₹{item.price}</Text>
+              {discount && (
+                <View style={styles.discountContainer}>
+                  <Text style={styles.discountBadge}>{discount}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[
+              styles.stockText, 
+              isOutOfStock && styles.outOfStockText
+            ]}>
+              {item.stock} in stock
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.barcodeButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              openBarcodeModal(item);
+            }}
+          >
+            <Ionicons name="barcode-outline" size={20} color="#4CAF50" />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, styles.editButton]} onPress={() => openEditModal(item)}>
-            <Feather name="edit-2" size={18} color={Colors.light.accent} />
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={() => handleDelete(item._id)}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDelete(item._id);
+            }}
+          >
             <Feather name="trash-2" size={18} color="#F44336" />
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   const EmptyList = () => (
     <View style={styles.emptyContainer}>
       <MaterialIcons name="inventory-2" size={56} color={Colors.light.textSecondary} />
-      <Text style={styles.emptyText}>{searchQuery ? 'No products found' : 'No products yet'}</Text>
+      <Text style={styles.emptyText}>
+        {searchQuery ? 'No products found' : 'No products yet'}
+      </Text>
       <Text style={styles.emptySubtext}>
-        {searchQuery ? 'Try a different search term' : 'Add your first product to get started'}
+        {searchQuery
+          ? 'Try a different search term'
+          : 'Add your first product to get started'}
       </Text>
       {!searchQuery && (
         <TouchableOpacity style={styles.addFirstButton} onPress={openCreateModal}>
@@ -367,6 +819,9 @@ export default function ProductsManagement() {
     </View>
   );
 
+  // ──────────────────────────────────────────────────────────────
+  // LOADING STATES
+  // ──────────────────────────────────────────────────────────────
   if (authLoading || loading) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top + 16 }]}>
@@ -380,8 +835,15 @@ export default function ProductsManagement() {
   // MAIN RETURN
   // ──────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
-      {/* SEARCH */}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* PROFESSIONAL HEADER */}
+      <View style={styles.professionalHeader}>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Products</Text>
+        </View>
+      </View>
+
+      {/* Search Bar */}
       <View style={styles.searchFilterContainer}>
         <View style={styles.searchInputContainer}>
           <Ionicons name="search" size={20} color={Colors.light.textSecondary} style={styles.searchIcon} />
@@ -395,12 +857,13 @@ export default function ProductsManagement() {
         </View>
       </View>
 
-      {/* LIST */}
+      {/* Product List */}
       <FlatList
         data={filteredProducts}
         renderItem={renderProduct}
-        keyExtractor={i => i._id}
+        keyExtractor={(item) => item._id}
         contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={<EmptyList />}
       />
 
@@ -409,53 +872,471 @@ export default function ProductsManagement() {
         <Ionicons name="add" size={28} color="#FFF" />
       </TouchableOpacity>
 
-      {/* ─────── PRODUCT FORM MODAL (unchanged – omitted) ─────── */}
+      {/* Product Form Modal */}
       <Modal visible={modalVisible} animationType="slide" onRequestClose={closeModal}>
-        {/* ... same as before ... */}
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingProduct ? 'Edit Product' : 'Add New Product'}
+              </Text>
+              <TouchableOpacity onPress={closeModal}>
+                <MaterialIcons name="close" size={24} color={Colors.light.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Main Image */}
+              {(imageUri || formData.image) && (
+                <View style={styles.imagePreviewContainer}>
+                  <Image
+                    source={{ uri: imageUri || formData.image?.uri }}
+                    style={styles.imagePreview}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => {
+                      setFormData({ ...formData, image: null });
+                      setImageUri('');
+                    }}
+                  >
+                    <Ionicons name="close" size={20} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Name */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Product Name *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={formData.name}
+                  onChangeText={(t) => setFormData({ ...formData, name: t })}
+                  placeholder="e.g., Fresh Cow Milk"
+                />
+              </View>
+
+              {/* Description */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Description</Text>
+                <TextInput
+                  style={[styles.textInput, styles.textArea]}
+                  value={formData.description}
+                  onChangeText={(t) => setFormData({ ...formData, description: t })}
+                  placeholder="Optional description..."
+                  multiline
+                />
+              </View>
+
+              {/* Category */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Category *</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                  {categories.map((cat) => (
+                    <TouchableOpacity
+                      key={cat._id}
+                      style={[styles.chip, formData.category === cat._id && styles.chipSelected]}
+                      onPress={() => setFormData({ ...formData, category: cat._id })}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          formData.category === cat._id && styles.chipTextSelected,
+                        ]}
+                      >
+                        {cat.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Price & Discount */}
+              <View style={styles.row}>
+                <View style={styles.inputGroupFlex}>
+                  <Text style={styles.inputLabel}>Price (₹) *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={formData.price}
+                    onChangeText={(t) => setFormData({ ...formData, price: t })}
+                    keyboardType="numeric"
+                    placeholder="60"
+                  />
+                </View>
+                <View style={styles.inputGroupFlex}>
+                  <Text style={styles.inputLabel}>Discount (%)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={formData.discount}
+                    onChangeText={(t) => setFormData({ ...formData, discount: t })}
+                    keyboardType="numeric"
+                    placeholder="0"
+                  />
+                </View>
+              </View>
+
+              {/* Unit & Size */}
+              <View style={styles.row}>
+                <View style={styles.inputGroupFlex}>
+                  <Text style={styles.inputLabel}>Unit</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                    {['ml', 'liter', 'gm', 'kg', 'pack', 'piece'].map((u) => (
+                      <TouchableOpacity
+                        key={u}
+                        style={[styles.chip, formData.unit === u && styles.chipSelected]}
+                        onPress={() => setFormData({ ...formData, unit: u })}
+                      >
+                        <Text
+                          style={[styles.chipText, formData.unit === u && styles.chipTextSelected]}
+                        >
+                          {u}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+                <View style={styles.inputGroupFlex}>
+                  <Text style={styles.inputLabel}>Size</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={formData.unitSize}
+                    onChangeText={(t) => setFormData({ ...formData, unitSize: t })}
+                    keyboardType="numeric"
+                    placeholder="1"
+                  />
+                </View>
+              </View>
+
+              {/* Stock & Milk Type */}
+              <View style={styles.row}>
+                <View style={styles.inputGroupFlex}>
+                  <Text style={styles.inputLabel}>Stock</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={formData.stock}
+                    onChangeText={(t) => setFormData({ ...formData, stock: t })}
+                    keyboardType="numeric"
+                    placeholder="100"
+                  />
+                </View>
+                <View style={styles.inputGroupFlex}>
+                  <Text style={styles.inputLabel}>Milk Type</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                    {['Cow', 'Buffalo', 'Mixed', 'None'].map((t) => (
+                      <TouchableOpacity
+                        key={t}
+                        style={[styles.chip, formData.milkType === t && styles.chipSelected]}
+                        onPress={() => setFormData({ ...formData, milkType: t })}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            formData.milkType === t && styles.chipTextSelected,
+                          ]}
+                        >
+                          {t}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+
+              {/* Main Image Upload */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Product Image</Text>
+                <TouchableOpacity style={styles.imageUploadButton} onPress={pickImage}>
+                  <Ionicons name="camera" size={24} color={Colors.light.accent} />
+                  <Text style={styles.imageUploadText}>
+                    {formData.image ? 'Change Image' : 'Select Image from Gallery'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Additional Images */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Additional Images</Text>
+                <TouchableOpacity style={styles.imageUploadButton} onPress={pickAdditionalImages}>
+                  <Ionicons name="images" size={24} color={Colors.light.accent} />
+                  <Text style={styles.imageUploadText}>Add More Images</Text>
+                </TouchableOpacity>
+
+                <ScrollView horizontal style={{ marginTop: 12 }}>
+                  {[...currentAdditionalImages, ...newAdditionalImages].map((img, idx) => (
+                    <View key={img._id || img.uri} style={styles.imageItem}>
+                      <Image
+                        source={{ uri: img.image || img.uri }}
+                        style={styles.previewSmall}
+                        resizeMode="cover"
+                      />
+                      <TouchableOpacity
+                        style={styles.removeSmallImage}
+                        onPress={() => handleRemoveImage(img)}
+                      >
+                        <Ionicons name="close" size={16} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Toggles */}
+              <View style={styles.toggleRow}>
+                <TouchableOpacity
+                  style={styles.toggle}
+                  onPress={() => setFormData({ ...formData, isFeatured: !formData.isFeatured })}
+                >
+                  <View
+                    style={[styles.checkbox, formData.isFeatured && styles.checkboxChecked]}
+                  >
+                    {formData.isFeatured && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                  </View>
+                  <Text style={styles.toggleLabel}>Featured</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.toggle}
+                  onPress={() =>
+                    setFormData({ ...formData, isAvailable: !formData.isAvailable })
+                  }
+                >
+                  <View
+                    style={[styles.checkbox, formData.isAvailable && styles.checkboxChecked]}
+                  >
+                    {formData.isAvailable && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                  </View>
+                  <Text style={styles.toggleLabel}>Available</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Nutrition */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Nutrition (per 100{formData.unit})</Text>
+                <View style={styles.nutritionGrid}>
+                  {['fat', 'protein', 'calories', 'carbohydrates'].map((key) => (
+                    <View key={key} style={styles.nutritionInput}>
+                      <Text style={styles.nutritionLabel}>
+                        {key.charAt(0).toUpperCase() + key.slice(1)}
+                      </Text>
+                      <TextInput
+                        style={styles.nutritionTextInput}
+                        value={formData.nutritionalInfo[key]}
+                        onChangeText={(t) =>
+                          setFormData({
+                            ...formData,
+                            nutritionalInfo: { ...formData.nutritionalInfo, [key]: t },
+                          })
+                        }
+                        keyboardType="numeric"
+                        placeholder="0"
+                      />
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              {/* Tags */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Tags (comma separated)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={formData.tags}
+                  onChangeText={(t) => setFormData({ ...formData, tags: t })}
+                  placeholder="organic, fresh, premium"
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={closeModal}
+                disabled={uploading}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, uploading && styles.submitButtonDisabled]}
+                onPress={handleSubmit}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>
+                    {editingProduct ? 'Update' : 'Add'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
-      {/* ─────── QR MODAL – NEW SIMPLE DOWNLOAD ─────── */}
-      <Modal visible={qrModalVisible} transparent animationType="fade" onRequestClose={() => setQrModalVisible(false)}>
-        <View style={styles.qrModalOverlay}>
-          <View style={styles.qrModalContent}>
-            <View style={styles.qrModalHeader}>
-              <Text style={styles.qrModalTitle}>Product QR Code</Text>
-              <TouchableOpacity onPress={() => setQrModalVisible(false)}>
-                <MaterialIcons name="close" size={24} color={Colors.alloc} />
+      {/* Barcode Modal */}
+      <Modal
+        visible={barcodeModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBarcodeModal}
+      >
+        <View style={styles.barcodeModalOverlay}>
+          <View style={styles.barcodeModalContent}>
+            <View style={styles.barcodeModalHeader}>
+              <Text style={styles.barcodeModalTitle}>Product Barcode</Text>
+              <TouchableOpacity onPress={closeBarcodeModal}>
+                <MaterialIcons name="close" size={24} color={Colors.light.text} />
               </TouchableOpacity>
             </View>
 
-            <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1 }} style={styles.qrContainer}>
-              {selectedProductForQr?.qrCodeUrl ? (
-                <Image source={{ uri: selectedProductForQr.qrCodeUrl }} style={styles.qrImage} resizeMode="contain" />
-              ) : (
-                <View style={styles.qrPlaceholder}>
-                  {qrLoading ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color={Colors.light.accent} />
-                      <Text style={styles.loadingTextSmall}>Generating QR…</Text>
+            {showCamera ? (
+              <View style={styles.cameraContainer}>
+                <CameraView
+                  style={styles.camera}
+                  facing={'back'}
+                  barcodeScannerSettings={{
+                    barcodeTypes: [
+                      'ean13',
+                      'ean8',
+                      'upc_a',
+                      'upc_e',
+                      'code39',
+                      'code128',
+                      'itf14'
+                    ],
+                  }}
+                  onBarcodeScanned={barcodeScanning ? onBarcodeScanned : undefined}
+                  ref={cameraRef}
+                />
+                <View style={styles.cameraOverlay}>
+                  <Text style={styles.cameraInstruction}>
+                    Point camera at barcode to scan
+                  </Text>
+                  <View style={styles.scanFrame} />
+                  <TouchableOpacity
+                    style={styles.cancelScanButton}
+                    onPress={stopBarcodeScan}
+                  >
+                    <Text style={styles.cancelScanButtonText}>Cancel Scan</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <View style={styles.barcodeInfoContainer}>
+                  {selectedProductForBarcode?.barcodeUrl ? (
+                    <ViewShot
+                      ref={viewShotRef}
+                      options={{ format: 'png', quality: 1 }}
+                      style={styles.barcodeContainer}
+                    >
+                      <Image
+                        source={{ uri: selectedProductForBarcode.barcodeUrl }}
+                        style={styles.barcodeImage}
+                        resizeMode="contain"
+                      />
+                    </ViewShot>
+                  ) : barcodeData ? (
+                    <View style={styles.barcodeAssigned}>
+                      <Ionicons name="checkmark-circle" size={48} color="#4CAF50" />
+                      <Text style={styles.barcodeAssignedText}>Barcode Assigned</Text>
+                      <Text style={styles.barcodeValue}>{barcodeData}</Text>
+                      <Text style={styles.barcodeNote}>
+                        This barcode is now linked to the product
+                      </Text>
                     </View>
                   ) : (
+                    <View style={styles.barcodeEmpty}>
+                      <Ionicons name="barcode-outline" size={48} color={Colors.light.textSecondary} />
+                      <Text style={styles.barcodeEmptyText}>No Barcode</Text>
+                      <Text style={styles.barcodeEmptySubtext}>
+                        Generate or scan a barcode for this product
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {selectedProductForBarcode && (
+                  <Text style={styles.barcodeProductName}>
+                    {selectedProductForBarcode.name}
+                  </Text>
+                )}
+
+                <View style={styles.barcodeActions}>
+                  {selectedProductForBarcode?.barcodeUrl ? (
                     <>
-                      <Ionicons name="qr-code-outline" size={60} color={Colors.light.textSecondary} />
-                      <Text style={styles.qrPlaceholderText}>QR not generated yet</Text>
-                      <TouchableOpacity style={styles.generateQrButton} onPress={generateQr}>
-                        <Ionicons name="sparkles" size={18} color="#FFF" />
-                        <Text style={styles.generateQrButtonText}>Generate QR Code</Text>
+                      <TouchableOpacity 
+                        style={styles.downloadBarcodeButton} 
+                        onPress={downloadBarcode}
+                      >
+                        <Ionicons name="download-outline" size={20} color="#FFF" />
+                        <Text style={styles.downloadBarcodeButtonText}>Save Barcode</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.scanBarcodeButton} 
+                        onPress={startBarcodeScan}
+                      >
+                        <Ionicons name="scan-outline" size={20} color="#FFF" />
+                        <Text style={styles.scanBarcodeButtonText}>Rescan Barcode</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.removeBarcodeButton} 
+                        onPress={removeBarcode}
+                      >
+                        <Ionicons name="trash-outline" size={20} color="#F44336" />
+                        <Text style={styles.removeBarcodeButtonText}>Remove Barcode</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : barcodeData ? (
+                    <>
+                      <TouchableOpacity 
+                        style={styles.generateBarcodeButton} 
+                        onPress={generateBarcode}
+                        disabled={barcodeScanning}
+                      >
+                        {barcodeScanning ? (
+                          <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                          <>
+                            <Ionicons name="sparkles" size={20} color="#FFF" />
+                            <Text style={styles.generateBarcodeButtonText}>Generate Barcode</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.scanBarcodeButton} 
+                        onPress={startBarcodeScan}
+                      >
+                        <Ionicons name="scan-outline" size={20} color="#FFF" />
+                        <Text style={styles.scanBarcodeButtonText}>Scan Barcode</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <TouchableOpacity 
+                        style={styles.generateBarcodeButton} 
+                        onPress={generateBarcode}
+                        disabled={barcodeScanning}
+                      >
+                        {barcodeScanning ? (
+                          <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                          <>
+                            <Ionicons name="sparkles" size={20} color="#FFF" />
+                            <Text style={styles.generateBarcodeButtonText}>Generate Barcode</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.scanBarcodeButton} 
+                        onPress={startBarcodeScan}
+                      >
+                        <Ionicons name="scan-outline" size={20} color="#FFF" />
+                        <Text style={styles.scanBarcodeButtonText}>Scan Barcode</Text>
                       </TouchableOpacity>
                     </>
                   )}
                 </View>
-              )}
-            </ViewShot>
-
-            {selectedProductForQr && <Text style={styles.qrProductName}>{selectedProductForQr.name}</Text>}
-
-            {selectedProductForQr?.qrCodeUrl && (
-              <TouchableOpacity style={styles.downloadQrButton} onPress={downloadQr}>
-                <Ionicons name="download-outline" size={20} color="#FFF" />
-                <Text style={styles.downloadQrButtonText}>Save QR (JPG/PNG)</Text>
-              </TouchableOpacity>
+              </>
             )}
           </View>
         </View>
@@ -464,14 +1345,59 @@ export default function ProductsManagement() {
   );
 }
 
-//  == STYLES (unchanged) ===
+// ──────────────────────────────────────────────────────────────
+// STYLES - UPDATED FOR BARCODE
+// ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.light.background },
-  centered: { justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
-  loadingTextSmall: { marginTop: 12, fontSize: 14, color: Colors.light.textSecondary },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+  },
+  loadingTextSmall: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
 
-  searchFilterContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
+  /* PROFESSIONAL HEADER */
+  professionalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: Colors.light.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+    minHeight: 72,
+    justifyContent: 'center',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 40,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+
+  /* Search Bar */
+  searchFilterContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    backgroundColor: Colors.light.background,
+  },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -481,10 +1407,24 @@ const styles = StyleSheet.create({
     borderColor: Colors.light.border,
     paddingHorizontal: 12,
   },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, paddingVertical: 14, fontSize: 16, color: Colors.light.text },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.light.text,
+  },
 
-  listContent: { padding: 16, paddingBottom: 100 },
+  /* Product List */
+  listContent: {
+    padding: 16,
+    paddingTop: 8,
+    paddingBottom: 100,
+  },
+
+  /* Improved Product Card */
   productCard: {
     backgroundColor: '#FFF',
     borderRadius: 16,
@@ -493,30 +1433,157 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.light.border,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowRadius: 4,
     elevation: 3,
   },
-  productImage: { width: 64, height: 64, borderRadius: 12, marginRight: 12 },
-  productInfo: { flex: 1 },
-  productName: { fontSize: 16, fontWeight: '600', color: Colors.light.text, marginBottom: 2 },
-  productCategory: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 4 },
-  productDescription: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 4 },
-  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  productPrice: { fontSize: 16, fontWeight: '700', color: Colors.light.accent },
-  discountBadge: { fontSize: 12, color: '#4CAF50', fontWeight: '600', backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  stockText: { fontSize: 13, color: Colors.light.textSecondary },
-  outOfStockText: { color: '#F44336', fontWeight: '600' },
+  imageContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  productImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+  },
+  featuredBadge: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  featuredText: {
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  outOfStockOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  outOfStockText: {
+    fontSize: 11,
+    color: '#F44336',
+    fontWeight: '600',
+  },
 
-  categoryActions: { flexDirection: 'row', gap: 8 },
-  actionButton: { padding: 10, borderRadius: 12, backgroundColor: '#F5F5F5' },
-  qrButton: { backgroundColor: '#E3F2FD' },
-  editButton: { backgroundColor: '#E8F5E9' },
-  deleteButton: { backgroundColor: '#FFEBEE' },
+  /* Product Info */
+  productInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    flex: 1,
+    marginRight: 8,
+  },
+  unitText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    fontWeight: '500',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  productCategory: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    marginBottom: 6,
+  },
+  productDescription: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  barcodeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 4,
+  },
+  barcodeText: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    fontFamily: 'monospace',
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  priceSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  productPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.accent,
+  },
+  discountContainer: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  discountBadge: {
+    fontSize: 11,
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  stockText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
 
+  /* Action Buttons */
+  actionButtons: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  barcodeButton: {
+    backgroundColor: '#E8F5E9',
+  },
+  deleteButton: {
+    backgroundColor: '#FFEBEE',
+  },
+
+  /* FAB */
   fab: {
     position: 'absolute',
     right: 20,
@@ -534,69 +1601,269 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
 
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: 18, fontWeight: '600', color: Colors.light.text, marginTop: 16 },
-  emptySubtext: { fontSize: 14, color: Colors.light.textSecondary, marginTop: 8, textAlign: 'center', paddingHorizontal: 32 },
-  addFirstButton: { backgroundColor: Colors.light.accent, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 16 },
-  addFirstButtonText: { color: '#FFF', fontWeight: '600' },
+  /* Empty State */
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  addFirstButton: {
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  addFirstButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderColor: Colors.light.border },
-  modalTitle: { fontSize: 18, fontWeight: '700' },
-  modalBody: { padding: 20 },
-  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, gap: 12, borderTopWidth: 1, borderColor: Colors.light.border },
-  cancelButton: { paddingHorizontal: 20, paddingVertical: 10 },
-  cancelButtonText: { color: Colors.light.textSecondary, fontWeight: '600' },
-  submitButton: { backgroundColor: Colors.light.accent, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 8 },
-  submitButtonDisabled: { opacity: 0.7 },
-  submitButtonText: { color: '#FFF', fontWeight: '600' },
-
-  formGroup: { marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: '500', color: Colors.light.text, marginBottom: 6 },
-  subLabel: { fontSize: 13, fontWeight: '500', color: Colors.light.textSecondary, marginBottom: 4 },
-  input: {
+  /* Modal Styles */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '95%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+  modalBody: {
+    padding: 20,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputGroupFlex: {
+    flex: 1,
+    marginBottom: 16,
+    paddingHorizontal: 6,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  textInput: {
     borderWidth: 1,
     borderColor: Colors.light.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+    color: Colors.light.text,
     backgroundColor: '#FFF',
   },
-  inputSmall: {
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  row: {
+    flexDirection: 'row',
+    marginHorizontal: -6,
+  },
+  chipScroll: {
+    marginBottom: 8,
+  },
+  chip: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  chipSelected: {
+    backgroundColor: Colors.light.accent,
+  },
+  chipText: {
+    fontSize: 14,
+    color: Colors.light.text,
+  },
+  chipTextSelected: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: 24,
+    marginBottom: 16,
+  },
+  toggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    marginRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.light.accent,
+    borderColor: Colors.light.accent,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    color: Colors.light.text,
+  },
+  nutritionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  nutritionInput: {
+    flex: 1,
+    minWidth: '45%',
+  },
+  nutritionLabel: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginBottom: 4,
+  },
+  nutritionTextInput: {
     borderWidth: 1,
     borderColor: Colors.light.border,
     borderRadius: 8,
     padding: 10,
     fontSize: 14,
-    backgroundColor: '#FFF',
   },
-  picker: {
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderRadius: 8,
-    backgroundColor: '#FFF',
-    color: Colors.light.text,
+  modalFooter: {
+    flexDirection: 'row',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.border,
+    gap: 12,
   },
-  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  nutriContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  nutriItem: { width: '48%', marginBottom: 12 },
-  section: { marginTop: 24 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: Colors.light.text, marginBottom: 12 },
-  pickButton: {
-    backgroundColor: Colors.light.accent,
-    padding: 12,
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+  },
+  submitButton: {
+    flex: 1,
+    backgroundColor: Colors.light.accent,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  imagePreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  imagePreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#F44336',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 16,
+    backgroundColor: '#F9F9F9',
+  },
+  imageUploadText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: Colors.light.accent,
+    fontWeight: '600',
+  },
+  imageItem: {
+    position: 'relative',
+    marginRight: 12,
     marginBottom: 8,
   },
-  pickButtonText: { color: '#FFF', fontWeight: '600' },
-  preview: { width: 120, height: 120, borderRadius: 8, marginTop: 8 },
-  previewSmall: { width: 80, height: 80, borderRadius: 8, marginRight: 12 },
-  imageItem: { flexDirection: 'row', alignItems: 'center', marginRight: 16, marginBottom: 8 },
+  previewSmall: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  removeSmallImage: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#F44336',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
-  qrModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
-  qrModalContent: {
+  /* Barcode Modal Styles */
+  barcodeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  barcodeModalContent: {
     backgroundColor: '#FFF',
     borderRadius: 20,
     padding: 24,
@@ -609,10 +1876,19 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 16,
   },
-  qrModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 20 },
-  qrModalTitle: { fontSize: 20, fontWeight: '700', color: Colors.light.text },
-
-  qrContainer: {
+  barcodeModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  barcodeModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+  barcodeContainer: {
     padding: 20,
     backgroundColor: '#F9F9F9',
     borderRadius: 16,
@@ -622,43 +1898,183 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
   },
-  qrImage: { width: 230, height: 230, borderRadius: 12 },
-  qrPlaceholder: { alignItems: 'center', justifyContent: 'center', minHeight: 230, width: '100%' },
-  loadingContainer: { alignItems: 'center' },
-
-  qrPlaceholderText: { fontSize: 16, color: Colors.light.textSecondary, marginVertical: 16, textAlign: 'center' },
-
-  generateQrButton: {
+  barcodeImage: {
+    width: 230,
+    height: 230,
+    borderRadius: 12,
+  },
+  barcodeInfoContainer: {
+    padding: 20,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.light.border,
+    marginBottom: 16,
+    alignItems: 'center',
+    width: '100%',
+    minHeight: 200,
+    justifyContent: 'center',
+  },
+  barcodeAssigned: {
+    alignItems: 'center',
+  },
+  barcodeAssignedText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#4CAF50',
+    marginTop: 12,
+  },
+  barcodeValue: {
+    fontSize: 16,
+    fontFamily: 'monospace',
+    color: Colors.light.text,
+    marginTop: 8,
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  barcodeNote: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  barcodeEmpty: {
+    alignItems: 'center',
+  },
+  barcodeEmptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginTop: 12,
+  },
+  barcodeEmptySubtext: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  barcodeProductName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.light.text,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  barcodeActions: {
+    width: '100%',
+    gap: 12,
+  },
+  generateBarcodeButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.light.accent,
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 12,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
+    gap: 10,
   },
-  generateQrButtonText: { color: '#FFF', fontWeight: '600', fontSize: 16 },
-
-  qrProductName: { fontSize: 17, fontWeight: '600', color: Colors.light.text, textAlign: 'center', marginBottom: 16 },
-
-  downloadQrButton: {
+  generateBarcodeButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  scanBarcodeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 28,
+    justifyContent: 'center',
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 12,
     gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
   },
-  downloadQrButtonText: { color: '#FFF', fontWeight: '600', fontSize: 16 },
+  scanBarcodeButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  downloadBarcodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
+  },
+  downloadBarcodeButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  removeBarcodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFEBEE',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  removeBarcodeButtonText: {
+    color: '#F44336',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+
+  /* Camera Styles */
+  cameraContainer: {
+    width: '100%',
+    height: 400,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraInstruction: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 20,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  scanFrame: {
+    width: 250,
+    height: 150,
+    borderWidth: 2,
+    borderColor: '#FFF',
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+  },
+  cancelScanButton: {
+    marginTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  cancelScanButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
 });

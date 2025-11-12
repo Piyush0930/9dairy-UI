@@ -31,7 +31,7 @@ export default function CategoriesManagement() {
     isAuthenticated, 
     validateToken,
     logout 
-  } = useAuth(); // Use AuthContext like in other components
+  } = useAuth();
   
   const [categories, setCategories] = useState([]);
   const [filteredCategories, setFilteredCategories] = useState([]);
@@ -49,11 +49,16 @@ export default function CategoriesManagement() {
     displayOrder: 0,
   });
 
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 CategoriesManagement Mounted');
+    console.log('🔐 Auth State:', { authToken: !!authToken, isAuthenticated, authLoading });
+  }, []);
+
   // Enhanced API error handler
   const handleApiError = (error, customMessage = null) => {
     console.error('API Error:', error);
     
-    // Check for authentication errors
     if (error.message?.includes('401') || 
         error.message?.includes('Unauthorized') ||
         error.message?.includes('token') ||
@@ -70,12 +75,11 @@ export default function CategoriesManagement() {
           }
         ]
       );
-      return true; // Indicates auth error
+      return true;
     }
     
-    // Show custom or generic error
     Alert.alert("Error", customMessage || "Something went wrong. Please try again.");
-    return false; // Indicates non-auth error
+    return false;
   };
 
   // Add token validation before API calls
@@ -94,93 +98,122 @@ export default function CategoriesManagement() {
     return true;
   };
 
-  // Get auth headers for API calls
-  const getAuthHeaders = async () => {
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) return {};
-    
-    return {
-      'Authorization': `Bearer ${authToken}`,
-      'Content-Type': 'application/json'
-    };
-  };
-
-  // Auto-redirect when not authenticated
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      console.log('🔒 User not authenticated, redirecting to login...');
-      // You might want to add navigation here if needed
-    }
-  }, [isAuthenticated, authLoading]);
-
-  useEffect(() => {
-    if (!authLoading && authToken && isAuthenticated) {
-      fetchCategories();
-    } else if (!authLoading && (!authToken || !isAuthenticated)) {
-      console.log('❌ No auth token or not authenticated');
-      setLoading(false);
-    }
-  }, [authToken, authLoading, isAuthenticated]);
-
-  useEffect(() => {
-    filterCategories();
-  }, [categories, searchQuery]);
-
+  // Fix: Simplified and more robust fetch function
   const fetchCategories = async () => {
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) {
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-
+    console.log('🔄 fetchCategories called');
+    
     try {
+      // Don't validate auth here to avoid blocking the load
+      if (!authToken) {
+        console.log('❌ No auth token available');
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
       setLoading(true);
+      console.log('📡 Fetching categories from:', `${API_BASE_URL}/categories`);
+      
       const response = await fetch(`${API_BASE_URL}/categories`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json'
         },
       });
-      const data = await response.json();
 
-      if (response.ok && Array.isArray(data)) {
-        setCategories(data);
-      } else {
-        setCategories([]);
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to fetch categories');
-        }
+      console.log('📨 Response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+
+      const data = await response.json();
+      console.log('✅ Categories data received:', data?.length || 0, 'items');
+
+      // Handle different response formats
+      if (Array.isArray(data)) {
+        setCategories(data);
+        setFilteredCategories(data);
+      } else if (data.categories && Array.isArray(data.categories)) {
+        setCategories(data.categories);
+        setFilteredCategories(data.categories);
+      } else {
+        console.warn('⚠️ Unexpected response format:', data);
+        setCategories([]);
+        setFilteredCategories([]);
+      }
+
     } catch (error) {
-      console.error('Error fetching categories:', error);
-      handleApiError(error, 'Failed to load categories.');
+      console.error('❌ Error fetching categories:', error);
       setCategories([]);
+      setFilteredCategories([]);
+      
+      // Only show alert for non-auth errors
+      if (!error.message?.includes('401') && !error.message?.includes('Unauthorized')) {
+        Alert.alert("Error", "Failed to load categories. Please check your connection.");
+      }
     } finally {
+      console.log('🏁 fetchCategories completed');
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const filterCategories = useCallback(() => {
-    let filtered = categories;
+  // Fix: Simplified useEffect dependencies
+  useEffect(() => {
+    console.log('🎯 Main useEffect triggered', { 
+      authLoading, 
+      hasAuthToken: !!authToken, 
+      isAuthenticated 
+    });
 
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(cat =>
-        cat.name.toLowerCase().includes(query) ||
-        (cat.description && cat.description.toLowerCase().includes(query))
-      );
+    if (authLoading) {
+      console.log('⏳ Still loading auth...');
+      return;
     }
 
+    if (authToken && isAuthenticated) {
+      console.log('✅ Auth valid, fetching categories...');
+      fetchCategories();
+    } else {
+      console.log('❌ Auth invalid, stopping load');
+      setLoading(false);
+      setCategories([]);
+      setFilteredCategories([]);
+    }
+  }, [authToken, authLoading, isAuthenticated]); // Remove fetchCategories from dependencies
+
+  // Fix: useCallback for filterCategories
+  const filterCategories = useCallback(() => {
+    console.log('🔍 Filtering categories, query:', searchQuery);
+    
+    if (!searchQuery.trim()) {
+      setFilteredCategories(categories);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = categories.filter(cat =>
+      cat.name?.toLowerCase().includes(query) ||
+      cat.description?.toLowerCase().includes(query)
+    );
+    
     setFilteredCategories(filtered);
+    console.log('✅ Filtered to', filtered.length, 'categories');
   }, [categories, searchQuery]);
 
+  // Apply filter when categories or search query changes
+  useEffect(() => {
+    filterCategories();
+  }, [filterCategories]);
+
   const onRefresh = useCallback(() => {
+    console.log('🔄 Manual refresh triggered');
     setRefreshing(true);
     fetchCategories();
   }, []);
 
+  // Fix: Form validation
   const validateForm = () => {
     if (!formData.name.trim()) {
       Alert.alert('Validation Error', 'Category name is required.');
@@ -193,6 +226,7 @@ export default function CategoriesManagement() {
     return true;
   };
 
+  // Fix: Handle submit with better error handling
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
@@ -222,7 +256,6 @@ export default function CategoriesManagement() {
         form.append('description', formData.description?.trim() || '');
         form.append('displayOrder', formData.displayOrder.toString());
 
-        // Fix Android URI
         let imageUri = formData.image;
         if (Platform.OS === 'android' && !imageUri.startsWith('file://') && !imageUri.startsWith('content://')) {
           imageUri = `file://${imageUri}`;
@@ -281,7 +314,7 @@ export default function CategoriesManagement() {
       }
     } catch (error) {
       console.error('Submit error:', error);
-      handleApiError(error, 'Image upload failed. Try:\n• Smaller image\n• Different file\n• Check server logs');
+      handleApiError(error, 'Failed to save category. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -310,11 +343,11 @@ export default function CategoriesManagement() {
               });
               
               if (response.ok) {
-                Alert.alert('Success', 'Category deleted.');
+                Alert.alert('Success', 'Category deleted successfully.');
                 fetchCategories();
               } else {
                 const data = await response.json();
-                handleApiError({ message: data.message, response }, data.message || 'Failed to delete.');
+                handleApiError({ message: data.message, response }, data.message || 'Failed to delete category.');
               }
             } catch (error) {
               handleApiError(error, 'Failed to delete category.');
@@ -325,7 +358,9 @@ export default function CategoriesManagement() {
     );
   };
 
+  // Fix: Modal functions
   const openEditModal = (category) => {
+    console.log('✏️ Opening edit modal for:', category.name);
     setEditingCategory(category);
     setFormData({
       name: category.name || '',
@@ -337,6 +372,7 @@ export default function CategoriesManagement() {
   };
 
   const openCreateModal = () => {
+    console.log('➕ Opening create modal');
     setEditingCategory(null);
     resetForm();
     setModalVisible(true);
@@ -349,6 +385,14 @@ export default function CategoriesManagement() {
       image: '',
       displayOrder: 0,
     });
+  };
+
+  const closeModal = () => {
+    if (isSubmitting) return;
+    console.log('❌ Closing modal');
+    setModalVisible(false);
+    resetForm();
+    setEditingCategory(null);
   };
 
   const pickImage = async () => {
@@ -375,23 +419,27 @@ export default function CategoriesManagement() {
     }
   };
 
-  const closeModal = () => {
-    if (isSubmitting) return;
-    setModalVisible(false);
-    resetForm();
-    setEditingCategory(null);
-  };
+  // Debug loading states
+  console.log('📊 Current state:', { 
+    loading, 
+    authLoading, 
+    categoriesCount: categories.length,
+    filteredCount: filteredCategories.length 
+  });
 
+  // Loading states
   if (authLoading) {
+    console.log('🔄 Showing auth loading...');
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>Checking authentication...</Text>
       </View>
     );
   }
 
   if (loading) {
+    console.log('🔄 Showing categories loading...');
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
@@ -400,8 +448,20 @@ export default function CategoriesManagement() {
     );
   }
 
+  console.log('✅ Rendering main content...');
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top * 0.5 }]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* PROFESSIONAL HEADER */}
+      <View style={styles.professionalHeader}>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Categories</Text>
+          <Text style={styles.headerSubtitle}>
+            {filteredCategories.length} {filteredCategories.length === 1 ? 'category' : 'categories'}
+          </Text>
+        </View>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchFilterContainer}>
         <View style={styles.searchInputContainer}>
@@ -413,6 +473,11 @@ export default function CategoriesManagement() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={20} color={Colors.light.textSecondary} />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
@@ -421,7 +486,14 @@ export default function CategoriesManagement() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.light.accent]} />}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            colors={[Colors.light.accent]} 
+            tintColor={Colors.light.accent}
+          />
+        }
       >
         {filteredCategories.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -430,7 +502,7 @@ export default function CategoriesManagement() {
               {searchQuery ? 'No categories found' : 'No categories yet'}
             </Text>
             <Text style={styles.emptySubtext}>
-              {searchQuery ? 'Try a different search' : 'Create your first category'}
+              {searchQuery ? 'Try a different search term' : 'Create your first category to get started'}
             </Text>
             {!searchQuery && (
               <TouchableOpacity style={styles.createFirstButton} onPress={openCreateModal}>
@@ -440,13 +512,18 @@ export default function CategoriesManagement() {
           </View>
         ) : (
           filteredCategories.map((category) => (
-            <View key={category._id} style={styles.categoryCard}>
+            <TouchableOpacity 
+              key={category._id} 
+              style={styles.categoryCard}
+              onPress={() => openEditModal(category)}
+              activeOpacity={0.7}
+            >
               <View style={styles.categoryImageContainer}>
                 {category.image ? (
                   <Image source={{ uri: category.image }} style={styles.categoryImage} />
                 ) : (
                   <View style={styles.categoryImagePlaceholder}>
-                    <MaterialIcons name="image" size={24} color={Colors.light.textSecondary} />
+                    <MaterialIcons name="category" size={24} color={Colors.light.textSecondary} />
                   </View>
                 )}
               </View>
@@ -456,42 +533,41 @@ export default function CategoriesManagement() {
                   <Text style={styles.categoryName} numberOfLines={1}>
                     {category.name}
                   </Text>
-                  <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryOrderText}>#{category.displayOrder || 0}</Text>
+                  <View style={styles.orderBadge}>
+                    <Text style={styles.orderBadgeText}>#{category.displayOrder || 0}</Text>
                   </View>
                 </View>
 
-                {category.description && (
+                {category.description ? (
                   <Text style={styles.categoryDescription} numberOfLines={2}>
                     {category.description}
                   </Text>
+                ) : (
+                  <Text style={styles.noDescriptionText}>No description</Text>
                 )}
-
-                <View style={styles.categoryMeta}>
-                  <View style={[styles.statusIndicator, category.isActive !== false && styles.statusActive]}>
-                    <View style={[styles.statusDot, category.isActive !== false && styles.statusDotActive]} />
-                    <Text style={styles.statusText}>
-                      {category.isActive !== false ? 'Active' : 'Inactive'}
-                    </Text>
-                  </View>
-                </View>
               </View>
 
               <View style={styles.categoryActions}>
                 <TouchableOpacity
                   style={[styles.actionButton, styles.editButton]}
-                  onPress={() => openEditModal(category)}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    openEditModal(category);
+                  }}
                 >
                   <Feather name="edit-2" size={18} color={Colors.light.accent} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionButton, styles.deleteButton]}
-                  onPress={() => handleDelete(category._id, category.name)}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDelete(category._id, category.name);
+                  }}
                 >
                   <Feather name="trash-2" size={18} color="#F44336" />
                 </TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -507,7 +583,7 @@ export default function CategoriesManagement() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {editingCategory ? 'Edit Category' : 'Create Category'}
+                {editingCategory ? 'Edit Category' : 'Create New Category'}
               </Text>
               <TouchableOpacity onPress={closeModal} disabled={isSubmitting}>
                 <MaterialIcons name="close" size={24} color={Colors.light.text} />
@@ -515,13 +591,27 @@ export default function CategoriesManagement() {
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Image Preview */}
+              {formData.image && (
+                <View style={styles.imagePreviewContainer}>
+                  <Image source={{ uri: formData.image }} style={styles.imagePreview} />
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => setFormData({ ...formData, image: '' })}
+                    disabled={isSubmitting}
+                  >
+                    <Ionicons name="close" size={16} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Category Name <Text style={styles.required}>*</Text></Text>
                 <TextInput
                   style={[styles.textInput, formData.name.trim() && styles.inputValid]}
                   value={formData.name}
                   onChangeText={(text) => setFormData({ ...formData, name: text })}
-                  placeholder="Enter category name"
+                  placeholder="e.g., Dairy Products, Fresh Milk"
                   editable={!isSubmitting}
                 />
                 <Text style={styles.charCount}>{formData.name.length}/50</Text>
@@ -533,7 +623,7 @@ export default function CategoriesManagement() {
                   style={[styles.textInput, styles.textArea]}
                   value={formData.description}
                   onChangeText={(text) => setFormData({ ...formData, description: text })}
-                  placeholder="Optional description..."
+                  placeholder="Optional category description..."
                   multiline
                   numberOfLines={4}
                   editable={!isSubmitting}
@@ -542,24 +632,23 @@ export default function CategoriesManagement() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Image</Text>
+                <Text style={styles.inputLabel}>Category Image</Text>
                 <View style={styles.imageInputContainer}>
                   <TextInput
                     style={[styles.textInput, styles.imageInput]}
                     value={formData.image}
                     onChangeText={(text) => setFormData({ ...formData, image: text })}
-                    placeholder="https://... or select from gallery"
+                    placeholder="Image URL or select from gallery"
                     editable={!isSubmitting}
                   />
-                  <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage} disabled={isSubmitting}>
+                  <TouchableOpacity 
+                    style={styles.imagePickerButton} 
+                    onPress={pickImage} 
+                    disabled={isSubmitting}
+                  >
                     <Ionicons name="image" size={20} color="#FFF" />
                   </TouchableOpacity>
                 </View>
-                {formData.image && (
-                  <View style={styles.imagePreview}>
-                    <Image source={{ uri: formData.image }} style={styles.previewImage} />
-                  </View>
-                )}
               </View>
 
               <View style={styles.inputGroup}>
@@ -575,7 +664,7 @@ export default function CategoriesManagement() {
                   keyboardType="numeric"
                   editable={!isSubmitting}
                 />
-                <Text style={styles.helperText}>Lower numbers appear first</Text>
+                <Text style={styles.helperText}>Lower numbers appear first in listings</Text>
               </View>
             </ScrollView>
 
@@ -590,13 +679,13 @@ export default function CategoriesManagement() {
               <TouchableOpacity
                 style={[styles.submitButton, isSubmitting && styles.buttonDisabled]}
                 onPress={handleSubmit}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !formData.name.trim()}
               >
                 {isSubmitting ? (
                   <ActivityIndicator size="small" color="#FFF" />
                 ) : (
                   <Text style={styles.submitButtonText}>
-                    {editingCategory ? 'Update' : 'Create'}
+                    {editingCategory ? 'Update Category' : 'Create Category'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -608,7 +697,7 @@ export default function CategoriesManagement() {
   );
 }
 
-// Keep all your existing styles exactly as they were
+// Keep your existing styles exactly as they were
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -623,6 +712,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.light.textSecondary,
   },
+  professionalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: Colors.light.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+    minHeight: 72,
+    justifyContent: 'center',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 40,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    fontWeight: '500',
+  },
   searchFilterContainer: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -633,7 +748,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.light.border,
     paddingHorizontal: 12,
@@ -643,7 +758,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     fontSize: 16,
     color: Colors.light.text,
   },
@@ -656,18 +771,23 @@ const styles = StyleSheet.create({
   },
   categoryCard: {
     backgroundColor: '#FFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.light.border,
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   categoryImageContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 8,
+    width: 80,
+    height: 80,
+    borderRadius: 12,
     marginRight: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.background,
@@ -684,72 +804,57 @@ const styles = StyleSheet.create({
   },
   categoryContent: {
     flex: 1,
+    marginRight: 12,
   },
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+    alignItems: 'flex-start',
+    marginBottom: 6,
   },
   categoryName: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.text,
     flex: 1,
+    marginRight: 8,
   },
-  categoryBadge: {
+  orderBadge: {
     backgroundColor: Colors.light.accent + '20',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    marginLeft: 8,
   },
-  categoryOrderText: {
+  orderBadgeText: {
     fontSize: 12,
     fontWeight: '600',
     color: Colors.light.accent,
   },
   categoryDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.light.textSecondary,
-    lineHeight: 20,
+    lineHeight: 18,
     marginBottom: 8,
   },
-  categoryMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statusIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#F44336',
-  },
-  statusDotActive: {
-    backgroundColor: Colors.light.accent,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Colors.light.textSecondary,
+  noDescriptionText: {
+    fontSize: 13,
+    color: Colors.light.textTertiary,
+    fontStyle: 'italic',
+    marginBottom: 8,
   },
   categoryActions: {
-    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   actionButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
     borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   editButton: {
-    backgroundColor: Colors.light.accent + '20',
+    backgroundColor: '#E3F2FD',
   },
   deleteButton: {
     backgroundColor: '#FFEBEE',
@@ -764,11 +869,11 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 6,
+    elevation: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -786,17 +891,17 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     marginTop: 8,
     textAlign: 'center',
+    paddingHorizontal: 32,
   },
   createFirstButton: {
     backgroundColor: Colors.light.accent,
-    borderRadius: 8,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    marginTop: 24,
+    borderRadius: 12,
+    marginTop: 16,
   },
   createFirstButtonText: {
     color: '#FFF',
-    fontSize: 16,
     fontWeight: '600',
   },
   modalOverlay: {
@@ -825,6 +930,29 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     padding: 20,
+  },
+  imagePreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+    position: 'relative',
+  },
+  imagePreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#F44336',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   inputGroup: {
     marginBottom: 20,
@@ -865,16 +993,18 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     marginTop: 4,
   },
-  imagePreview: {
-    marginTop: 12,
+  imageInputContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  previewImage: {
-    width: 80,
-    height: 80,
+  imageInput: {
+    flex: 1,
+  },
+  imagePickerButton: {
+    marginLeft: 8,
+    backgroundColor: Colors.light.accent,
+    padding: 12,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
   },
   modalFooter: {
     flexDirection: 'row',
@@ -886,8 +1016,8 @@ const styles = StyleSheet.create({
   cancelButton: {
     flex: 1,
     backgroundColor: '#F5F5F5',
-    borderRadius: 8,
     paddingVertical: 14,
+    borderRadius: 8,
     alignItems: 'center',
   },
   cancelButtonText: {
@@ -898,8 +1028,8 @@ const styles = StyleSheet.create({
   submitButton: {
     flex: 1,
     backgroundColor: Colors.light.accent,
-    borderRadius: 8,
     paddingVertical: 14,
+    borderRadius: 8,
     alignItems: 'center',
   },
   submitButtonText: {
@@ -909,18 +1039,5 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
-  },
-  imageInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  imageInput: {
-    flex: 1,
-  },
-  imagePickerButton: {
-    marginLeft: 8,
-    backgroundColor: Colors.light.accent,
-    padding: 10,
-    borderRadius: 6,
   },
 });

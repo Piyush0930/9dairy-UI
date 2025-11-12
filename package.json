@@ -1,5 +1,5 @@
 {
-  "name": "dairy-app",
+  "name": "dairy-nine",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
@@ -19,8 +19,10 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
+    "bwip-js": "^4.7.0",
     "expo": "54.0.23",
-    "expo-camera": "~17.0.9",
+    "expo-barcode-scanner": "^13.0.1",
+    "expo-camera": "^17.0.9",
     "expo-constants": "~18.0.9",
     "expo-document-picker": "~14.0.7",
     "expo-env": "^1.1.1",
@@ -52,10 +54,11 @@
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
-    "react-native-svg": "^15.14.0",
+    "react-native-svg": "15.12.1",
     "react-native-view-shot": "^4.0.3",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.5.1"
+    "react-native-worklets": "0.5.1",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@react-native-community/cli": "^20.0.2",
