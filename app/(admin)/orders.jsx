@@ -1,20 +1,12 @@
 // app/(admin)/orders.jsx
 
-import Colors from "@/constants/colors";
-import { useAuth } from "@/contexts/AuthContext";
-import { useScanner } from "@/contexts/ScannerContext";
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { Camera, CameraView } from "expo-camera";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -23,6 +15,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 
 const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
@@ -96,94 +91,14 @@ function getStatusBackgroundColor(status) {
 export default function AdminOrders() {
   const insets = useSafeAreaInsets();
   const { authToken, isLoading: authLoading, isAuthenticated, validateToken } = useAuth();
-  const { isScannerOpen, openScanner, closeScanner } = useScanner();
   const router = useRouter();
-  const { scanner } = router.params || {};
+  
   const [orders, setOrders] = useState([]);
   const [offlineOrders, setOfflineOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState("orders");
   const [expandedOrder, setExpandedOrder] = useState(null);
-
-  // Scanner states
-  const [hasPermission, setHasPermission] = useState(null);
-  const [scannedItems, setScannedItems] = useState([]);
-  const [torchOn, setTorchOn] = useState(false);
-  const [scanFeedback, setScanFeedback] = useState(false); // "success" | "duplicate" | false
-  const [isScanningLocked, setIsScanningLocked] = useState(false);
-  
-  // Animation refs
-  const blinkTimeoutRef = useRef(null);
-  const scanCooldownRef = useRef(null);
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const [scannedProduct, setScannedProduct] = useState(null);
-
-  /* ---------- OPEN SCANNER FROM URL ---------- */
-  useEffect(() => {
-    if (scanner === "open") {
-      (async () => {
-        const { status } = await Camera.requestCameraPermissionsAsync();
-        setHasPermission(status === "granted");
-        if (status === "granted") {
-          setScannedItems([]);
-          openScanner();
-          router.replace("/(admin)/orders");
-        }
-      })();
-    }
-  }, [scanner, hasPermission, router, openScanner]);
-
-  /* ---------- CLEAN URL WHEN MODAL CLOSES ---------- */
-  useEffect(() => {
-    if (!isScannerOpen && scanner === "open") {
-      router.replace("/(admin)/orders");
-    }
-  }, [isScannerOpen, scanner, router]);
-
-  /* ---------- CAMERA PERMISSION ---------- */
-  useEffect(() => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status === "granted");
-    })();
-  }, []);
-
-  // Cleanup timeouts on unmount
-  useEffect(() => {
-    return () => {
-      if (blinkTimeoutRef.current) clearTimeout(blinkTimeoutRef.current);
-      if (scanCooldownRef.current) clearTimeout(scanCooldownRef.current);
-    };
-  }, []);
-
-  // Reset animations when scanner opens
-  useEffect(() => {
-    if (isScannerOpen) {
-      slideAnim.setValue(0);
-      scaleAnim.setValue(0);
-      fadeAnim.setValue(0);
-      setScannedProduct(null);
-    }
-  }, [isScannerOpen]);
-
-  if (hasPermission === false) {
-    return (
-      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <Text style={{ color: "red", textAlign: "center", marginBottom: 20 }}>
-          Camera permission is required to scan QR codes.
-        </Text>
-        <TouchableOpacity
-          style={{ backgroundColor: Colors.light.accent, padding: 12, borderRadius: 8 }}
-          onPress={() => Camera.requestCameraPermissionsAsync()}
-        >
-          <Text style={{ color: "#FFF", fontWeight: "600" }}>Grant Permission</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
   /* ---------- API HELPERS ---------- */
   const handleApiError = (error, msg) => {
@@ -261,138 +176,11 @@ export default function AdminOrders() {
     }
   }, [activeFilter, authToken, authLoading, isAuthenticated]);
 
-  /* ---------- SCANNER LOGIC ---------- */
-  const closeScannerLocal = () => {
-    closeScanner();
-    setTorchOn(false);
-    setIsScanningLocked(false);
-    if (blinkTimeoutRef.current) clearTimeout(blinkTimeoutRef.current);
-    if (scanCooldownRef.current) clearTimeout(scanCooldownRef.current);
-  };
-
-  const showProductAnimation = (productName) => {
-    setScannedProduct(productName);
-    
-    // Reset animations
-    slideAnim.setValue(-100);
-    scaleAnim.setValue(0);
-    fadeAnim.setValue(0);
-
-    // Slide in animation
-    Animated.parallel([
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      })
-    ]).start();
-
-    // Auto hide after 2 seconds
-    setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: 100,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        })
-      ]).start(() => {
-        setScannedProduct(null);
-      });
-    }, 2000);
-  };
-
-  const handleBarCodeScanned = async ({ data }) => {
-    // Prevent rapid scanning
-    if (isScanningLocked) return;
-    
-    setIsScanningLocked(true);
-    
-    try {
-      const payload = JSON.parse(data);
-      if (!payload.productId) throw new Error("No productId");
-
-      const existing = scannedItems.find(i => i.productId === payload.productId);
-      if (existing) {
-        // Duplicate - just haptic feedback and visual border, no pause
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        setScanFeedback("duplicate");
-        
-        blinkTimeoutRef.current = setTimeout(() => {
-          setScanFeedback(false);
-        }, 1000);
-        
-        // Very short cooldown for duplicates
-        scanCooldownRef.current = setTimeout(() => {
-          setIsScanningLocked(false);
-        }, 500);
-        return;
-      }
-
-      const res = await fetch(`${API_BASE_URL}/catalog/products/${payload.productId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-      const prod = await res.json();
-      const item = {
-        productId: payload.productId,
-        name: prod.product?.name || payload.name || "Unknown",
-        price: prod.product?.price || payload.price || 0,
-        quantity: 1,
-      };
-
-      setScannedItems(prev => [...prev, item]);
-      
-      // Success - haptic feedback and animation
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setScanFeedback("success");
-      showProductAnimation(item.name);
-
-      // Short cooldown for successful scans
-      blinkTimeoutRef.current = setTimeout(() => {
-        setScanFeedback(false);
-      }, 1000);
-      
-      scanCooldownRef.current = setTimeout(() => {
-        setIsScanningLocked(false);
-      }, 800);
-
-    } catch {
-      // Error - haptic feedback
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Invalid QR", "Could not read product.");
-      
-      // Short cooldown for errors
-      scanCooldownRef.current = setTimeout(() => {
-        setIsScanningLocked(false);
-      }, 500);
-    }
-  };
-
-  const openQuantityModal = () => {
-    if (scannedItems.length === 0) {
-      Alert.alert("No Items", "Scan at least one product first.");
-      return;
-    }
-    closeScanner();
+  /* ---------- NAVIGATE TO OFFLINE ORDER PAGE WITH SCANNER AUTO-OPEN ---------- */
+  const navigateToOfflineOrder = () => {
     router.push({
       pathname: "/(admin)/offline-order",
-      params: { scannedItems: JSON.stringify(scannedItems) },
+      params: { autoOpenScanner: "true" }
     });
   };
 
@@ -846,115 +634,14 @@ export default function AdminOrders() {
         )}
       </ScrollView>
 
-      {/* ---------- QR SCANNER MODAL ---------- */}
-      <Modal visible={isScannerOpen} animationType="slide" onRequestClose={closeScannerLocal}>
-        <View style={styles.scannerContainer}>
-          {/* CAMERA */}
-          <CameraView
-            onBarcodeScanned={isScannerOpen && !isScanningLocked ? handleBarCodeScanned : undefined}
-            style={StyleSheet.absoluteFillObject}
-            torch={torchOn ? "on" : "off"}
-            barcodeTypes={["qr"]}
-          />
-
-          {/* HEADER */}
-          <View style={styles.modalScannerHeader}>
-            <Text style={styles.scannerTitle}>Scan Products</Text>
-            <TouchableOpacity onPress={closeScannerLocal}>
-              <MaterialIcons name="close" size={28} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-
-          {/* MASK + FRAME */}
-          <View style={styles.maskOverlay}>
-            <View style={styles.maskTop} />
-            <View style={styles.maskMiddleRow}>
-              <View style={styles.maskSide} />
-              <View
-                style={[
-                  styles.focusFrame,
-                  scanFeedback === "success" && styles.focusFrameSuccess,
-                  scanFeedback === "duplicate" && styles.focusFrameDuplicate,
-                ]}
-              />
-              <View style={styles.maskSide} />
-            </View>
-            <View style={styles.maskBottom} />
-          </View>
-
-          {/* SCANNED PRODUCT ANIMATION */}
-          {scannedProduct && (
-            <Animated.View 
-              style={[
-                styles.productPopup,
-                {
-                  transform: [
-                    { translateY: slideAnim },
-                    { scale: scaleAnim }
-                  ],
-                  opacity: fadeAnim
-                }
-              ]}
-            >
-              <View style={styles.productPopupContent}>
-                <MaterialIcons name="check-circle" size={24} color="#4CAF50" />
-                <Text style={styles.productPopupText}>{scannedProduct}</Text>
-                <Text style={styles.productPopupSubtext}>Added to cart</Text>
-              </View>
-            </Animated.View>
-          )}
-
-          {/* INSTRUCTIONS */}
-          <View style={styles.instructionContainer}>
-            <Text style={styles.scannerText}>Align QR code within frame</Text>
-          </View>
-
-          {/* ITEMS COUNTER */}
-          <Animated.View style={[styles.itemsCounter, { opacity: fadeAnim }]}>
-            <Text style={styles.itemsCounterText}>
-              {scannedItems.length} item{scannedItems.length !== 1 ? 's' : ''} scanned
-            </Text>
-          </Animated.View>
-
-          {/* FOOTER */}
-          <View style={styles.scannerFooter}>
-            <TouchableOpacity
-              style={[styles.torchBtn, torchOn && styles.torchBtnActive]}
-              onPress={() => setTorchOn(prev => !prev)}
-            >
-              <Ionicons name={torchOn ? "flash" : "flash-off"} size={24} color={torchOn ? "#FFD700" : "#FFF"} />
-              <Text style={styles.torchBtnText}>{torchOn ? "On" : "Off"}</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[
-                styles.continueBtn, 
-                scannedItems.length > 0 && styles.continueBtnActive
-              ]} 
-              onPress={openQuantityModal}
-            >
-              <Text style={[
-                styles.continueBtnText,
-                scannedItems.length > 0 && styles.continueBtnTextActive
-              ]}>
-                Continue ({scannedItems.reduce((s, i) => s + i.quantity, 0)})
-              </Text>
-              {scannedItems.length > 0 && (
-                <MaterialIcons name="arrow-forward" size={20} color="#FFF" />
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Floating Scanner Button */}
-      <TouchableOpacity style={styles.floatingScannerButton} onPress={() => openScanner()}>
-        <Ionicons name="qr-code" size={24} color="#FFF" />
+      {/* Floating Scanner Button - Now navigates directly to offline order page with auto-open scanner */}
+      <TouchableOpacity style={styles.floatingScannerButton} onPress={navigateToOfflineOrder}>
+        <Ionicons name="barcode" size={24} color="#FFF" />
       </TouchableOpacity>
-
     </View>
   );
 }
+
 /* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
@@ -1039,7 +726,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
 
-  // ... rest of your existing styles remain the same
   orderHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
   orderIdRow: { flex: 1, marginRight: 12 },
   orderIdLarge: { fontSize: 16, fontWeight: "700", color: Colors.light.text, marginBottom: 4 },
@@ -1142,171 +828,6 @@ const styles = StyleSheet.create({
   distanceSection: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 6 },
   distanceText: { fontSize: 13, color: Colors.light.accent, fontWeight: "600" },
 
-  /* ---------- SCANNER MODAL ---------- */
-  scannerContainer: { flex: 1, backgroundColor: "#000" },
-  modalScannerHeader: {
-    position: "absolute",
-    top: 40,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    zIndex: 10,
-  },
-  scannerTitle: { fontSize: 18, fontWeight: "600", color: "#FFF" },
-
-  /* MASK & FRAME */
-  maskOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  maskTop: { flex: 1, width: "100%", backgroundColor: "rgba(0,0,0,0.75)" },
-  maskMiddleRow: { flexDirection: "row", alignItems: "center" },
-  maskSide: { flex: 1, height: "100%", backgroundColor: "rgba(0,0,0,0.75)" },
-  maskBottom: { flex: 1, width: "100%", backgroundColor: "rgba(0,0,0,0.75)" },
-  focusFrame: {
-    width: 250,
-    height: 250,
-    borderWidth: 3,
-    borderColor: Colors.light.accent,
-    borderRadius: 16,
-    backgroundColor: "transparent",
-  },
-  focusFrameSuccess: {
-    borderColor: "#4CAF50",
-    shadowColor: "#4CAF50",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  focusFrameDuplicate: {
-    borderColor: "#FF4444",
-    shadowColor: "#FF4444",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-
-  /* PRODUCT POPUP ANIMATION */
-  productPopup: {
-    position: "absolute",
-    top: 120,
-    left: 20,
-    right: 20,
-    zIndex: 20,
-  },
-  productPopupContent: {
-    backgroundColor: "rgba(255,255,255,0.95)",
-    padding: 16,
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  productPopupText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    marginLeft: 12,
-    flex: 1,
-  },
-  productPopupSubtext: {
-    fontSize: 12,
-    color: "#666",
-    marginLeft: 12,
-  },
-
-  /* ITEMS COUNTER */
-  itemsCounter: {
-    position: "absolute",
-    top: 200,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 15,
-  },
-  itemsCounterText: {
-    color: "#FFF",
-    fontSize: 14,
-    fontWeight: "500",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-
-  instructionContainer: {
-    position: "absolute",
-    top: "50%",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    marginTop: 140,
-  },
-  scannerText: { color: "#FFF", fontSize: 16, fontWeight: "500" },
-
-  scannerFooter: {
-    position: "absolute",
-    bottom: 40,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  torchBtn: { 
-    backgroundColor: "rgba(255,255,255,0.15)", 
-    padding: 16,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    width: 70,
-    height: 70,
-  },
-  torchBtnActive: {
-    backgroundColor: "rgba(255,215,0,0.3)",
-  },
-  torchBtnText: {
-    color: "#FFF",
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: "500",
-  },
-  continueBtn: { 
-    backgroundColor: "rgba(255,255,255,0.15)", 
-    paddingHorizontal: 24, 
-    paddingVertical: 16, 
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-    flexDirection: "row",
-    alignItems: "center",
-    minWidth: 150,
-    justifyContent: "center",
-  },
-  continueBtnActive: {
-    backgroundColor: Colors.light.accent,
-    borderColor: Colors.light.accent,
-  },
-  continueBtnText: { 
-    color: "rgba(255,255,255,0.8)", 
-    fontWeight: "600", 
-    fontSize: 16,
-    marginRight: 8,
-  },
-  continueBtnTextActive: {
-    color: "#FFF",
-  },
   floatingScannerButton: {
     position: "absolute",
     bottom: 20,

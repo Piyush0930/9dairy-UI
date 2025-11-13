@@ -58,6 +58,7 @@ export default function InventoryScreen() {
   const [stockModal, setStockModal] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [detailModal, setDetailModal] = useState(false);
+  const [addProductModal, setAddProductModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
   // Stock update
@@ -69,6 +70,18 @@ export default function InventoryScreen() {
   const [editSellingPrice, setEditSellingPrice] = useState("");
   const [editMinStock, setEditMinStock] = useState("");
   const [editMaxStock, setEditMaxStock] = useState("");
+
+  // Add product to inventory
+  const [productSearch, setProductSearch] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [initialStock, setInitialStock] = useState("");
+  const [sellingPrice, setSellingPrice] = useState("");
+  const [costPrice, setCostPrice] = useState("");
+  const [minStockLevel, setMinStockLevel] = useState("");
+  const [maxStockLevel, setMaxStockLevel] = useState("");
+  const [searchingProducts, setSearchingProducts] = useState(false);
+  const [addingProduct, setAddingProduct] = useState(false);
 
   // Fetch All Data
   const fetchData = useCallback(async () => {
@@ -167,6 +180,106 @@ export default function InventoryScreen() {
     console.log("Refreshing data...");
     setRefreshing(true);
     fetchData();
+  };
+
+  // Search Products for Adding to Inventory
+  const searchProducts = async (query) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      setSearchingProducts(true);
+      const headers = { 
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      };
+
+      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/catalog/products/search?q=${encodeURIComponent(query)}`, { headers });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSearchResults(data.data || []);
+        } else {
+          setSearchResults([]);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Search products error:', error);
+      setSearchResults([]);
+    } finally {
+      setSearchingProducts(false);
+    }
+  };
+
+  // Add Product to Inventory
+  const handleAddProductToInventory = async () => {
+    if (!selectedProduct) {
+      Alert.alert("Error", "Please select a product");
+      return;
+    }
+
+    if (!sellingPrice) {
+      Alert.alert("Error", "Please enter selling price");
+      return;
+    }
+
+    try {
+      setAddingProduct(true);
+      
+      const res = await fetch(`${API_BASE_URL}/products`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productId: selectedProduct._id,
+          initialStock: parseInt(initialStock) || 0,
+          sellingPrice: parseFloat(sellingPrice),
+          costPrice: costPrice ? parseFloat(costPrice) : undefined,
+          minStockLevel: minStockLevel ? parseInt(minStockLevel) : undefined,
+          maxStockLevel: maxStockLevel ? parseInt(maxStockLevel) : undefined,
+        }),
+      });
+
+      const data = await res.json();
+      console.log("Add product response:", data);
+      
+      if (!data.success) throw new Error(data.message);
+
+      Alert.alert("Success", "Product added to inventory successfully!");
+      resetAddProductModal();
+      setAddProductModal(false);
+      fetchData();
+    } catch (e) {
+      console.error("Add product error:", e);
+      Alert.alert("Error", e.message || "Failed to add product to inventory");
+    } finally {
+      setAddingProduct(false);
+    }
+  };
+
+  // Reset Add Product Modal
+  const resetAddProductModal = () => {
+    setProductSearch("");
+    setSearchResults([]);
+    setSelectedProduct(null);
+    setInitialStock("");
+    setSellingPrice("");
+    setCostPrice("");
+    setMinStockLevel("");
+    setMaxStockLevel("");
+  };
+
+  // Open Add Product Modal
+  const openAddProductModal = () => {
+    resetAddProductModal();
+    setAddProductModal(true);
   };
 
   // Stock Update
@@ -534,21 +647,191 @@ export default function InventoryScreen() {
               {searchQuery ? "Try a different search term" : "Add products to get started"}
             </Text>
             {!searchQuery && (
-              <TouchableOpacity style={styles.addFirstButton} onPress={() => router.push("/(admin)/add-product")}>
-                <Text style={styles.addFirstButtonText}>Add Product</Text>
+              <TouchableOpacity style={styles.addFirstButton} onPress={openAddProductModal}>
+                <Text style={styles.addFirstButtonText}>Add Product to Inventory</Text>
               </TouchableOpacity>
             )}
           </View>
         }
       />
 
-      {/* FAB - Add Product */}
+      {/* FAB - Add Product to Inventory */}
       <TouchableOpacity 
         style={styles.fab} 
-        onPress={() => router.push("/(admin)/add-product")}
+        onPress={openAddProductModal}
       >
         <Ionicons name="add" size={24} color="#FFF" />
       </TouchableOpacity>
+
+      {/* Add Product to Inventory Modal */}
+      <Modal visible={addProductModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.addProductModal]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Product to Inventory</Text>
+              <TouchableOpacity onPress={() => setAddProductModal(false)}>
+                <MaterialIcons name="close" size={24} color={Colors.light.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Product Search */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Search Product *</Text>
+                <View style={styles.searchContainer}>
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search products by name or SKU..."
+                    placeholderTextColor="#BDBDBD"
+                    value={productSearch}
+                    onChangeText={(text) => {
+                      setProductSearch(text);
+                      searchProducts(text);
+                    }}
+                  />
+                  {searchingProducts && (
+                    <ActivityIndicator size="small" color={Colors.light.accent} />
+                  )}
+                </View>
+
+                {/* Search Results */}
+                {productSearch && searchResults.length > 0 && (
+                  <View style={styles.searchResults}>
+                    {searchResults.map((product) => (
+                      <TouchableOpacity
+                        key={product._id}
+                        style={[
+                          styles.searchResultItem,
+                          selectedProduct?._id === product._id && styles.searchResultItemSelected
+                        ]}
+                        onPress={() => setSelectedProduct(product)}
+                      >
+                        <Image
+                          source={{ uri: product.image || "https://via.placeholder.com/40x40?text=No+Img" }}
+                          style={styles.searchResultImage}
+                        />
+                        <View style={styles.searchResultInfo}>
+                          <Text style={styles.searchResultName}>{product.name}</Text>
+                          <Text style={styles.searchResultSku}>SKU: {product.sku}</Text>
+                          <Text style={styles.searchResultCategory}>{product.category?.name || 'Uncategorized'}</Text>
+                        </View>
+                        {selectedProduct?._id === product._id && (
+                          <MaterialIcons name="check-circle" size={20} color={Colors.light.accent} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {productSearch && searchResults.length === 0 && !searchingProducts && (
+                  <View style={styles.noResults}>
+                    <Text style={styles.noResultsText}>No products found</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Selected Product Preview */}
+              {selectedProduct && (
+                <View style={styles.selectedProductPreview}>
+                  <Text style={styles.previewTitle}>Selected Product</Text>
+                  <View style={styles.previewContent}>
+                    <Image
+                      source={{ uri: selectedProduct.image || "https://via.placeholder.com/60x60?text=No+Img" }}
+                      style={styles.previewImage}
+                    />
+                    <View style={styles.previewInfo}>
+                      <Text style={styles.previewName}>{selectedProduct.name}</Text>
+                      <Text style={styles.previewSku}>SKU: {selectedProduct.sku}</Text>
+                      <Text style={styles.previewCategory}>{selectedProduct.category?.name || 'Uncategorized'}</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Stock Information */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Initial Stock</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  value={initialStock}
+                  onChangeText={setInitialStock}
+                  placeholder="Enter initial stock quantity"
+                />
+              </View>
+
+              {/* Pricing Information */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Selling Price (₹) *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  value={sellingPrice}
+                  onChangeText={setSellingPrice}
+                  placeholder="Enter selling price"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Cost Price (₹)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  value={costPrice}
+                  onChangeText={setCostPrice}
+                  placeholder="Enter cost price (optional)"
+                />
+              </View>
+
+              {/* Stock Levels */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Min Stock Level</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  value={minStockLevel}
+                  onChangeText={setMinStockLevel}
+                  placeholder="Enter minimum stock level (optional)"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Max Stock Level</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  value={maxStockLevel}
+                  onChangeText={setMaxStockLevel}
+                  placeholder="Enter maximum stock level (optional)"
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity 
+                style={styles.cancelButton} 
+                onPress={() => setAddProductModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.submitButton,
+                  (!selectedProduct || !sellingPrice || addingProduct) && styles.submitButtonDisabled
+                ]} 
+                onPress={handleAddProductToInventory}
+                disabled={!selectedProduct || !sellingPrice || addingProduct}
+              >
+                {addingProduct ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Add to Inventory</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Stock Update Modal */}
       <Modal visible={stockModal} transparent animationType="slide">
@@ -895,64 +1178,63 @@ const styles = StyleSheet.create({
   },
 
   // Consistent 2x2 Summary Grid
-  // Optimized Stat Cards Styles
-summaryGrid: { 
-  flexDirection: "row", 
-  flexWrap: "wrap",
-  padding: 16,
-  gap: 12,
-  backgroundColor: "#FFF",
-},
-summaryCard: {
-  width: '47%',
-  backgroundColor: "#FFF",
-  padding: 16,
-  borderRadius: 16,
-  alignItems: "center",
-  borderWidth: 1,
-  borderColor: Colors.light.border,
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.1,
-  shadowRadius: 4,
-  elevation: 3,
-},
-iconContainer: {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  backgroundColor: Colors.light.accent,
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginBottom: 8,
-},
-card1: { 
-  borderLeftWidth: 4, 
-  borderLeftColor: Colors.light.accent,
-},
-card2: {
-  borderLeftWidth: 4,
-  borderLeftColor: "#4CAF50",
-},
-card3: {
-  borderLeftWidth: 4,
-  borderLeftColor: "#2196F3",
-},
-card4: {
-  borderLeftWidth: 4,
-  borderLeftColor: "#FF9800",
-},
-summaryValue: { 
-  fontSize: 18, 
-  fontWeight: "700", 
-  color: Colors.light.text, 
-  marginBottom: 4 
-},
-summaryLabel: { 
-  fontSize: 12, 
-  color: Colors.light.textSecondary,
-  fontWeight: '500'
-},
+  summaryGrid: { 
+    flexDirection: "row", 
+    flexWrap: "wrap",
+    padding: 16,
+    gap: 12,
+    backgroundColor: "#FFF",
+  },
+  summaryCard: {
+    width: '47%',
+    backgroundColor: "#FFF",
+    padding: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.light.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  card1: { 
+    borderLeftWidth: 4, 
+    borderLeftColor: Colors.light.accent,
+  },
+  card2: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#4CAF50",
+  },
+  card3: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196F3",
+  },
+  card4: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#FF9800",
+  },
+  summaryValue: { 
+    fontSize: 18, 
+    fontWeight: "700", 
+    color: Colors.light.text, 
+    marginBottom: 4 
+  },
+  summaryLabel: { 
+    fontSize: 12, 
+    color: Colors.light.textSecondary,
+    fontWeight: '500'
+  },
 
   // Compact Horizontal Recent Activities
   section: { 
@@ -1179,6 +1461,9 @@ summaryLabel: {
     borderTopRightRadius: 20,
     maxHeight: '90%',
   },
+  addProductModal: {
+    maxHeight: '95%',
+  },
   detailModal: {
     maxHeight: '95%',
   },
@@ -1213,6 +1498,10 @@ summaryLabel: {
     color: Colors.light.text,
     marginBottom: 8,
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   textInput: {
     borderWidth: 1,
     borderColor: Colors.light.border,
@@ -1221,7 +1510,104 @@ summaryLabel: {
     fontSize: 16,
     color: Colors.light.text,
     backgroundColor: '#FFF',
+    flex: 1,
   },
+  
+  // Search Results Styles
+  searchResults: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 8,
+    maxHeight: 200,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+  searchResultItemSelected: {
+    backgroundColor: '#F0F8FF',
+  },
+  searchResultImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  searchResultInfo: {
+    flex: 1,
+  },
+  searchResultName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 2,
+  },
+  searchResultSku: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginBottom: 2,
+  },
+  searchResultCategory: {
+    fontSize: 11,
+    color: Colors.light.accent,
+  },
+  noResults: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  noResultsText: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
+  
+  // Selected Product Preview
+  selectedProductPreview: {
+    backgroundColor: '#F8F9FA',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  previewTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  previewContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  previewInfo: {
+    flex: 1,
+  },
+  previewName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  previewSku: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginBottom: 2,
+  },
+  previewCategory: {
+    fontSize: 12,
+    color: Colors.light.accent,
+  },
+
   chipScroll: {
     marginBottom: 8,
   },
