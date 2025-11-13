@@ -1,6 +1,4 @@
-// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\components\LocationPicker.jsx
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,21 +6,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
+  ScrollView,
   Dimensions,
-  ScrollView
-} from 'react-native';
-import { LocationService } from '../services/locationService';
+} from "react-native";
+import { LocationService } from "@/services/locationService";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
-export default function LocationPicker({ 
-  onLocationSelect, 
+export default function LocationPicker({
+  onLocationSelect,
   placeholder = "Enter your address",
   showCurrentLocation = true,
-  style 
+  style,
 }) {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -30,260 +27,211 @@ export default function LocationPicker({
   const [currentCoords, setCurrentCoords] = useState(null);
   const debounceRef = useRef(null);
 
-  // Clean up on unmount
+  /* ---------------------------------------------------------
+      ✔ GET CURRENT COORDS FOR BIAS
+  ----------------------------------------------------------*/
   useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, []);
-
-  // Get current location on component mount for location bias
-  useEffect(() => {
-    const getInitialLocation = async () => {
+    (async () => {
       try {
-        const location = await LocationService.getCurrentLocation();
+        const gps = await LocationService.getCurrentLocation();
         setCurrentCoords({
-          latitude: location.latitude,
-          longitude: location.longitude
+          latitude: gps.latitude,
+          longitude: gps.longitude,
         });
-      } catch (error) {
-        console.log('⚠ Could not get initial location for bias:', error.message);
+      } catch (e) {
+        console.log("⚠ Initial GPS not available:", e);
       }
-    };
-
-    getInitialLocation();
+    })();
   }, []);
 
-  // Dynamic search with debouncing
-  const searchPlaces = async (searchText) => {
-    if (!searchText || searchText.trim().length < 2) {
+  /* ---------------------------------------------------------
+      ✔ DEBOUNCE SEARCH INPUT
+  ----------------------------------------------------------*/
+  const handleInputChange = (text) => {
+    setInput(text);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      searchPlaces(text);
+    }, 400);
+  };
+
+  /* ---------------------------------------------------------
+      ✔ CALL GOOGLE PLACES AUTOCOMPLETE
+  ----------------------------------------------------------*/
+  const searchPlaces = async (text) => {
+    if (!text || text.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
 
     setLoading(true);
+
     try {
-      const results = await LocationService.getPlaceSuggestions(searchText, currentCoords);
-      setSuggestions(results);
-      setShowSuggestions(results.length > 0);
-    } catch (error) {
-      console.error('Search error:', error);
-      Alert.alert('Search Error', error.message);
-      setSuggestions([]);
-      setShowSuggestions(false);
+      const res = await LocationService.getPlaceSuggestions(
+        text,
+        currentCoords
+      );
+      setSuggestions(res || []);
+      setShowSuggestions(true);
+    } catch (err) {
+      console.log("Search error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle input change with debouncing
-  const handleInputChange = (text) => {
-    setInput(text);
-    
-    // Clear previous timeout
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
+  /* ---------------------------------------------------------
+      ✔ USER SELECTS A SUGGESTION
+  ----------------------------------------------------------*/
+  const handleSuggestionSelect = async (item) => {
+    setInput(item.description);
+    setShowSuggestions(false);
+    setLoading(true);
+
+    try {
+      const place = await LocationService.getPlaceDetails(item.placeId);
+
+      if (!place.coordinates?.latitude) throw new Error("No coordinates");
+
+      const finalData = {
+        coordinates: place.coordinates,
+        formattedAddress: place.formattedAddress || item.description,
+        placeId: item.placeId,
+      };
+
+      console.log("📍 Selected:", finalData);
+      onLocationSelect(finalData);
+    } catch (err) {
+      console.log("Details error:", err);
+
+      // fallback → Current GPS
+      try {
+        const gps = await LocationService.getCurrentLocation();
+        const fallback = {
+          formattedAddress: item.description,
+          coordinates: gps,
+          isFallback: true,
+        };
+        onLocationSelect(fallback);
+      } catch (e) {
+        // Last fallback → Mumbai default
+        const last = {
+          formattedAddress: item.description,
+          coordinates: { latitude: 19.076, longitude: 72.8777 },
+          isDefault: true,
+        };
+        onLocationSelect(last);
+      }
     }
 
-    // Debounce search to avoid too many API calls
-    debounceRef.current = setTimeout(() => {
-      searchPlaces(text);
-    }, 400);
+    setLoading(false);
   };
 
-  // Handle suggestion selection
-  // Handle suggestion selection - ISKO UPDATE KARO
-const handleSuggestionSelect = async (suggestion) => {
-  setInput(suggestion.description);
-  setShowSuggestions(false);
-  setLoading(true);
+  /* ---------------------------------------------------------
+      ✔ USE CURRENT GPS LOCATION
+  ----------------------------------------------------------*/
+  const handleGetCurrentLocation = async () => {
+    setGettingLocation(true);
 
-  try {
-    const details = await LocationService.getPlaceDetails(suggestion.placeId);
-    
-    // ✅ PAKKA COORDINATES KE LIYE CHECK KARO
-    if (!details.latitude || !details.longitude) {
-      throw new Error('Coordinates not available for this location');
-    }
-
-    const locationData = {
-      coordinates: {
-        latitude: details.latitude,
-        longitude: details.longitude
-      },
-      formattedAddress: details.formattedAddress || suggestion.description,
-      placeId: details.placeId,
-      addressComponents: details.addressComponents
-    };
-
-    console.log('📍 Location selected with coordinates:', locationData);
-    onLocationSelect(locationData);
-    
-  } catch (error) {
-    console.error('Error getting place details:', error);
-    
-    // ✅ AGAR COORDINATES NAHI MILLE TO CURRENT LOCATION USE KARO
     try {
-      console.log('🔄 Falling back to current location...');
-      const currentLocation = await LocationService.getCurrentLocation();
-      
-      const fallbackData = {
-        coordinates: {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude
-        },
-        formattedAddress: suggestion.description,
-        placeId: suggestion.placeId,
-        isFallback: true
-      };
-      
-      console.log('📍 Using fallback coordinates:', fallbackData);
-      onLocationSelect(fallbackData);
-      
-    } catch (fallbackError) {
-      console.error('Fallback also failed:', fallbackError);
-      
-      // ✅ LAST RESORT - DEFAULT COORDINATES
-      const defaultData = {
-        coordinates: {
-          latitude: 19.0760, // Mumbai default
-          longitude: 72.8777
-        },
-        formattedAddress: suggestion.description,
-        placeId: suggestion.placeId,
-        isDefault: true
-      };
-      
-      console.log('📍 Using default coordinates:', defaultData);
-      onLocationSelect(defaultData);
-    }
-  } finally {
-    setLoading(false);
-  }
-};
+      const loc = await LocationService.getLocationWithFallback();
 
-// Current location function ko bhi improve karo
-const handleGetCurrentLocation = async () => {
-  setGettingLocation(true);
-  try {
-    const location = await LocationService.getLocationWithFallback();
-    
-    // ✅ CURRENT LOCATION MEIN BHI COORDINATES CHECK KARO
-    if (!location.coordinates || !location.coordinates.latitude || !location.coordinates.longitude) {
-      throw new Error('Current location coordinates not available');
+      setInput(loc.formattedAddress);
+      onLocationSelect(loc);
+      setShowSuggestions(false);
+    } catch (err) {
+      console.log("Current location error:", err);
+
+      const fallback = {
+        formattedAddress: "Your current location",
+        coordinates: { latitude: 19.076, longitude: 72.8777 },
+        isDefault: true,
+      };
+
+      setInput("Your current location");
+      onLocationSelect(fallback);
     }
-    
-    setInput(location.formattedAddress);
-    setCurrentCoords(location.coordinates);
-    
-    console.log('📍 Current location with coordinates:', location);
-    onLocationSelect(location);
-    setShowSuggestions(false);
-    
-  } catch (error) {
-    console.error('Error getting current location:', error);
-    
-    // ✅ FALLBACK FOR CURRENT LOCATION
-    const fallbackLocation = {
-      coordinates: {
-        latitude: 19.0760,
-        longitude: 72.8777
-      },
-      formattedAddress: "Your current location",
-      isFallback: true
-    };
-    
-    setInput("Your current location");
-    console.log('📍 Using fallback for current location:', fallbackLocation);
-    onLocationSelect(fallbackLocation);
-    setShowSuggestions(false);
-  } finally {
+
     setGettingLocation(false);
-  }
-};
+  };
 
-  // Clear input
-  const handleClearInput = () => {
-    setInput('');
+  /* ---------------------------------------------------------
+      ✔ CLEAR INPUT
+  ----------------------------------------------------------*/
+  const clearInput = () => {
+    setInput("");
     setSuggestions([]);
     setShowSuggestions(false);
   };
 
+  /* ---------------------------------------------------------
+      ✔ UI
+  ----------------------------------------------------------*/
   return (
     <View style={[styles.container, style]}>
       <View style={styles.inputContainer}>
         <TextInput
-          style={styles.input}
           placeholder={placeholder}
-          placeholderTextColor="#94a3b8"
           value={input}
           onChangeText={handleInputChange}
-          onFocus={() => {
-            if (input.length >= 2 && suggestions.length > 0) {
-              setShowSuggestions(true);
-            }
-          }}
-          onBlur={() => {
-            setTimeout(() => setShowSuggestions(false), 300);
-          }}
-          editable={!gettingLocation}
+          style={styles.input}
+          placeholderTextColor="#94a3b8"
         />
-        
+
         {input.length > 0 && (
-          <TouchableOpacity onPress={handleClearInput} style={styles.clearButton}>
+          <TouchableOpacity onPress={clearInput}>
             <Text style={styles.clearText}>✕</Text>
           </TouchableOpacity>
         )}
-        
-        {loading && (
-          <ActivityIndicator 
-            size="small" 
-            color="#3b82f6" 
-            style={styles.loadingIndicator}
-          />
-        )}
+
+        {loading && <ActivityIndicator size="small" color="#2563eb" />}
       </View>
 
+      {/* CURRENT LOCATION */}
       {showCurrentLocation && (
         <TouchableOpacity
-          style={[styles.currentLocationButton, gettingLocation && styles.buttonDisabled]}
+          style={[
+            styles.currentBtn,
+            gettingLocation && { opacity: 0.6 },
+          ]}
           onPress={handleGetCurrentLocation}
           disabled={gettingLocation}
         >
           {gettingLocation ? (
             <>
-              <ActivityIndicator size="small" color="#3b82f6" />
-              <Text style={styles.currentLocationText}>Getting Location...</Text>
+              <ActivityIndicator size="small" color="#2563eb" />
+              <Text style={styles.currentBtnText}>Getting location...</Text>
             </>
           ) : (
             <>
               <Text style={styles.locationIcon}>📍</Text>
-              <Text style={styles.currentLocationText}>Use Current Location</Text>
+              <Text style={styles.currentBtnText}>Use Current Location</Text>
             </>
           )}
         </TouchableOpacity>
       )}
 
+      {/* AUTOCOMPLETE DROPDOWN */}
       {showSuggestions && suggestions.length > 0 && (
-        <View style={styles.suggestionsContainer}>
-          <ScrollView 
-            style={styles.suggestionsList}
-            nestedScrollEnabled={true}
+        <View style={styles.dropdown}>
+          <ScrollView
+            style={styles.dropdownScroll}
             keyboardShouldPersistTaps="always"
-            showsVerticalScrollIndicator={false}
           >
-            {suggestions.map((suggestion) => (
+            {suggestions.map((s) => (
               <TouchableOpacity
-                key={suggestion.placeId}
+                key={s.placeId}
+                onPress={() => handleSuggestionSelect(s)}
                 style={styles.suggestionItem}
-                onPress={() => handleSuggestionSelect(suggestion)}
               >
-                <Text style={styles.suggestionMainText}>{suggestion.mainText}</Text>
-                {suggestion.secondaryText && (
-                  <Text style={styles.suggestionSecondaryText}>{suggestion.secondaryText}</Text>
+                <Text style={styles.suggestionMain}>{s.mainText}</Text>
+                {s.secondaryText && (
+                  <Text style={styles.suggestionSecondary}>
+                    {s.secondaryText}
+                  </Text>
                 )}
               </TouchableOpacity>
             ))}
@@ -294,99 +242,82 @@ const handleGetCurrentLocation = async () => {
   );
 }
 
+/* ---------------------------------------------------------
+      ✔ STYLES
+----------------------------------------------------------*/
+
 const styles = StyleSheet.create({
-  container: {
-    position: 'relative',
-    zIndex: 1000,
-  },
+  container: { width: "100%", zIndex: 1000 },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    backgroundColor: '#f8fafc',
-    minHeight: 56,
+    alignItems: "center",
   },
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#1e293b',
-    paddingVertical: 8,
-    fontWeight: '500',
-  },
-  clearButton: {
-    padding: 4,
-    marginLeft: 8,
+    color: "#1e293b",
+    fontWeight: "600",
   },
   clearText: {
-    fontSize: 16,
-    color: '#64748b',
-    fontWeight: 'bold',
+    color: "#64748b",
+    fontSize: 18,
+    marginRight: 8,
   },
-  loadingIndicator: {
-    marginLeft: 8,
-  },
-  currentLocationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f0f9ff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0f2fe',
-    gap: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  locationIcon: {
-    fontSize: 16,
-  },
-  currentLocationText: {
-    fontSize: 14,
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  suggestionsContainer: {
-    position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
-    backgroundColor: '#ffffff',
+  dropdown: {
+    marginTop: 6,
+    backgroundColor: "#fff",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    borderColor: "#e2e8f0",
+    maxHeight: 220,
+    width: "100%",
+    position: "absolute",
+    top: 60,
+    zIndex: 9999,
+    elevation: 10,
+    shadowColor: "#000",
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
-    maxHeight: 200,
-    zIndex: 1001,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
   },
-  suggestionsList: {
-    maxHeight: 200,
-  },
+  dropdownScroll: { maxHeight: 220 },
   suggestionItem: {
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: "#f1f5f9",
   },
-  suggestionMainText: {
-    fontSize: 16,
-    color: '#1e293b',
-    fontWeight: '500',
+  suggestionMain: {
+    fontSize: 15,
+    color: "#1e293b",
+    fontWeight: "600",
   },
-  suggestionSecondaryText: {
-    fontSize: 14,
-    color: '#64748b',
+  suggestionSecondary: {
+    fontSize: 13,
+    color: "#64748b",
     marginTop: 2,
   },
+  currentBtn: {
+    marginTop: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#eff6ff",
+    borderRadius: 10,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 6,
+  },
+  currentBtnText: {
+    color: "#2563eb",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  locationIcon: { fontSize: 16 },
 });
