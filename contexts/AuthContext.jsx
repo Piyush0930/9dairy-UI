@@ -16,82 +16,88 @@ export function AuthProvider({ children }) {
     checkAuthState();
   }, []);
 
-  const checkAuthState = async () => {
-    try {
-      console.log('🔐 Checking auth state...');
-      
-      const [token, userData] = await Promise.all([
-        SecureStore.getItemAsync('userToken'),
-        AsyncStorage.getItem('userData'),
-      ]);
-      
-      console.log('📱 Auth check results:', { token: !!token, userData: !!userData });
-      
-      if (token && userData) {
-        const parsedUser = JSON.parse(userData);
-        setUser(parsedUser);
-        setAuthToken(token);
-        setIsAuthenticated(true);
-        console.log('✅ User authenticated from storage');
-        console.log('👤 User role from storage:', parsedUser.role);
-        
-        // ✅ CORRECTED: Proper role-based routing with correct route names
-        if (parsedUser.role === 'admin') {
-          console.log('🔧 Admin user detected, redirecting to ADMIN app...');
-          router.replace('/(admin)'); // Use your actual admin route
-        } else {
-          console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
-          router.replace('/(tabs)'); // Customer route
-        }
-        
-      } else {
-        console.log('❌ No valid auth data found');
-        setIsAuthenticated(false);
-      }
-    } catch (error) {
-      console.error('❌ Error checking auth state:', error);
-      await clearAuthData();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const login = async (userData, token) => {
-    try {
-      console.log('🔐 Starting login process...');
-      
-      // First update the state synchronously
-      setUser(userData);
+const checkAuthState = async () => {
+  try {
+    console.log('🔐 Checking auth state...');
+    
+    const [token, userData] = await Promise.all([
+      SecureStore.getItemAsync('userToken'),
+      AsyncStorage.getItem('userData'),
+    ]);
+    
+    console.log('📱 Auth check results:', { token: !!token, userData: !!userData });
+    
+    if (token && userData) {
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
       setAuthToken(token);
       setIsAuthenticated(true);
+      console.log('✅ User authenticated from storage');
+      console.log('👤 User role from storage:', parsedUser.role);
       
-      // Then save to storage
-      await Promise.all([
-        SecureStore.setItemAsync('userToken', token),
-        AsyncStorage.setItem('userData', JSON.stringify(userData)),
-      ]);
-      
-      console.log('✅ Login successful, state updated');
-      console.log('👤 User role:', userData.role);
-      
-      // ✅ CORRECTED: Same routing logic as checkAuthState
-      if (userData.role === 'admin') {
+      // ✅ CORRECTED: Proper role-based routing
+      if (parsedUser.role === 'admin') {
         console.log('🔧 Admin user detected, redirecting to ADMIN app...');
-        router.replace('/(admin)'); // Use your actual admin route
+        router.replace('/(admin)');
+      } else if (parsedUser.role === 'superadmin') {
+        console.log('👑 SuperAdmin detected, redirecting to SUPERADMIN dashboard...');
+        router.replace('/supadmin'); // 👈 SUPERADMIN ROUTE
       } else {
         console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
-        router.replace('/(tabs)'); // Customer route
+        router.replace('/(tabs)');
       }
       
-    } catch (error) {
-      console.error('❌ Login error:', error);
-      // Rollback state on error
-      setUser(null);
-      setAuthToken(null);
+    } else {
+      console.log('❌ No valid auth data found');
       setIsAuthenticated(false);
-      throw new Error('Failed to save login data');
     }
-  };
+  } catch (error) {
+    console.error('❌ Error checking auth state:', error);
+    await clearAuthData();
+  } finally {
+    setLoading(false);
+  }
+};
+
+const login = async (userData, token) => {
+  try {
+    console.log('🔐 Starting login process...');
+    
+    // First update the state synchronously
+    setUser(userData);
+    setAuthToken(token);
+    setIsAuthenticated(true);
+    
+    // Then save to storage
+    await Promise.all([
+      SecureStore.setItemAsync('userToken', token),
+      AsyncStorage.setItem('userData', JSON.stringify(userData)),
+    ]);
+    
+    console.log('✅ Login successful, state updated');
+    console.log('👤 User role:', userData.role);
+    
+    // ✅ CORRECTED: Same routing logic as checkAuthState
+    if (userData.role === 'admin') {
+      console.log('🔧 Admin user detected, redirecting to ADMIN app...');
+      router.replace('/(admin)');
+    } else if (userData.role === 'superadmin') {
+      console.log('👑 SuperAdmin detected, redirecting to SUPERADMIN dashboard...');
+      router.replace('/supadmin'); // 👈 SUPERADMIN ROUTE
+    } else {
+      console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
+      router.replace('/(tabs)');
+    }
+    
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    // Rollback state on error
+    setUser(null);
+    setAuthToken(null);
+    setIsAuthenticated(false);
+    throw new Error('Failed to save login data');
+  }
+};
 
   const clearAuthData = async () => {
     try {
