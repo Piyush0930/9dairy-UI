@@ -1,37 +1,60 @@
-// contexts/ProfileContext.js
-import React, { createContext, useState, useContext } from 'react';
+import React, { createContext, useState, useContext } from "react";
 
 const ProfileContext = createContext();
 
 export const useProfile = () => {
-  const context = useContext(ProfileContext);
-  if (!context) {
-    throw new Error('useProfile must be used within a ProfileProvider');
-  }
-  return context;
+  const ctx = useContext(ProfileContext);
+  if (!ctx) throw new Error("useProfile must be used inside ProfileProvider");
+  return ctx;
 };
 
 export const ProfileProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // Use number instead of boolean
 
-  const updateProfile = (newProfile) => {
-    setProfile(newProfile);
-  };
+  // 🔥 Location & Retailer (Fixed structure)
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [assignedRetailer, setAssignedRetailer] = useState(null);
 
-  const refreshProfile = () => {
-    setRefreshTrigger(prev => prev + 1); // Increment to trigger refresh
-  };
+  // NEW — Normalizes and stores location properly
+  const updateCurrentLocation = (loc) => {
+    console.log("🔥 Normalizing Location:", loc);
 
-  const value = {
-    profile,
-    updateProfile,
-    refreshTrigger, // Export refreshTrigger instead of needsRefresh
-    refreshProfile
+    const lat =
+      loc?.coordinates?.latitude ??
+      loc?.coords?.latitude ??
+      loc?.latitude ??
+      null;
+
+    const lon =
+      loc?.coordinates?.longitude ??
+      loc?.coords?.longitude ??
+      loc?.longitude ??
+      null;
+
+    setCurrentLocation({
+      latitude: Number(lat),
+      longitude: Number(lon),
+      formattedAddress:
+        loc?.formattedAddress ||
+        loc?.address ||
+        loc?.name ||
+        "Current Location",
+    });
   };
 
   return (
-    <ProfileContext.Provider value={value}>
+    <ProfileContext.Provider
+      value={{
+        profile,
+        updateProfile: setProfile,
+
+        currentLocation,
+        updateCurrentLocation,
+
+        assignedRetailer,
+        updateAssignedRetailer: setAssignedRetailer,
+      }}
+    >
       {children}
     </ProfileContext.Provider>
   );

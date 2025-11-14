@@ -1,3 +1,6 @@
+
+// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\(tabs)\_layout.jsx
+
 import { useCart } from "@/contexts/CartContext";
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router, Tabs, usePathname } from "expo-router";

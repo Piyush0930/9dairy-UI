@@ -1,3 +1,5 @@
+// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\(tabs)\index.jsx
+
 import CategoryTile from '@/components/CategoryTile';
 import ProductCard from '@/components/ProductCard';
 import Colors from '@/constants/colors';
