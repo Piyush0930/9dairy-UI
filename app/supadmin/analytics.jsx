@@ -1,82 +1,25 @@
 // app/(tabs)/supadmin/analytics.jsx
-import { useState, useEffect, useRef } from 'react';
+import { Feather, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  RefreshControl,
-  Dimensions,
+  ActivityIndicator,
   Alert,
   Animated,
-  ActivityIndicator,
+  Dimensions,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { MaterialIcons, FontAwesome5, Ionicons, Feather, Octicons } from '@expo/vector-icons';
-import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+import { BarChart, LineChart } from 'react-native-chart-kit';
+import { useAuth } from '../../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
+const API_BASE = `${process.env.EXPO_PUBLIC_API_URL || ''}/api`;
 
-// Mock analytics data
-const MOCK_ANALYTICS = {
-  overview: {
-    totalRevenue: 2540000,
-    revenueGrowth: 22,
-    totalOrders: 1567,
-    orderGrowth: 15,
-    activeCustomers: 11200,
-    customerGrowth: 8,
-    avgOrderValue: 285,
-    aovGrowth: 12,
-  },
-  revenueData: {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-    datasets: [
-      {
-        data: [1200000, 1350000, 1420000, 1560000, 1680000, 1850000, 1920000, 2100000, 2250000, 2380000, 2450000, 2540000],
-        color: () => `rgba(59, 130, 246, 1)`,
-        strokeWidth: 2,
-      },
-    ],
-  },
-  orderData: {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [
-      {
-        data: [45, 52, 38, 74, 65, 89, 76],
-      },
-    ],
-  },
-  customerMetrics: {
-    newCustomers: 234,
-    returningCustomers: 856,
-    churnRate: 4.2,
-    retentionRate: 95.8,
-    customerLifetimeValue: 2450,
-  },
-  topProducts: [
-    { name: 'Buffalo Milk', sales: 1245, revenue: 99600, growth: 15 },
-    { name: 'Fresh Curd', sales: 856, revenue: 34240, growth: 12 },
-    { name: 'Cow Milk', sales: 734, revenue: 44040, growth: 8 },
-    { name: 'Paneer', sales: 456, revenue: 54720, growth: 25 },
-    { name: 'White Butter', sales: 389, revenue: 42790, growth: 18 },
-  ],
-  retailerPerformance: [
-    { name: 'Fresh Dairy Mart', orders: 1234, revenue: 345000, rating: 4.8 },
-    { name: 'Dairy King', orders: 876, revenue: 189000, rating: 4.5 },
-    { name: 'Milk & More', orders: 654, revenue: 143000, rating: 4.2 },
-    { name: 'Pure Milk Center', orders: 432, revenue: 95000, rating: 3.9 },
-    { name: 'Farm Fresh Dairy', orders: 321, revenue: 70500, rating: 4.1 },
-  ],
-  platformMetrics: {
-    avgResponseTime: '120ms',
-    successRate: '99.2%',
-    uptime: '99.9%',
-    loadTime: '2.1s',
-  }
-};
-
-// Chart configuration
 const chartConfig = {
   backgroundColor: '#FFFFFF',
   backgroundGradientFrom: '#FFFFFF',
@@ -84,272 +27,359 @@ const chartConfig = {
   decimalPlaces: 0,
   color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
   labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-  style: {
-    borderRadius: 16,
-  },
-  propsForDots: {
-    r: '4',
-    strokeWidth: '2',
-    stroke: '#3B82F6',
-  },
-  propsForBackgroundLines: {
-    strokeDasharray: '',
-    stroke: '#E5E7EB',
-    strokeWidth: 1,
-  },
+  style: { borderRadius: 16 },
+  propsForDots: { r: '4', strokeWidth: '2', stroke: '#3B82F6' },
+  propsForBackgroundLines: { strokeDasharray: '', stroke: '#E5E7EB', strokeWidth: 1 },
 };
 
+function formatYMD(date) {
+  // returns YYYY-MM-DD
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function rangeToDates(rangeKey) {
+  const now = new Date();
+  let start, end;
+  end = new Date(now);
+  // set end to end of day (for readability we send date only)
+  switch (rangeKey) {
+    case 'today':
+      start = new Date(now);
+      break;
+    case 'week': {
+      // last 7 days including today
+      start = new Date(now);
+      start.setDate(now.getDate() - 6);
+      break;
+    }
+    case 'month': {
+      start = new Date(now);
+      start.setMonth(now.getMonth() - 1);
+      start.setDate(start.getDate() + 1);
+      break;
+    }
+    case 'quarter': {
+      start = new Date(now);
+      start.setMonth(now.getMonth() - 3);
+      start.setDate(start.getDate() + 1);
+      break;
+    }
+    case 'year': {
+      start = new Date(now);
+      start.setFullYear(now.getFullYear() - 1);
+      start.setDate(start.getDate() + 1);
+      break;
+    }
+    default:
+      start = new Date(now);
+  }
+  return { start: formatYMD(start), end: formatYMD(end) };
+}
+
 export default function AnalyticsScreen() {
+  const { authToken, isLoading: authLoading, isAuthenticated } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const [analyticsData, setAnalyticsData] = useState(MOCK_ANALYTICS);
+  const [analyticsData, setAnalyticsData] = useState({
+    salesReport: { report: [], summary: null },
+    retailers: { retailers: [], summary: null },
+    customers: { topCustomers: [], customerGrowth: [], summary: null },
+  });
+
   const [dateRange, setDateRange] = useState('month');
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(false);
+  const [loadingRetailers, setLoadingRetailers] = useState(false);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [error, setError] = useState(null);
+
   const fadeAnim = useState(new Animated.Value(0))[0];
   const scrollY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
+    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
+
+  const getAuthToken = async () => {
+    if (authToken) return authToken;
+    try {
+      return (await AsyncStorage.getItem('authtoken')) || (await AsyncStorage.getItem('token')) || null;
+    } catch (e) {
+      console.warn('[analytics] AsyncStorage read failure', e);
+      return null;
+    }
+  };
+
+  const fetchSales = useCallback(async (startDate, endDate) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getAuthToken();
+      if (!token) {
+        setError('Not authenticated. Please login.');
+        setLoading(false);
+        return;
+      }
+
+      const url = `${API_BASE}/superadmin/reports/sales?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+      console.log('[analytics] GET sales', url);
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+      const json = await res.json();
+      if (!json || !json.data) throw new Error('Invalid sales response');
+      setAnalyticsData(prev => ({ ...prev, salesReport: json.data }));
+      console.log('[analytics] sales loaded', json.data.summary || {}, (json.data.report || []).length);
+    } catch (err) {
+      console.error('[analytics] fetchSales error', err);
+      setError(err.message || 'Failed to load sales');
+      setAnalyticsData(prev => ({ ...prev, salesReport: { report: [], summary: null } }));
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken]);
+
+  const fetchRetailerPerformance = useCallback(async () => {
+    setLoadingRetailers(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) return;
+      const url = `${API_BASE}/superadmin/reports/retailer-performance?limit=5`;
+      console.log('[analytics] GET retailers', url);
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+      const json = await res.json();
+      setAnalyticsData(prev => ({ ...prev, retailers: json.data || { retailers: [], summary: null } }));
+      console.log('[analytics] retailers loaded', (json.data?.retailers || []).length);
+    } catch (err) {
+      console.error('[analytics] fetchRetailerPerformance error', err);
+      setAnalyticsData(prev => ({ ...prev, retailers: { retailers: [], summary: null } }));
+    } finally {
+      setLoadingRetailers(false);
+    }
+  }, [authToken]);
+
+  const fetchCustomerAnalytics = useCallback(async () => {
+    setLoadingCustomers(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) return;
+      const url = `${API_BASE}/superadmin/reports/customer-analytics`;
+      console.log('[analytics] GET customers', url);
+      const res = await fetch(url, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }});
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+      const json = await res.json();
+      setAnalyticsData(prev => ({ ...prev, customers: json.data || { topCustomers: [], customerGrowth: [], summary: null } }));
+      console.log('[analytics] customers loaded', (json.data?.topCustomers || []).length);
+    } catch (err) {
+      console.error('[analytics] fetchCustomerAnalytics error', err);
+      setAnalyticsData(prev => ({ ...prev, customers: { topCustomers: [], customerGrowth: [], summary: null } }));
+    } finally {
+      setLoadingCustomers(false);
+    }
+  }, [authToken]);
+
+  // Fetch all (sales + retailers + customers)
+  const fetchAll = useCallback(async (rangeKey = dateRange) => {
+    setRefreshing(true);
+    setError(null);
+    const { start, end } = rangeToDates(rangeKey);
+    console.log('[analytics] fetchAll', { start, end });
+
+    await Promise.allSettled([
+      fetchSales(start, end),
+      fetchRetailerPerformance(),
+      fetchCustomerAnalytics(),
+    ]);
+
+    setRefreshing(false);
+  }, [dateRange, fetchSales, fetchRetailerPerformance, fetchCustomerAnalytics]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated && !authToken) {
+      setError('Not authenticated');
+      return;
+    }
+    // initial fetch
+    fetchAll(dateRange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, authToken, isAuthenticated]);
+
+  // When date range changes, re-fetch sales (and other dependent metrics if you want)
+  useEffect(() => {
+    const { start, end } = rangeToDates(dateRange);
+    fetchSales(start, end);
+  }, [dateRange, fetchSales]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setAnalyticsData(MOCK_ANALYTICS);
-      setRefreshing(false);
-      Alert.alert('✅ Refreshed', 'Analytics data updated');
-    }, 1500);
+    await fetchAll(dateRange);
+    setRefreshing(false);
+    Alert.alert('✅ Refreshed', 'Analytics updated');
   };
 
-  const handleDateRangeChange = (range) => {
-    setLoading(true);
-    setDateRange(range);
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-    }, 800);
-  };
+  // Helpers to shape chart data
+  const salesReport = analyticsData.salesReport?.report || [];
+  const salesLabels = salesReport.map(r => {
+    // shorten label to day or date
+    const d = new Date(r._id);
+    return `${d.getDate()}/${d.getMonth()+1}`;
+  });
+  const salesRevenueData = salesReport.map(r => Math.round((r.totalRevenue ?? 0) * 100) / 100);
+  const salesOrdersData = salesReport.map(r => r.totalOrders ?? 0);
 
-  const handleExport = (type) => {
-    Alert.alert('Export Data', `Export ${type} report?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Export', onPress: () => console.log(`Exporting ${type} report`) }
-    ]);
-  };
-
-  // Metric Card Component
-  const MetricCard = ({ title, value, growth, subtitle, color, icon, chart }) => {
-    return (
-      <View style={[styles.metricCard, chart && styles.metricCardWithChart]}>
-        <View style={styles.metricHeader}>
-          <View style={styles.metricInfo}>
-            <Text style={styles.metricValue}>{value}</Text>
-            {growth && (
-              <View style={styles.growthContainer}>
-                <MaterialIcons 
-                  name={growth > 0 ? "trending-up" : "trending-down"} 
-                  size={16} 
-                  color={growth > 0 ? '#10B981' : '#EF4444'} 
-                />
-                <Text style={[
-                  styles.growthText, 
-                  { color: growth > 0 ? '#10B981' : '#EF4444' }
-                ]}>
-                  {growth > 0 ? '+' : ''}{growth}%
-                </Text>
-              </View>
-            )}
-          </View>
-          <View style={[styles.metricIcon, { backgroundColor: color }]}>
-            {icon}
-          </View>
+  // UI components
+  const MetricCard = ({ title, value, growth, subtitle, color, icon, small }) => (
+    <View style={[styles.metricCard, small && { width: (width - 120) / 2 }]}>
+      <View style={styles.metricHeader}>
+        <View style={styles.metricInfo}>
+          <Text style={styles.metricValue}>{value}</Text>
+          {subtitle && <Text style={styles.metricSubtitle}>{subtitle}</Text>}
         </View>
-        <Text style={styles.metricTitle}>{title}</Text>
-        {subtitle && <Text style={styles.metricSubtitle}>{subtitle}</Text>}
-        {chart && (
-          <View style={styles.miniChart}>
-            {chart}
-          </View>
+        <View style={[styles.metricIcon, { backgroundColor: color }]}>{icon}</View>
+      </View>
+      <Text style={styles.metricTitle}>{title}</Text>
+      {growth !== undefined && (
+        <View style={styles.growthContainer}>
+          <MaterialIcons name={growth > 0 ? 'trending-up' : 'trending-down'} size={14} color={growth > 0 ? '#10B981' : '#EF4444'} />
+          <Text style={[styles.growthText, { color: growth > 0 ? '#10B981' : '#EF4444' }]}>{growth > 0 ? '+' : ''}{growth}%</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const RevenueChart = () => (
+    <View style={styles.chartContainer}>
+      <View style={styles.chartHeader}>
+        <Text style={styles.chartTitle}>Revenue Trend</Text>
+        <Text style={styles.chartSubtitle}>{salesReport.length} data points</Text>
+      </View>
+
+      {loading && salesReport.length === 0 ? (
+        <View style={{ padding: 20 }}><ActivityIndicator size="large" /></View>
+      ) : salesReport.length === 0 ? (
+        <View style={{ padding: 20 }}><Text style={{ color: '#64748B' }}>No data for the selected period</Text></View>
+      ) : (
+        <LineChart
+          data={{ labels: salesLabels, datasets: [{ data: salesRevenueData }] }}
+          width={Math.min(width - 40, 1000)}
+          height={220}
+          chartConfig={chartConfig}
+          bezier
+          style={styles.chart}
+          withDots
+          withShadow={false}
+        />
+      )}
+    </View>
+  );
+
+  const OrdersChart = () => (
+    <View style={styles.chartContainer}>
+      <View style={styles.chartHeader}>
+        <Text style={styles.chartTitle}>Orders Trend</Text>
+        <Text style={styles.chartSubtitle}>Orders per day</Text>
+      </View>
+
+      {loading && salesReport.length === 0 ? (
+        <View style={{ padding: 20 }}><ActivityIndicator size="large" /></View>
+      ) : salesReport.length === 0 ? (
+        <View style={{ padding: 20 }}><Text style={{ color: '#64748B' }}>No data for the selected period</Text></View>
+      ) : (
+        <BarChart
+          data={{ labels: salesLabels, datasets: [{ data: salesOrdersData }] }}
+          width={Math.min(width - 40, 1000)}
+          height={200}
+          chartConfig={{ ...chartConfig, color: (op = 1) => `rgba(16,185,129,${op})` }}
+          style={styles.chart}
+          fromZero
+          showValuesOnTopOfBars
+        />
+      )}
+    </View>
+  );
+
+  const TopProducts = () => {
+    // There is no topProducts endpoint in this request set; we can re-use retailers/customers summaries if needed
+    return null;
+  };
+
+  const RetailerPerformance = () => {
+    const list = analyticsData.retailers?.retailers || [];
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Top Retailers</Text>
+          <TouchableOpacity onPress={() => fetchRetailerPerformance()}>
+            <Text style={styles.seeAllText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+
+        {loadingRetailers ? <ActivityIndicator /> : list.length === 0 ? (
+          <Text style={{ color: '#64748B' }}>No retailer data</Text>
+        ) : (
+          list.map((r) => (
+            <View key={r._id} style={styles.productItem}>
+              <View style={styles.productInfo}>
+                <Text style={styles.productName}>{r.retailerName}</Text>
+                <Text style={styles.productSales}>{r.totalOrders} orders • ₹{Math.round(r.totalRevenue)}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.revenueText}>CR: {r.completionRate}%</Text>
+                <View style={styles.growthBadge}><MaterialIcons name="star" size={12} color="#10B981" /><Text style={styles.growthBadgeText}>{Math.round(r.averageOrderValue)}</Text></View>
+              </View>
+            </View>
+          ))
         )}
       </View>
     );
   };
 
-  // Revenue Chart Component
-  const RevenueChart = () => (
-    <View style={styles.chartContainer}>
-      <View style={styles.chartHeader}>
-        <Text style={styles.chartTitle}>Revenue Trend</Text>
-        <Text style={styles.chartSubtitle}>Last 12 months</Text>
-      </View>
-      <LineChart
-        data={analyticsData.revenueData}
-        width={width - 80}
-        height={200}
-        chartConfig={chartConfig}
-        bezier
-        style={styles.chart}
-        withVerticalLines={false}
-        withHorizontalLines={false}
-        withDots={true}
-        withShadow={false}
-        withInnerLines={false}
-      />
-    </View>
-  );
+  const CustomerMetrics = () => {
+    const top = analyticsData.customers?.topCustomers || [];
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Top Customers</Text>
+          <TouchableOpacity onPress={() => fetchCustomerAnalytics()}>
+            <Text style={styles.seeAllText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
 
-  // Orders Chart Component
-  const OrdersChart = () => (
-    <View style={styles.chartContainer}>
-      <View style={styles.chartHeader}>
-        <Text style={styles.chartTitle}>Weekly Orders</Text>
-        <Text style={styles.chartSubtitle}>Current week</Text>
-      </View>
-      <BarChart
-        data={analyticsData.orderData}
-        width={width - 80}
-        height={200}
-        chartConfig={{
-          ...chartConfig,
-          color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-        }}
-        style={styles.chart}
-        showValuesOnTopOfBars={true}
-        withHorizontalLabels={true}
-        withVerticalLabels={true}
-        fromZero={true}
-      />
-    </View>
-  );
-
-  // Top Products Component
-  const TopProducts = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Top Products</Text>
-        <TouchableOpacity onPress={() => handleExport('products')}>
-          <Text style={styles.seeAllText}>Export</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.productsList}>
-        {analyticsData.topProducts.map((product, index) => (
-          <View key={product.name} style={styles.productItem}>
-            <View style={styles.productRank}>
-              <Text style={styles.rankText}>#{index + 1}</Text>
-            </View>
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{product.name}</Text>
-              <Text style={styles.productSales}>{product.sales} units sold</Text>
-            </View>
-            <View style={styles.productRevenue}>
-              <Text style={styles.revenueText}>₹{(product.revenue / 1000).toFixed(0)}K</Text>
-              <View style={styles.growthBadge}>
-                <MaterialIcons name="trending-up" size={12} color="#10B981" />
-                <Text style={styles.growthBadgeText}>+{product.growth}%</Text>
+        {loadingCustomers ? <ActivityIndicator /> : top.length === 0 ? (
+          <Text style={{ color: '#64748B' }}>No customer analytics</Text>
+        ) : (
+          top.map(c => (
+            <View key={c.customerId} style={styles.productItem}>
+              <View style={styles.productInfo}>
+                <Text style={styles.productName}>{c.customerName}</Text>
+                <Text style={styles.productSales}>{c.totalOrders} orders • ₹{c.totalSpent}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.revenueText}>AOV: ₹{Math.round(c.averageOrderValue)}</Text>
               </View>
             </View>
-          </View>
-        ))}
+          ))
+        )}
       </View>
-    </View>
-  );
+    );
+  };
 
-  // Retailer Performance Component
-  const RetailerPerformance = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Top Retailers</Text>
-        <TouchableOpacity onPress={() => handleExport('retailers')}>
-          <Text style={styles.seeAllText}>Export</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.retailersList}>
-        {analyticsData.retailerPerformance.map((retailer, index) => (
-          <View key={retailer.name} style={styles.retailerItem}>
-            <View style={styles.retailerInfo}>
-              <Text style={styles.retailerName}>{retailer.name}</Text>
-              <View style={styles.retailerStats}>
-                <Text style={styles.retailerStat}>{retailer.orders} orders</Text>
-                <Text style={styles.retailerStat}>₹{(retailer.revenue / 1000).toFixed(0)}K revenue</Text>
-              </View>
-            </View>
-            <View style={styles.retailerRating}>
-              <MaterialIcons name="star" size={16} color="#F59E0B" />
-              <Text style={styles.ratingText}>{retailer.rating}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-
-  // Customer Metrics Component
-  const CustomerMetrics = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Customer Insights</Text>
-      <View style={styles.metricsGrid}>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>{analyticsData.customerMetrics.newCustomers}</Text>
-          <Text style={styles.metricLabel}>New Customers</Text>
-        </View>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>{analyticsData.customerMetrics.returningCustomers}</Text>
-          <Text style={styles.metricLabel}>Returning</Text>
-        </View>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>{analyticsData.customerMetrics.retentionRate}%</Text>
-          <Text style={styles.metricLabel}>Retention Rate</Text>
-        </View>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>₹{analyticsData.customerMetrics.customerLifetimeValue}</Text>
-          <Text style={styles.metricLabel}>CLV</Text>
-        </View>
-      </View>
-    </View>
-  );
-
-  // Platform Metrics Component
-  const PlatformMetrics = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Platform Performance</Text>
-      <View style={styles.platformMetrics}>
-        <View style={styles.platformMetric}>
-          <Ionicons name="speedometer" size={20} color="#3B82F6" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.avgResponseTime}</Text>
-            <Text style={styles.platformMetricLabel}>Avg Response Time</Text>
-          </View>
-        </View>
-        <View style={styles.platformMetric}>
-          <MaterialIcons name="check-circle" size={20} color="#10B981" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.successRate}</Text>
-            <Text style={styles.platformMetricLabel}>Success Rate</Text>
-          </View>
-        </View>
-        <View style={styles.platformMetric}>
-          <MaterialIcons name="cloud-queue" size={20} color="#8B5CF6" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.uptime}</Text>
-            <Text style={styles.platformMetricLabel}>Uptime</Text>
-          </View>
-        </View>
-        <View style={styles.platformMetric}>
-          <Feather name="clock" size={20} color="#F59E0B" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.loadTime}</Text>
-            <Text style={styles.platformMetricLabel}>Avg Load Time</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-
-  // Date Range Selector
   const DateRangeSelector = () => {
     const ranges = [
       { key: 'today', label: 'Today' },
@@ -360,72 +390,29 @@ export default function AnalyticsScreen() {
     ];
 
     return (
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.dateRangeContainer}
-      >
-        {ranges.map((range) => (
-          <TouchableOpacity
-            key={range.key}
-            style={[
-              styles.dateRangeButton,
-              dateRange === range.key && styles.dateRangeButtonActive
-            ]}
-            onPress={() => handleDateRangeChange(range.key)}
-            disabled={loading}
-          >
-            {loading && dateRange === range.key ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={[
-                styles.dateRangeText,
-                dateRange === range.key && styles.dateRangeTextActive
-              ]}>
-                {range.label}
-              </Text>
-            )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateRangeContainer}>
+        {ranges.map(r => (
+          <TouchableOpacity key={r.key} style={[styles.dateRangeButton, dateRange === r.key && styles.dateRangeButtonActive]} onPress={() => setDateRange(r.key)}>
+            <Text style={[styles.dateRangeText, dateRange === r.key && styles.dateRangeTextActive]}>{r.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
     );
   };
 
-  // Tab Navigation
   const AnalyticsTabs = () => {
     const tabs = [
       { key: 'overview', label: 'Overview', icon: 'dashboard' },
       { key: 'revenue', label: 'Revenue', icon: 'trending-up' },
       { key: 'customers', label: 'Customers', icon: 'people' },
-      { key: 'products', label: 'Products', icon: 'inventory' },
+      { key: 'retailers', label: 'Retailers', icon: 'store' },
     ];
-
     return (
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsContainer}
-      >
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[
-              styles.tabButton,
-              activeTab === tab.key && styles.tabButtonActive
-            ]}
-            onPress={() => setActiveTab(tab.key)}
-          >
-            <MaterialIcons 
-              name={tab.icon} 
-              size={18} 
-              color={activeTab === tab.key ? '#3B82F6' : '#64748B'} 
-            />
-            <Text style={[
-              styles.tabText,
-              activeTab === tab.key && styles.tabTextActive
-            ]}>
-              {tab.label}
-            </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer}>
+        {tabs.map(tab => (
+          <TouchableOpacity key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => setActiveTab(tab.key)}>
+            <MaterialIcons name={tab.icon} size={18} color={activeTab === tab.key ? '#3B82F6' : '#64748B'} />
+            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -441,117 +428,130 @@ export default function AnalyticsScreen() {
             <View style={styles.metricsGrid}>
               <MetricCard
                 title="Total Revenue"
-                value={`₹${(analyticsData.overview.totalRevenue / 1000000).toFixed(1)}M`}
-                growth={analyticsData.overview.revenueGrowth}
-                subtitle="Year to date"
+                value={`₹${analyticsData.salesReport.summary ? Math.round(analyticsData.salesReport.summary.totalRevenue) : '0'}`}
+                growth={0}
+                subtitle="Selected period"
                 color="#3B82F6"
-                icon={<FontAwesome5 name="rupee-sign" size={18} color="#FFFFFF" />}
+                icon={<FontAwesome5 name="rupee-sign" size={18} color="#fff" />}
+                small
               />
               <MetricCard
                 title="Total Orders"
-                value={analyticsData.overview.totalOrders.toLocaleString()}
-                growth={analyticsData.overview.orderGrowth}
-                subtitle="Completed orders"
+                value={`${analyticsData.salesReport.summary ? analyticsData.salesReport.summary.totalOrders : 0}`}
+                growth={0}
+                subtitle="All orders"
                 color="#10B981"
-                icon={<Feather name="shopping-bag" size={18} color="#FFFFFF" />}
+                icon={<Feather name="shopping-bag" size={18} color="#fff" />}
+                small
               />
               <MetricCard
-                title="Active Customers"
-                value={analyticsData.overview.activeCustomers.toLocaleString()}
-                growth={analyticsData.overview.customerGrowth}
-                subtitle="Monthly active"
+                title="Completed Orders"
+                value={`${analyticsData.salesReport.summary ? analyticsData.salesReport.summary.completedOrders : 0}`}
+                growth={0}
+                subtitle="Completed"
                 color="#8B5CF6"
-                icon={<MaterialIcons name="people" size={20} color="#FFFFFF" />}
+                icon={<MaterialIcons name="check-circle" size={20} color="#fff" />}
+                small
               />
               <MetricCard
                 title="Avg Order Value"
-                value={`₹${analyticsData.overview.avgOrderValue}`}
-                growth={analyticsData.overview.aovGrowth}
-                subtitle="Per order"
+                value={`₹${analyticsData.salesReport.summary ? Math.round(analyticsData.salesReport.summary.averageOrderValue) : 0}`}
+                growth={0}
+                subtitle="Average"
                 color="#F59E0B"
-                icon={<MaterialIcons name="attach-money" size={20} color="#FFFFFF" />}
+                icon={<MaterialIcons name="attach-money" size={20} color="#fff" />}
+                small
               />
             </View>
-            <TopProducts />
+
+            <OrdersChart />
+            <RetailerPerformance />
             <CustomerMetrics />
           </>
         );
-      
+
       case 'revenue':
         return (
           <>
             <RevenueChart />
             <OrdersChart />
-            <RetailerPerformance />
+            {/* Optionally show more revenue breakdowns */}
           </>
         );
-      
+
       case 'customers':
         return (
           <>
             <CustomerMetrics />
-            <PlatformMetrics />
+            {/* customer growth chart */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Customer Growth</Text>
+              {analyticsData.customers.customerGrowth?.length ? (
+                <LineChart
+                  data={{
+                    labels: analyticsData.customers.customerGrowth.map(x => x._id),
+                    datasets: [{ data: analyticsData.customers.customerGrowth.map(x => x.newCustomers) }]
+                  }}
+                  width={Math.min(width - 40, 1000)}
+                  height={200}
+                  chartConfig={chartConfig}
+                  style={styles.chart}
+                />
+              ) : <Text style={{ color: '#64748B' }}>No growth data</Text>}
+            </View>
           </>
         );
-      
-      case 'products':
+
+      case 'retailers':
         return (
           <>
-            <TopProducts />
-            <OrdersChart />
+            <RetailerPerformance />
           </>
         );
-      
-      default:
-        return null;
+
+      default: return null;
     }
   };
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      {/* Header Section */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Analytics & Reports</Text>
           <Text style={styles.headerSubtitle}>Platform performance insights</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.exportButton}
-          onPress={() => handleExport('full')}
-        >
+        <TouchableOpacity style={styles.exportButton} onPress={() => {
+          const { start, end } = rangeToDates(dateRange);
+          Alert.alert('Export', `Export report for ${start} to ${end}?`);
+        }}>
           <Feather name="download" size={18} color="#FFFFFF" />
-          <Text style={styles.exportButtonText}>Export Report</Text>
+          <Text style={styles.exportButtonText}>Export</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
-        )}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
       >
-        {/* Date Range Selector */}
         <View style={styles.section}>
           <DateRangeSelector />
         </View>
 
-        {/* Analytics Tabs */}
         <View style={styles.section}>
           <AnalyticsTabs />
         </View>
 
-        {/* Tab Content */}
         <View style={styles.tabContent}>
-          {renderTabContent()}
+          {loading && !analyticsData.salesReport.report.length ? (
+            <View style={{ padding: 24, alignItems: 'center' }}><ActivityIndicator /></View>
+          ) : (
+            renderTabContent()
+          )}
         </View>
 
-        {/* Bottom Spacer */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </Animated.View>
@@ -559,363 +559,60 @@ export default function AnalyticsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#64748B',
-  },
-  exportButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-  },
-  exportButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  section: {
-    backgroundColor: '#FFFFFF',
-    margin: 16,
-    marginBottom: 0,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  dateRangeContainer: {
-    marginBottom: 8,
-  },
-  dateRangeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-  },
-  dateRangeButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  dateRangeText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  dateRangeTextActive: {
-    color: '#FFFFFF',
-  },
-  tabsContainer: {
-    marginBottom: 8,
-  },
-  tabButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginRight: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
-  },
-  tabButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  tabText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: '#FFFFFF',
-  },
-  tabContent: {
-    gap: 16,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  metricCard: {
-    width: (width - 88) / 2,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  metricCardWithChart: {
-    width: width - 64,
-  },
-  metricHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  metricInfo: {
-    flex: 1,
-  },
-  metricValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  growthContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  growthText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  metricIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  metricTitle: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  metricSubtitle: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  miniChart: {
-    marginTop: 12,
-    height: 40,
-  },
-  chartContainer: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  chartHeader: {
-    marginBottom: 16,
-  },
-  chartTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  chartSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  chart: {
-    marginVertical: 8,
-    borderRadius: 8,
-  },
-  productsList: {
-    gap: 12,
-  },
-  productItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    gap: 12,
-  },
-  productRank: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rankText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  productSales: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  productRevenue: {
-    alignItems: 'flex-end',
-  },
-  revenueText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  growthBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 2,
-  },
-  growthBadgeText: {
-    fontSize: 10,
-    color: '#10B981',
-    fontWeight: '700',
-  },
-  retailersList: {
-    gap: 12,
-  },
-  retailerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    justifyContent: 'space-between',
-  },
-  retailerInfo: {
-    flex: 1,
-  },
-  retailerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  retailerStats: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  retailerStat: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  retailerRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  customerMetric: {
-    width: (width - 88) / 2,
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-  },
-  metricLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  platformMetrics: {
-    gap: 12,
-  },
-  platformMetric: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    gap: 12,
-  },
-  platformMetricInfo: {
-    flex: 1,
-  },
-  platformMetricValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  platformMetricLabel: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  bottomSpacer: {
-    height: 20,
-  },
+  /* keep most of original styles (copied/adapted from your file) */
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  scrollView: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  headerContent: { flex: 1 },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
+  headerSubtitle: { fontSize: 16, color: '#64748B' },
+  exportButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, gap: 6 },
+  exportButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+  section: { backgroundColor: '#FFFFFF', margin: 16, marginBottom: 0, borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1E293B' },
+  seeAllText: { fontSize: 14, color: '#3B82F6', fontWeight: '600' },
+  dateRangeContainer: { marginBottom: 8 },
+  dateRangeButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
+  dateRangeButtonActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
+  dateRangeText: { fontSize: 14, color: '#64748B', fontWeight: '600' },
+  dateRangeTextActive: { color: '#FFFFFF' },
+  tabsContainer: { marginBottom: 8 },
+  tabButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, marginRight: 8, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', gap: 8 },
+  tabButtonActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
+  tabText: { fontSize: 14, color: '#64748B', fontWeight: '600' },
+  tabTextActive: { color: '#FFFFFF' },
+  tabContent: { gap: 16 },
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  metricCard: { width: (width - 88) / 2, backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  metricInfo: { flex: 1 },
+  metricValue: { fontSize: 20, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
+  metricSubtitle: { fontSize: 11, color: '#94A3B8' },
+  metricIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  metricTitle: { fontSize: 14, color: '#64748B', fontWeight: '600', marginBottom: 4 },
+  growthContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  growthText: { fontSize: 12, fontWeight: '700' },
+  chartContainer: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  chartHeader: { marginBottom: 12 },
+  chartTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
+  chartSubtitle: { fontSize: 14, color: '#64748B' },
+  chart: { marginVertical: 8, borderRadius: 8 },
+  productsList: { gap: 12 },
+  productItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 8, gap: 12 },
+  productInfo: { flex: 1 },
+  productName: { fontSize: 14, fontWeight: '600', color: '#1E293B', marginBottom: 2 },
+  productSales: { fontSize: 12, color: '#64748B' },
+  productRevenue: { alignItems: 'flex-end' },
+  revenueText: { fontSize: 14, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
+  growthBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#D1FAE5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 4 },
+  growthBadgeText: { fontSize: 10, color: '#10B981', fontWeight: '700' },
+  retailersList: { gap: 12 },
+  retailerItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 8, justifyContent: 'space-between' },
+  retailerInfo: { flex: 1 },
+  retailerName: { fontSize: 14, fontWeight: '600', color: '#1E293B', marginBottom: 4 },
+  retailerStats: { flexDirection: 'row', gap: 12 },
+  retailerStat: { fontSize: 12, color: '#64748B' },
+  ratingText: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  bottomSpacer: { height: 20 },
 });

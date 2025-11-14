@@ -1,162 +1,181 @@
 // app/(tabs)/supadmin/retailers.jsx
-import { useState, useEffect } from 'react';
+import { Feather, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
-  RefreshControl,
+  Text,
   TextInput,
-  Alert,
-  Modal,
-  Dimensions,
-  Animated,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { MaterialIcons, FontAwesome5, Ionicons, Feather, Octicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useAuth } from '../../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
 
-// Mock retailers data
-const MOCK_RETAILERS = {
-  summary: {
-    total: 145,
-    active: 128,
-    pending: 17,
-    suspended: 5,
-    revenue: 2540000,
-    growth: 12,
-  },
-  retailers: [
-    {
-      id: '1',
-      shopName: 'Fresh Dairy Mart',
-      ownerName: 'Rajesh Kumar',
-      mobile: '9876543210',
-      email: 'rajesh@freshdairy.com',
-      location: 'Mumbai, Maharashtra',
-      joinDate: '2024-01-15',
-      status: 'active',
-      totalOrders: 1234,
-      totalRevenue: 345000,
-      rating: 4.8,
-      products: 45,
-      lastActive: '2 hours ago',
-      performance: 'excellent',
-      documents: ['gst', 'license', 'address'],
-    },
-    {
-      id: '2',
-      shopName: 'Milk & More',
-      ownerName: 'Priya Patel',
-      mobile: '8765432109',
-      email: 'priya@milkmore.com',
-      location: 'Delhi, NCR',
-      joinDate: '2024-02-20',
-      status: 'pending',
-      totalOrders: 0,
-      totalRevenue: 0,
-      rating: 0,
-      products: 0,
-      lastActive: '1 day ago',
-      performance: 'new',
-      documents: ['gst', 'address'],
-    },
-    {
-      id: '3',
-      shopName: 'Dairy King',
-      ownerName: 'Amit Sharma',
-      mobile: '7654321098',
-      email: 'amit@dairyking.com',
-      location: 'Bangalore, Karnataka',
-      joinDate: '2024-01-08',
-      status: 'active',
-      totalOrders: 876,
-      totalRevenue: 189000,
-      rating: 4.5,
-      products: 32,
-      lastActive: '30 minutes ago',
-      performance: 'good',
-      documents: ['gst', 'license', 'address', 'bank'],
-    },
-    {
-      id: '4',
-      shopName: 'Pure Milk Center',
-      ownerName: 'Neha Singh',
-      mobile: '6543210987',
-      email: 'neha@puremilk.com',
-      location: 'Pune, Maharashtra',
-      joinDate: '2024-03-01',
-      status: 'suspended',
-      totalOrders: 234,
-      totalRevenue: 45000,
-      rating: 3.2,
-      products: 18,
-      lastActive: '5 days ago',
-      performance: 'poor',
-      documents: ['gst', 'address'],
-    },
-    {
-      id: '5',
-      shopName: 'Farm Fresh Dairy',
-      ownerName: 'Vikram Joshi',
-      mobile: '9432109876',
-      email: 'vikram@farmfresh.com',
-      location: 'Hyderabad, Telangana',
-      joinDate: '2024-02-10',
-      status: 'pending',
-      totalOrders: 0,
-      totalRevenue: 0,
-      rating: 0,
-      products: 0,
-      lastActive: '2 days ago',
-      performance: 'new',
-      documents: ['gst', 'license', 'address'],
-    },
-  ]
-};
+const API_BASE = `${process.env.EXPO_PUBLIC_API_URL}/api`; // ensure EXPO_PUBLIC_API_URL is set in .env
 
 export default function RetailersScreen() {
+  // ✅ call hook at top-level only
+  const { authToken, isLoading: authLoading, isAuthenticated } = useAuth();
+
   const [refreshing, setRefreshing] = useState(false);
-  const [retailersData, setRetailersData] = useState(MOCK_RETAILERS);
+  const [retailersData, setRetailersData] = useState({
+    summary: { total: 0, active: 0, pending: 0, suspended: 0, revenue: 0, growth: 0 },
+    retailers: [],
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedRetailer, setSelectedRetailer] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('all');
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
   const fadeAnim = useState(new Animated.Value(0))[0];
 
+  // helper that DOES NOT call hooks — uses top-level authToken or AsyncStorage fallback
+  const getAuthToken = async () => {
+    if (authToken) return authToken; // use value from context first
+
+    try {
+      const stored = (await AsyncStorage.getItem('authtoken')) || (await AsyncStorage.getItem('token'));
+      return stored || null;
+    } catch (e) {
+      console.warn('Error reading token from AsyncStorage', e);
+      return null;
+    }
+  };
+
+  // ---------- Fetching ----------
+  const fetchRetailers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) {
+        // no token, stop and show empty
+        setRetailersData(prev => ({ ...prev, retailers: [], summary: { ...prev.summary, total: 0, active: 0 } }));
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      const res = await fetch(`${API_BASE}/superadmin/retailers`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          // Most servers expect 'Bearer <token>'. If your server expects raw token, remove 'Bearer '.
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} - ${text}`);
+      }
+
+      const json = await res.json();
+
+      if (!json.success || !json.data) {
+        // handle unexpected shapes gracefully
+        console.warn('fetchRetailers: unexpected response', json);
+        setRetailersData({ summary: { total: 0, active: 0, pending: 0, suspended: 0, revenue: 0, growth: 0 }, retailers: [] });
+        return;
+      }
+
+      const apiRetailers = json.data.retailers || [];
+      const stats = json.data.stats || json.data.pagination || {};
+
+      // Map API response to the UI shape used in the component
+      const mappedRetailers = apiRetailers.map(item => ({
+        id: item._id,
+        shopName: item.shopName || '—',
+        ownerName: item.ownerName || '—',
+        mobile: item.mobile || '—',
+        email: item.email || '',
+        location: item.location?.formattedAddress || item.address || 'N/A',
+        joinDate: item.createdAt || item.created_at || '',
+        status: item.isActive === true ? 'active' : 'pending',
+        totalOrders: item.totalOrders ?? 0,
+        totalRevenue: item.totalRevenue ?? 0,
+        rating: item.rating ?? 0,
+        products: item.products ?? 0,
+        lastActive: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '',
+        performance: item.performance ?? (item.isActive ? 'good' : 'new'),
+        documents: item.documents ?? [],
+        raw: item,
+      }));
+
+      setRetailersData({
+        summary: {
+          total: stats.total ?? mappedRetailers.length,
+          active: stats.active ?? mappedRetailers.filter(r => r.status === 'active').length,
+          pending: (stats.total ?? mappedRetailers.length) - (stats.active ?? mappedRetailers.filter(r => r.status === 'active').length),
+          suspended: 0,
+          revenue: 0,
+          growth: 0,
+        },
+        retailers: mappedRetailers,
+      });
+    } catch (err) {
+      console.error('fetchRetailers error:', err);
+      Alert.alert('Error', `Could not load retailers.\n${err.message}`);
+      setRetailersData(prev => ({ ...prev, retailers: [] }));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [authToken]);
+
+  // fetch when component mounts and whenever auth state changes
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
-  }, []);
+    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+  }, [fadeAnim]);
+
+  useEffect(() => {
+    // don't fetch while auth library is loading
+    if (authLoading) return;
+
+    if (!isAuthenticated && !authToken) {
+      // user not logged in — clear list
+      setRetailersData(prev => ({ ...prev, retailers: [], summary: { ...prev.summary, total: 0, active: 0 } }));
+      setLoading(false);
+      return;
+    }
+
+    // call fetchRetailers (useCallback ensures stable ref)
+    fetchRetailers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authToken, authLoading, isAuthenticated, fetchRetailers]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRetailersData(MOCK_RETAILERS);
-      setRefreshing(false);
-      Alert.alert('✅ Refreshed', 'Retailers data updated');
-    }, 1200);
+    await fetchRetailers();
+    Alert.alert('✅ Refreshed', 'Retailers data updated');
   };
 
-  // Filter retailers based on search and status
+  // ---------- Filter/Search ----------
   const filteredRetailers = retailersData.retailers.filter(retailer => {
-    const matchesSearch = retailer.shopName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         retailer.ownerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         retailer.location.toLowerCase().includes(searchQuery.toLowerCase());
-    
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      (retailer.shopName && retailer.shopName.toLowerCase().includes(q)) ||
+      (retailer.ownerName && retailer.ownerName.toLowerCase().includes(q)) ||
+      (retailer.location && retailer.location.toLowerCase().includes(q)) ||
+      (retailer.mobile || '').includes(q);
+
     const matchesStatus = filterStatus === 'all' || retailer.status === filterStatus;
-    
+
     return matchesSearch && matchesStatus;
   });
 
-  // Status Badge Component
+  // ---------- UI Subcomponents ----------
   const StatusBadge = ({ status }) => {
     const getStatusConfig = (status) => {
       switch (status) {
@@ -176,14 +195,11 @@ export default function RetailersScreen() {
     return (
       <View style={[styles.statusBadge, { backgroundColor: config.bgColor }]}>
         <MaterialIcons name={config.icon} size={12} color={config.color} />
-        <Text style={[styles.statusText, { color: config.color }]}>
-          {config.text}
-        </Text>
+        <Text style={[styles.statusText, { color: config.color }]}>{config.text}</Text>
       </View>
     );
   };
 
-  // Performance Indicator
   const PerformanceIndicator = ({ performance }) => {
     const getPerformanceConfig = (performance) => {
       switch (performance) {
@@ -207,25 +223,16 @@ export default function RetailersScreen() {
     return (
       <View style={styles.performanceIndicator}>
         <View style={[styles.performanceDot, { backgroundColor: config.color }]} />
-        <Text style={[styles.performanceText, { color: config.color }]}>
-          {config.text}
-        </Text>
+        <Text style={[styles.performanceText, { color: config.color }]}>{config.text}</Text>
       </View>
     );
   };
 
-  // Summary Card Component
   const SummaryCard = ({ title, value, subtitle, color, icon, onPress }) => {
     return (
-      <TouchableOpacity 
-        style={[styles.summaryCard, { borderLeftColor: color }]}
-        onPress={onPress}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={[styles.summaryCard, { borderLeftColor: color }]} onPress={onPress} activeOpacity={0.7}>
         <View style={styles.summaryHeader}>
-          <View style={[styles.summaryIcon, { backgroundColor: color }]}>
-            {icon}
-          </View>
+          <View style={[styles.summaryIcon, { backgroundColor: color }]}>{icon}</View>
           <Text style={styles.summaryValue}>{value}</Text>
         </View>
         <Text style={styles.summaryTitle}>{title}</Text>
@@ -234,22 +241,30 @@ export default function RetailersScreen() {
     );
   };
 
-  // Retailer Card Component
+  // For quick actions we only update locally; if you have a backend endpoint to change status,
+  // replace the local update with an API call (example commented near handleStatusChange).
+  const handleStatusChange = async (retailerId, newStatus) => {
+    setRetailersData(prev => ({
+      ...prev,
+      retailers: prev.retailers.map(retailer => (retailer.id === retailerId ? { ...retailer, status: newStatus } : retailer)),
+      summary: {
+        ...prev.summary,
+        active: newStatus === 'active' ? prev.summary.active + 1 : Math.max(0, prev.summary.active - 1),
+      },
+    }));
+
+    Alert.alert('✅ Success', `Retailer status updated to ${newStatus}`);
+  };
+
   const RetailerCard = ({ retailer }) => {
     const scaleAnim = useState(new Animated.Value(1))[0];
 
     const handlePressIn = () => {
-      Animated.spring(scaleAnim, {
-        toValue: 0.98,
-        useNativeDriver: true,
-      }).start();
+      Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true }).start();
     };
 
     const handlePressOut = () => {
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
+      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
     };
 
     const handleViewDetails = () => {
@@ -262,33 +277,29 @@ export default function RetailersScreen() {
         case 'approve':
           Alert.alert('Approve Retailer', `Approve ${retailer.shopName}?`, [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Approve', onPress: () => handleStatusChange(retailer.id, 'active') }
+            { text: 'Approve', onPress: () => handleStatusChange(retailer.id, 'active') },
           ]);
           break;
         case 'suspend':
           Alert.alert('Suspend Retailer', `Suspend ${retailer.shopName}?`, [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Suspend', onPress: () => handleStatusChange(retailer.id, 'suspended') }
+            { text: 'Suspend', onPress: () => handleStatusChange(retailer.id, 'suspended') },
           ]);
           break;
         case 'contact':
           Alert.alert('Contact', `Call ${retailer.ownerName} at ${retailer.mobile}?`, [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Call', onPress: () => console.log('Calling:', retailer.mobile) }
+            { text: 'Call', onPress: () => console.log('Calling:', retailer.mobile) },
           ]);
+          break;
+        default:
           break;
       }
     };
 
     return (
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <TouchableOpacity
-          style={styles.retailerCard}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          onPress={handleViewDetails}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity style={styles.retailerCard} onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handleViewDetails} activeOpacity={0.8}>
           <View style={styles.retailerHeader}>
             <View style={styles.retailerInfo}>
               <Text style={styles.shopName}>{retailer.shopName}</Text>
@@ -308,7 +319,7 @@ export default function RetailersScreen() {
             </View>
             <View style={styles.detailRow}>
               <MaterialIcons name="calendar-today" size={14} color="#64748B" />
-              <Text style={styles.detailText}>Joined {new Date(retailer.joinDate).toLocaleDateString()}</Text>
+              <Text style={styles.detailText}>Joined {retailer.joinDate ? new Date(retailer.joinDate).toLocaleDateString() : '—'}</Text>
             </View>
           </View>
 
@@ -341,37 +352,25 @@ export default function RetailersScreen() {
 
           <View style={styles.actionButtons}>
             {retailer.status === 'pending' && (
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.approveButton]}
-                onPress={() => handleQuickAction('approve')}
-              >
+              <TouchableOpacity style={[styles.actionButton, styles.approveButton]} onPress={() => handleQuickAction('approve')}>
                 <MaterialIcons name="check" size={16} color="#FFFFFF" />
                 <Text style={styles.actionButtonText}>Approve</Text>
               </TouchableOpacity>
             )}
-            
+
             {retailer.status === 'active' && (
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.suspendButton]}
-                onPress={() => handleQuickAction('suspend')}
-              >
+              <TouchableOpacity style={[styles.actionButton, styles.suspendButton]} onPress={() => handleQuickAction('suspend')}>
                 <MaterialIcons name="block" size={16} color="#FFFFFF" />
                 <Text style={styles.actionButtonText}>Suspend</Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.contactButton]}
-              onPress={() => handleQuickAction('contact')}
-            >
+            <TouchableOpacity style={[styles.actionButton, styles.contactButton]} onPress={() => handleQuickAction('contact')}>
               <Feather name="phone" size={16} color="#FFFFFF" />
               <Text style={styles.actionButtonText}>Contact</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.detailsButton]}
-              onPress={handleViewDetails}
-            >
+            <TouchableOpacity style={[styles.actionButton, styles.detailsButton]} onPress={handleViewDetails}>
               <Feather name="eye" size={16} color="#3B82F6" />
               <Text style={[styles.actionButtonText, { color: '#3B82F6' }]}>View</Text>
             </TouchableOpacity>
@@ -379,16 +378,6 @@ export default function RetailersScreen() {
         </TouchableOpacity>
       </Animated.View>
     );
-  };
-
-  const handleStatusChange = (retailerId, newStatus) => {
-    setRetailersData(prev => ({
-      ...prev,
-      retailers: prev.retailers.map(retailer =>
-        retailer.id === retailerId ? { ...retailer, status: newStatus } : retailer
-      )
-    }));
-    Alert.alert('✅ Success', `Retailer status updated to ${newStatus}`);
   };
 
   const StatusFilter = () => {
@@ -400,30 +389,11 @@ export default function RetailersScreen() {
     ];
 
     return (
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterContainer}
-      >
-        {filters.map((filter) => (
-          <TouchableOpacity
-            key={filter.key}
-            style={[
-              styles.filterButton,
-              filterStatus === filter.key && styles.filterButtonActive
-            ]}
-            onPress={() => setFilterStatus(filter.key)}
-          >
-            <Text style={[
-              styles.filterText,
-              filterStatus === filter.key && styles.filterTextActive
-            ]}>
-              {filter.label}
-            </Text>
-            <View style={[
-              styles.filterCount,
-              filterStatus === filter.key && styles.filterCountActive
-            ]}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
+        {filters.map(filter => (
+          <TouchableOpacity key={filter.key} style={[styles.filterButton, filterStatus === filter.key && styles.filterButtonActive]} onPress={() => setFilterStatus(filter.key)}>
+            <Text style={[styles.filterText, filterStatus === filter.key && styles.filterTextActive]}>{filter.label}</Text>
+            <View style={[styles.filterCount, filterStatus === filter.key && styles.filterCountActive]}>
               <Text style={styles.filterCountText}>{filter.count}</Text>
             </View>
           </TouchableOpacity>
@@ -432,6 +402,7 @@ export default function RetailersScreen() {
     );
   };
 
+  // ---------- Render ----------
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
       {/* Header Section */}
@@ -446,13 +417,7 @@ export default function RetailersScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.scrollView} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} showsVerticalScrollIndicator={false}>
         {/* Summary Cards */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -462,38 +427,10 @@ export default function RetailersScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.summaryGrid}>
-            <SummaryCard
-              title="Total Retailers"
-              value={retailersData.summary.total}
-              subtitle={`${retailersData.summary.growth}% growth`}
-              color="#3B82F6"
-              icon={<FontAwesome5 name="store" size={18} color="#FFFFFF" />}
-              onPress={() => setFilterStatus('all')}
-            />
-            <SummaryCard
-              title="Active"
-              value={retailersData.summary.active}
-              subtitle="Currently operating"
-              color="#10B981"
-              icon={<MaterialIcons name="check-circle" size={20} color="#FFFFFF" />}
-              onPress={() => setFilterStatus('active')}
-            />
-            <SummaryCard
-              title="Pending"
-              value={retailersData.summary.pending}
-              subtitle="Awaiting approval"
-              color="#F59E0B"
-              icon={<MaterialIcons name="pending" size={20} color="#FFFFFF" />}
-              onPress={() => setFilterStatus('pending')}
-            />
-            <SummaryCard
-              title="Suspended"
-              value={retailersData.summary.suspended}
-              subtitle="Temporarily inactive"
-              color="#EF4444"
-              icon={<MaterialIcons name="block" size={20} color="#FFFFFF" />}
-              onPress={() => setFilterStatus('suspended')}
-            />
+            <SummaryCard title="Total Retailers" value={retailersData.summary.total} subtitle={`${retailersData.summary.growth}% growth`} color="#3B82F6" icon={<FontAwesome5 name="store" size={18} color="#FFFFFF" />} onPress={() => setFilterStatus('all')} />
+            <SummaryCard title="Active" value={retailersData.summary.active} subtitle="Currently operating" color="#10B981" icon={<MaterialIcons name="check-circle" size={20} color="#FFFFFF" />} onPress={() => setFilterStatus('active')} />
+            <SummaryCard title="Pending" value={retailersData.summary.pending} subtitle="Awaiting approval" color="#F59E0B" icon={<MaterialIcons name="pending" size={20} color="#FFFFFF" />} onPress={() => setFilterStatus('pending')} />
+            <SummaryCard title="Suspended" value={retailersData.summary.suspended} subtitle="Temporarily inactive" color="#EF4444" icon={<MaterialIcons name="block" size={20} color="#FFFFFF" />} onPress={() => setFilterStatus('suspended')} />
           </View>
         </View>
 
@@ -502,13 +439,7 @@ export default function RetailersScreen() {
           <View style={styles.searchContainer}>
             <View style={styles.searchInputContainer}>
               <Feather name="search" size={20} color="#64748B" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search retailers by name, owner, or location..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholderTextColor="#94A3B8"
-              />
+              <TextInput style={styles.searchInput} placeholder="Search retailers by name, owner, or location..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor="#94A3B8" />
               {searchQuery.length > 0 && (
                 <TouchableOpacity onPress={() => setSearchQuery('')}>
                   <MaterialIcons name="clear" size={20} color="#64748B" />
@@ -524,26 +455,24 @@ export default function RetailersScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              {filterStatus === 'all' ? 'All Retailers' : 
-               filterStatus === 'active' ? 'Active Retailers' :
-               filterStatus === 'pending' ? 'Pending Approval' : 'Suspended Retailers'}
+              {filterStatus === 'all' ? 'All Retailers' : filterStatus === 'active' ? 'Active Retailers' : filterStatus === 'pending' ? 'Pending Approval' : 'Suspended Retailers'}
             </Text>
-            <Text style={styles.resultsCount}>
-              {filteredRetailers.length} results
-            </Text>
+            <Text style={styles.resultsCount}>{filteredRetailers.length} results</Text>
           </View>
 
-          {filteredRetailers.length === 0 ? (
+          {loading ? (
+            <View style={{ padding: 24, alignItems: 'center' }}>
+              <ActivityIndicator size="large" />
+            </View>
+          ) : filteredRetailers.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialIcons name="store" size={48} color="#E2E8F0" />
               <Text style={styles.emptyStateTitle}>No retailers found</Text>
-              <Text style={styles.emptyStateText}>
-                {searchQuery ? 'Try adjusting your search terms' : 'No retailers match the selected filters'}
-              </Text>
+              <Text style={styles.emptyStateText}>{searchQuery ? 'Try adjusting your search terms' : 'No retailers match the selected filters'}</Text>
             </View>
           ) : (
             <View style={styles.retailersList}>
-              {filteredRetailers.map((retailer) => (
+              {filteredRetailers.map(retailer => (
                 <RetailerCard key={retailer.id} retailer={retailer} />
               ))}
             </View>
@@ -555,24 +484,16 @@ export default function RetailersScreen() {
       </ScrollView>
 
       {/* Retailer Details Modal */}
-      <Modal
-        visible={showDetailsModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowDetailsModal(false)}
-      >
+      <Modal visible={showDetailsModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowDetailsModal(false)}>
         {selectedRetailer && (
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Retailer Details</Text>
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={() => setShowDetailsModal(false)}
-              >
+              <TouchableOpacity style={styles.closeButton} onPress={() => setShowDetailsModal(false)}>
                 <MaterialIcons name="close" size={24} color="#000" />
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView style={styles.modalContent}>
               <View style={styles.modalSection}>
                 <Text style={styles.modalShopName}>{selectedRetailer.shopName}</Text>
@@ -589,7 +510,7 @@ export default function RetailersScreen() {
                   </View>
                   <View style={styles.contactItem}>
                     <Feather name="mail" size={16} color="#64748B" />
-                    <Text style={styles.contactText}>{selectedRetailer.email}</Text>
+                    <Text style={styles.contactText}>{selectedRetailer.email || '—'}</Text>
                   </View>
                   <View style={styles.contactItem}>
                     <Feather name="map-pin" size={16} color="#64748B" />
@@ -625,12 +546,16 @@ export default function RetailersScreen() {
               <View style={styles.modalSection}>
                 <Text style={styles.sectionTitle}>Documents</Text>
                 <View style={styles.documentsList}>
-                  {selectedRetailer.documents.map((doc, index) => (
-                    <View key={index} style={styles.documentItem}>
-                      <MaterialIcons name="description" size={16} color="#3B82F6" />
-                      <Text style={styles.documentText}>{doc.toUpperCase()} Certificate</Text>
-                    </View>
-                  ))}
+                  {(selectedRetailer.documents || []).length === 0 ? (
+                    <Text style={styles.documentText}>No documents available</Text>
+                  ) : (
+                    selectedRetailer.documents.map((doc, index) => (
+                      <View key={index} style={styles.documentItem}>
+                        <MaterialIcons name="description" size={16} color="#3B82F6" />
+                        <Text style={styles.documentText}>{doc.toUpperCase()} Certificate</Text>
+                      </View>
+                    ))
+                  )}
                 </View>
               </View>
 
@@ -651,6 +576,7 @@ export default function RetailersScreen() {
 }
 
 const styles = StyleSheet.create({
+  /* ... keep your original styles unchanged (same as your file) ... */
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
@@ -988,7 +914,6 @@ const styles = StyleSheet.create({
   bottomSpacer: {
     height: 20,
   },
-  // Modal Styles
   modalContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
