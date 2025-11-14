@@ -145,30 +145,41 @@ export default function OfflineOrder() {
   };
 
   /* ------------------------------------------------------------------ */
-  /* BARCODE SCANNING                                                 */
+  /* FIXED BARCODE SCANNING LOGIC                                      */
   /* ------------------------------------------------------------------ */
   const handleBarcodeScanned = async ({ data }) => {
     if (isScanningLocked) return;
 
     const barcodeId = data.trim();
-    console.log('Scanning barcode:', barcodeId);
+    console.log('🔍 Scanning barcode:', barcodeId);
 
+    // Check if recently scanned to prevent duplicates
     if (recentlyScannedRef.current.has(barcodeId)) {
+      console.log('⏭️ Skipping recently scanned barcode:', barcodeId);
       return;
     }
 
+    // Lock scanning to prevent multiple scans
     setIsScanningLocked(true);
     
+    // Add to recently scanned set with timeout
     recentlyScannedRef.current.add(barcodeId);
     setTimeout(() => {
       recentlyScannedRef.current.delete(barcodeId);
     }, 3000);
 
+    // Show visual feedback
     showFlashFeedback();
 
-    const existingItem = scannedItems.find((item) => item.barcodeId === barcodeId);
+    // Check if item already exists in cart
+    const existingItem = scannedItems.find((item) => 
+      item.barcodeId === barcodeId || 
+      item.scannedBarcodeId === barcodeId ||
+      item._id === barcodeId
+    );
 
     if (existingItem) {
+      console.log('⚠️ Item already in cart:', barcodeId);
       setScanFeedback("duplicate");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       
@@ -182,46 +193,133 @@ export default function OfflineOrder() {
     setLoading(true);
     
     try {
-      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/catalog/products/barcode/${barcodeId}`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error("Product not found");
+      console.log('📡 Fetching product data for barcode:', barcodeId);
+      
+      // Try multiple endpoints to find the product
+      let productData = null;
+      
+      // First try: Search by barcode (scanned barcode)
+      try {
+        const response1 = await fetch(
+          `${API_BASE_URL}/api/catalog/products/barcode/${barcodeId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
+        );
+        
+        if (response1.ok) {
+          const data = await response1.json();
+          if (data.product) {
+            productData = data.product;
+            console.log('✅ Found product by scanned barcode:', productData.name);
+          }
+        }
+      } catch (error) {
+        console.log('❌ Scanned barcode search failed:', error.message);
       }
 
-      const productData = await res.json();
-      const product = productData.product;
-
-      if (!product) {
-        throw new Error("Product not found");
+      // Second try: Search by product ID (generated barcode)
+      if (!productData) {
+        try {
+          const response2 = await fetch(
+            `${API_BASE_URL}/api/catalog/products/${barcodeId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
+            }
+          );
+          
+          if (response2.ok) {
+            const data = await response2.json();
+            if (data.product) {
+              productData = data.product;
+              console.log('✅ Found product by ID (generated barcode):', productData.name);
+            }
+          }
+        } catch (error) {
+          console.log('❌ Product ID search failed:', error.message);
+        }
       }
 
+      // Third try: Search all products and filter by barcode
+      if (!productData) {
+        try {
+          const response3 = await fetch(
+            `${API_BASE_URL}/api/catalog/products`,
+            {
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
+            }
+          );
+          
+          if (response3.ok) {
+            const data = await response3.json();
+            const products = Array.isArray(data) ? data : data.products || [];
+            
+            // Look for product with matching barcodeId or scannedBarcodeId
+            productData = products.find(product => 
+              product.barcodeId === barcodeId || 
+              product.scannedBarcodeId === barcodeId ||
+              product._id === barcodeId
+            );
+            
+            if (productData) {
+              console.log('✅ Found product in products list:', productData.name);
+            }
+          }
+        } catch (error) {
+          console.log('❌ Products list search failed:', error.message);
+        }
+      }
+
+      if (!productData) {
+        throw new Error("Product not found for this barcode");
+      }
+
+      // Prepare the item for cart
       const newItem = {
-        ...product,
-        productId: product._id,
-        barcodeId: barcodeId,
+        ...productData,
+        productId: productData._id,
+        barcodeId: productData.barcodeId || barcodeId,
+        scannedBarcodeId: productData.scannedBarcodeId || barcodeId,
         quantity: 1,
+        price: parseFloat(productData.price) || 0,
+        discountedPrice: productData.discount > 0 
+          ? parseFloat(productData.price) * (1 - (productData.discount / 100))
+          : parseFloat(productData.price)
       };
 
+      console.log('🛒 Adding to cart:', newItem.name, newItem);
+
+      // Add to scanned items
       setScannedItems((prev) => [...prev, newItem]);
       setScanFeedback("success");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setLoading(false);
 
     } catch (error) {
-      console.error("Scan error:", error);
-      setLoading(false);
+      console.error("❌ Scan error:", error);
       setScanFeedback("error");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      
+      // Show specific error message
+      Alert.alert(
+        "Product Not Found",
+        `No product found for barcode: ${barcodeId}\n\nMake sure the product exists in your catalog and has a barcode assigned.`,
+        [{ text: "OK" }]
+      );
+    } finally {
+      setLoading(false);
+      
+      // Unlock scanning after delay
+      setTimeout(() => {
+        setIsScanningLocked(false);
+        setScanFeedback(null);
+      }, 1500);
     }
-
-    setTimeout(() => {
-      setIsScanningLocked(false);
-      setScanFeedback(null);
-    }, 1500);
   };
 
   const showFlashFeedback = () => {
@@ -246,7 +344,7 @@ export default function OfflineOrder() {
   const incrementQuantity = (barcodeId) => {
     setScannedItems(prev =>
       prev.map(item =>
-        item.barcodeId === barcodeId
+        item.barcodeId === barcodeId || item.scannedBarcodeId === barcodeId
           ? { ...item, quantity: item.quantity + 1 }
           : item
       )
@@ -256,7 +354,7 @@ export default function OfflineOrder() {
   const decrementQuantity = (barcodeId) => {
     setScannedItems(prev =>
       prev.map(item =>
-        item.barcodeId === barcodeId
+        item.barcodeId === barcodeId || item.scannedBarcodeId === barcodeId
           ? { ...item, quantity: Math.max(0, item.quantity - 1) }
           : item
       ).filter(item => item.quantity > 0)
@@ -264,7 +362,9 @@ export default function OfflineOrder() {
   };
 
   const removeItem = (barcodeId) => {
-    setScannedItems(prev => prev.filter(item => item.barcodeId !== barcodeId));
+    setScannedItems(prev => prev.filter(item => 
+      item.barcodeId !== barcodeId && item.scannedBarcodeId !== barcodeId
+    ));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -273,7 +373,23 @@ export default function OfflineOrder() {
   /* ------------------------------------------------------------------ */
   const calculateTotal = () => {
     return scannedItems.reduce((total, item) => {
-      return total + (item.discountedPrice || item.price) * item.quantity;
+      const price = item.discountedPrice || item.price;
+      return total + (parseFloat(price) || 0) * item.quantity;
+    }, 0);
+  };
+
+  const calculateSubtotal = () => {
+    return scannedItems.reduce((total, item) => {
+      return total + (parseFloat(item.price) || 0) * item.quantity;
+    }, 0);
+  };
+
+  const calculateDiscount = () => {
+    return scannedItems.reduce((total, item) => {
+      if (item.discountedPrice && item.discountedPrice < item.price) {
+        return total + (parseFloat(item.price) - parseFloat(item.discountedPrice)) * item.quantity;
+      }
+      return total;
     }, 0);
   };
 
@@ -291,23 +407,33 @@ export default function OfflineOrder() {
   };
 
   const placeOrder = async () => {
+    if (scannedItems.length === 0) {
+      Alert.alert("No Items", "Please scan some items before placing order.");
+      return;
+    }
+
     setLoading(true);
     
     try {
       const orderData = {
         items: scannedItems.map(item => ({
-          productId: item.productId,
+          productId: item.productId || item._id,
           quantity: item.quantity,
           price: item.discountedPrice || item.price,
-          barcodeId: item.barcodeId
+          barcodeId: item.barcodeId,
+          scannedBarcodeId: item.scannedBarcodeId,
+          productName: item.name
         })),
         total: calculateTotal(),
+        subtotal: calculateSubtotal(),
+        discount: calculateDiscount(),
         orderType: "offline",
         paymentMethod: "cash",
-        paymentStatus: "paid"
+        paymentStatus: "paid",
+        status: "completed"
       };
 
-      console.log('Placing offline order:', orderData);
+      console.log('💳 Placing offline order:', orderData);
 
       const response = await fetch(`${API_BASE_URL}/api/orders/offline`, {
         method: "POST",
@@ -325,14 +451,15 @@ export default function OfflineOrder() {
       }
 
       Alert.alert(
-        "Order Placed Successfully!",
-        `Offline order has been created.\nTotal: ₹${calculateTotal().toFixed(2)}`,
+        "🎉 Order Placed Successfully!",
+        `Offline order has been created.\n\nItems: ${scannedItems.reduce((sum, item) => sum + item.quantity, 0)}\nTotal: ₹${calculateTotal().toFixed(2)}`,
         [
           {
             text: "OK",
             onPress: () => {
               setScannedItems([]);
               setCurrentView('scanning');
+              router.back();
             }
           }
         ]
@@ -341,7 +468,7 @@ export default function OfflineOrder() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     } catch (error) {
-      console.error("Order placement error:", error);
+      console.error("❌ Order placement error:", error);
       Alert.alert(
         "Order Failed", 
         error.message || "Failed to place order. Please try again."
@@ -441,7 +568,7 @@ export default function OfflineOrder() {
                 flash={torchOn ? 'on' : 'off'}
                 onBarcodeScanned={isScanningLocked ? undefined : handleBarcodeScanned}
                 barcodeScannerSettings={{
-                  barcodeTypes: ['code128', 'ean13', 'ean8', 'upc_a', 'upc_e'],
+                  barcodeTypes: ['code128', 'ean13', 'ean8', 'upc_a', 'upc_e', 'qr'],
                 }}
               />
               
@@ -452,12 +579,12 @@ export default function OfflineOrder() {
                   {
                     opacity: flashAnim,
                     backgroundColor: scanFeedback === "success" 
-                      ? 'rgba(76, 175, 80, 0.1)' 
+                      ? 'rgba(76, 175, 80, 0.3)' 
                       : scanFeedback === "error" 
-                      ? 'rgba(244, 67, 54, 0.1)' 
+                      ? 'rgba(244, 67, 54, 0.3)' 
                       : scanFeedback === "duplicate"
-                      ? 'rgba(255, 152, 0, 0.1)'
-                      : 'rgba(255, 255, 255, 0.05)'
+                      ? 'rgba(255, 152, 0, 0.3)'
+                      : 'rgba(255, 255, 255, 0.1)'
                   }
                 ]} 
               />
@@ -475,6 +602,21 @@ export default function OfflineOrder() {
                     <View style={[styles.corner, styles.cornerTopRight]} />
                     <View style={[styles.corner, styles.cornerBottomLeft]} />
                     <View style={[styles.corner, styles.cornerBottomRight]} />
+                    
+                    {/* Scanning Animation */}
+                    <Animated.View 
+                      style={[
+                        styles.scanLine,
+                        {
+                          transform: [{
+                            translateY: flashAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0, 150]
+                            })
+                          }]
+                        }
+                      ]} 
+                    />
                   </View>
                   
                   <Text style={styles.scanInstruction}>
@@ -490,10 +632,10 @@ export default function OfflineOrder() {
                         scanFeedback === "error" && styles.statusError,
                         scanFeedback === "duplicate" && styles.statusDuplicate,
                       ]}>
-                        {scanFeedback === "success" ? "Product added" :
-                         scanFeedback === "duplicate" ? "Already scanned" :
-                         scanFeedback === "error" ? "Product not found" : 
-                         "Processing..."}
+                        {scanFeedback === "success" ? "✅ Product added" :
+                         scanFeedback === "duplicate" ? "⚠️ Already scanned" :
+                         scanFeedback === "error" ? "❌ Product not found" : 
+                         "🔍 Processing..."}
                       </Text>
                     </View>
                   )}
@@ -507,6 +649,9 @@ export default function OfflineOrder() {
             <View style={styles.permissionContainer}>
               <Ionicons name="alert-circle" size={64} color="#FFF" />
               <Text style={styles.permissionText}>Camera unavailable</Text>
+              <Text style={styles.permissionSubtext}>
+                Camera module not available on this device
+              </Text>
             </View>
           )}
         </View>
@@ -528,8 +673,9 @@ export default function OfflineOrder() {
           ) : (
             <View style={styles.footerEmpty}>
               <Text style={styles.emptyFooterText}>
-                Scan products to begin
+                {loading ? "Searching for product..." : "Scan products to begin"}
               </Text>
+              {loading && <ActivityIndicator size="small" color="#FFF" style={styles.footerLoader} />}
             </View>
           )}
         </View>
@@ -559,7 +705,7 @@ export default function OfflineOrder() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Order Items ({scannedItems.length})</Text>
           {scannedItems.map((item, index) => (
-            <View key={item.barcodeId} style={styles.orderItem}>
+            <View key={`${item.barcodeId}-${index}`} style={styles.orderItem}>
               <Image
                 source={{ uri: item.image || "https://via.placeholder.com/60" }}
                 style={styles.orderItemImage}
@@ -571,18 +717,23 @@ export default function OfflineOrder() {
                 <Text style={styles.orderItemPrice}>
                   ₹{item.discountedPrice || item.price} × {item.quantity}
                 </Text>
+                {item.scannedBarcodeId && (
+                  <Text style={styles.barcodeText}>
+                    Barcode: {item.scannedBarcodeId}
+                  </Text>
+                )}
               </View>
               <View style={styles.quantityControls}>
                 <TouchableOpacity
                   style={styles.quantityButton}
-                  onPress={() => decrementQuantity(item.barcodeId)}
+                  onPress={() => decrementQuantity(item.barcodeId || item.scannedBarcodeId)}
                 >
                   <Ionicons name="remove" size={16} color={Colors.light.text} />
                 </TouchableOpacity>
                 <Text style={styles.quantityText}>{item.quantity}</Text>
                 <TouchableOpacity
                   style={styles.quantityButton}
-                  onPress={() => incrementQuantity(item.barcodeId)}
+                  onPress={() => incrementQuantity(item.barcodeId || item.scannedBarcodeId)}
                 >
                   <Ionicons name="add" size={16} color={Colors.light.text} />
                 </TouchableOpacity>
@@ -598,6 +749,18 @@ export default function OfflineOrder() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Bill Summary</Text>
           <View style={styles.summaryContainer}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Subtotal:</Text>
+              <Text style={styles.summaryValue}>₹{calculateSubtotal().toFixed(2)}</Text>
+            </View>
+            {calculateDiscount() > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Discount:</Text>
+                <Text style={[styles.summaryValue, styles.discountText]}>
+                  -₹{calculateDiscount().toFixed(2)}
+                </Text>
+              </View>
+            )}
             <View style={[styles.summaryRow, styles.totalRow]}>
               <Text style={styles.totalLabel}>Total Amount:</Text>
               <Text style={styles.totalValue}>₹{calculateTotal().toFixed(2)}</Text>
@@ -611,7 +774,7 @@ export default function OfflineOrder() {
         <TouchableOpacity 
           style={styles.placeOrderButton}
           onPress={placeOrder}
-          disabled={loading}
+          disabled={loading || scannedItems.length === 0}
         >
           {loading ? (
             <ActivityIndicator color="#FFF" size="small" />
@@ -640,24 +803,27 @@ export default function OfflineOrder() {
       <View style={styles.itemInfo}>
         <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
         <Text style={styles.itemPrice}>₹{item.discountedPrice || item.price}</Text>
+        {item.scannedBarcodeId && (
+          <Text style={styles.itemBarcode}>Barcode: {item.scannedBarcodeId}</Text>
+        )}
       </View>
       <View style={styles.quantityControls}>
         <TouchableOpacity
           style={styles.quantityButton}
-          onPress={() => decrementQuantity(item.barcodeId)}
+          onPress={() => decrementQuantity(item.barcodeId || item.scannedBarcodeId)}
         >
           <Ionicons name="remove" size={16} color={Colors.light.text} />
         </TouchableOpacity>
         <Text style={styles.quantityText}>{item.quantity}</Text>
         <TouchableOpacity
           style={styles.quantityButton}
-          onPress={() => incrementQuantity(item.barcodeId)}
+          onPress={() => incrementQuantity(item.barcodeId || item.scannedBarcodeId)}
         >
           <Ionicons name="add" size={16} color={Colors.light.text} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.removeButton}
-          onPress={() => removeItem(item.barcodeId)}
+          onPress={() => removeItem(item.barcodeId || item.scannedBarcodeId)}
         >
           <Ionicons name="trash-outline" size={16} color="#FF3B30" />
         </TouchableOpacity>
@@ -708,6 +874,7 @@ export default function OfflineOrder() {
                 onPress={openScanner}
               >
                 <Ionicons name="barcode-outline" size={20} color={Colors.light.accent} />
+                <Text style={styles.scanMoreText}>Scan More</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -733,6 +900,14 @@ export default function OfflineOrder() {
               <Text style={styles.summaryLabel}>Products:</Text>
               <Text style={styles.summaryValue}>{scannedItems.length}</Text>
             </View>
+            {calculateDiscount() > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Discount:</Text>
+                <Text style={[styles.summaryValue, styles.discountText]}>
+                  -₹{calculateDiscount().toFixed(2)}
+                </Text>
+              </View>
+            )}
             <View style={[styles.summaryRow, styles.totalRow]}>
               <Text style={styles.totalLabel}>Total:</Text>
               <Text style={styles.totalValue}>₹{calculateTotal().toFixed(2)}</Text>
@@ -761,7 +936,7 @@ export default function OfflineOrder() {
             onPress={proceedToCheckout}
           >
             <Text style={styles.checkoutButtonText}>
-              Create Bill
+              Create Bill - ₹{calculateTotal().toFixed(2)}
             </Text>
             <Ionicons name="arrow-forward" size={20} color="#FFF" />
           </TouchableOpacity>
@@ -868,6 +1043,12 @@ const styles = StyleSheet.create({
   orderItemPrice: {
     fontSize: 12,
     color: Colors.light.textSecondary,
+    marginBottom: 2,
+  },
+  barcodeText: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    fontFamily: 'monospace',
   },
   orderItemTotal: {
     fontSize: 16,
@@ -894,6 +1075,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.light.text,
+  },
+  discountText: {
+    color: '#4CAF50',
   },
   totalRow: {
     borderTopWidth: 1,
@@ -1067,6 +1251,15 @@ const styles = StyleSheet.create({
     borderRightWidth: 3,
     borderBottomRightRadius: 8,
   },
+
+  /* Scan Line Animation */
+  scanLine: {
+    width: 250,
+    height: 2,
+    backgroundColor: Colors.light.accent,
+    position: 'absolute',
+    top: 0,
+  },
   
   scanInstruction: {
     marginTop: 20,
@@ -1142,6 +1335,9 @@ const styles = StyleSheet.create({
   },
   footerEmpty: {
     alignItems: 'center',
+  },
+  footerLoader: {
+    marginTop: 8,
   },
   continueButton: {
     flexDirection: 'row',
@@ -1233,12 +1429,22 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
   },
   headerRight: {
-    width: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   scanMoreButton: {
-    padding: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     backgroundColor: 'rgba(33, 150, 243, 0.1)',
     borderRadius: 8,
+    gap: 4,
+  },
+  scanMoreText: {
+    fontSize: 12,
+    color: Colors.light.accent,
+    fontWeight: '600',
   },
   itemCard: {
     flexDirection: 'row',
@@ -1272,6 +1478,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.accent,
     fontWeight: '700',
+    marginBottom: 2,
+  },
+  itemBarcode: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    fontFamily: 'monospace',
   },
   quantityControls: {
     flexDirection: 'row',
