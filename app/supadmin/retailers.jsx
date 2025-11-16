@@ -37,6 +37,7 @@ export default function RetailersScreen() {
   const [selectedRetailer, setSelectedRetailer] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const router = useRouter();
   const fadeAnim = useState(new Animated.Value(0))[0];
 
@@ -132,6 +133,50 @@ export default function RetailersScreen() {
       setRefreshing(false);
     }
   }, [authToken]);
+
+  // Fetch a single retailer's full details (from your provided endpoint)
+  const fetchRetailerDetails = async (retailerId) => {
+    setDetailsLoading(true);
+    setShowDetailsModal(true); // open modal early to show loader
+    setSelectedRetailer(null);
+
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error('No auth token found');
+
+      const res = await fetch(`${API_BASE}/superadmin/retailers/${retailerId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} - ${text}`);
+      }
+
+      const json = await res.json();
+      if (!json.success || !json.data || !json.data.retailer) {
+        throw new Error('Invalid retailer data from server');
+      }
+
+      // shape to convenient object for UI
+      setSelectedRetailer({
+        retailer: json.data.retailer,
+        performance: json.data.performance || {},
+        recentOrders: json.data.recentOrders || [],
+      });
+    } catch (err) {
+      console.error('fetchRetailerDetails error:', err);
+      Alert.alert('Error', `Could not load retailer details.\n${err.message}`);
+      setSelectedRetailer(null);
+      setShowDetailsModal(false);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
 
   // fetch when component mounts and whenever auth state changes
   useEffect(() => {
@@ -268,8 +313,8 @@ export default function RetailersScreen() {
     };
 
     const handleViewDetails = () => {
-      setSelectedRetailer(retailer);
-      setShowDetailsModal(true);
+      // fetch full details from backend
+      fetchRetailerDetails(retailer.id);
     };
 
     const handleQuickAction = (action) => {
@@ -484,21 +529,42 @@ export default function RetailersScreen() {
       </ScrollView>
 
       {/* Retailer Details Modal */}
-      <Modal visible={showDetailsModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowDetailsModal(false)}>
-        {selectedRetailer && (
+      <Modal visible={showDetailsModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => {
+        setShowDetailsModal(false);
+        setSelectedRetailer(null);
+        setDetailsLoading(false);
+      }}>
+        {detailsLoading ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" />
+            <Text style={{ marginTop: 12, color: '#64748B' }}>Loading retailer details...</Text>
+            <TouchableOpacity onPress={() => { setShowDetailsModal(false); setSelectedRetailer(null); }} style={{ marginTop: 18 }}>
+              <Text style={{ color: '#3B82F6', fontWeight: '700' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        ) : selectedRetailer && (
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Retailer Details</Text>
-              <TouchableOpacity style={styles.closeButton} onPress={() => setShowDetailsModal(false)}>
+              <Text style={styles.modalTitle}>{selectedRetailer.retailer.shopName}</Text>
+              <TouchableOpacity style={styles.closeButton} onPress={() => { setShowDetailsModal(false); setSelectedRetailer(null); }}>
                 <MaterialIcons name="close" size={24} color="#000" />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalContent}>
               <View style={styles.modalSection}>
-                <Text style={styles.modalShopName}>{selectedRetailer.shopName}</Text>
-                <Text style={styles.modalOwner}>Owner: {selectedRetailer.ownerName}</Text>
-                <StatusBadge status={selectedRetailer.status} />
+                <Text style={styles.modalShopName}>{selectedRetailer.retailer.shopName}</Text>
+                <Text style={styles.modalOwner}>Owner: {selectedRetailer.retailer.ownerName}</Text>
+                <StatusBadge status={selectedRetailer.retailer.isActive ? 'active' : 'pending'} />
+                <Text style={{ marginTop: 8, color: '#64748B' }}>
+                  Service radius: {selectedRetailer.retailer.serviceRadius ?? '—'} km
+                </Text>
+                <Text style={{ marginTop: 4, color: '#64748B' }}>
+                  Created: {selectedRetailer.retailer.createdAt ? new Date(selectedRetailer.retailer.createdAt).toLocaleString() : '—'}
+                </Text>
+                <Text style={{ marginTop: 2, color: '#64748B' }}>
+                  Updated: {selectedRetailer.retailer.updatedAt ? new Date(selectedRetailer.retailer.updatedAt).toLocaleString() : '—'}
+                </Text>
               </View>
 
               <View style={styles.modalSection}>
@@ -506,57 +572,61 @@ export default function RetailersScreen() {
                 <View style={styles.contactInfo}>
                   <View style={styles.contactItem}>
                     <Feather name="phone" size={16} color="#64748B" />
-                    <Text style={styles.contactText}>{selectedRetailer.mobile}</Text>
-                  </View>
-                  <View style={styles.contactItem}>
-                    <Feather name="mail" size={16} color="#64748B" />
-                    <Text style={styles.contactText}>{selectedRetailer.email || '—'}</Text>
+                    <Text style={styles.contactText}>{selectedRetailer.retailer.mobile || '—'}</Text>
                   </View>
                   <View style={styles.contactItem}>
                     <Feather name="map-pin" size={16} color="#64748B" />
-                    <Text style={styles.contactText}>{selectedRetailer.location}</Text>
+                    <Text style={styles.contactText}>{selectedRetailer.retailer.location?.formattedAddress || selectedRetailer.retailer.address || '—'}</Text>
+                  </View>
+                  {selectedRetailer.retailer.location?.coordinates && (
+                    <View style={styles.contactItem}>
+                      <MaterialIcons name="location-on" size={16} color="#64748B" />
+                      <Text style={styles.contactText}>
+                        {`Lat: ${selectedRetailer.retailer.location.coordinates.latitude}, Lon: ${selectedRetailer.retailer.location.coordinates.longitude}`}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={styles.sectionTitle}>Performance</Text>
+                <View style={styles.performanceGrid}>
+                  <View style={styles.performanceMetric}>
+                    <Text style={styles.metricValue}>{selectedRetailer.performance?.totalOrders ?? 0}</Text>
+                    <Text style={styles.metricLabel}>Total Orders</Text>
+                  </View>
+                  <View style={styles.performanceMetric}>
+                    <Text style={styles.metricValue}>₹{(selectedRetailer.performance?.totalRevenue ?? 0).toLocaleString()}</Text>
+                    <Text style={styles.metricLabel}>Total Revenue</Text>
+                  </View>
+                  <View style={styles.performanceMetric}>
+                    <Text style={styles.metricValue}>{selectedRetailer.performance?.completedOrders ?? 0}</Text>
+                    <Text style={styles.metricLabel}>Completed</Text>
+                  </View>
+                  <View style={styles.performanceMetric}>
+                    <Text style={styles.metricValue}>{selectedRetailer.performance?.pendingOrders ?? 0}</Text>
+                    <Text style={styles.metricLabel}>Pending</Text>
                   </View>
                 </View>
               </View>
 
-              {selectedRetailer.status === 'active' && (
-                <View style={styles.modalSection}>
-                  <Text style={styles.sectionTitle}>Performance Metrics</Text>
-                  <View style={styles.performanceGrid}>
-                    <View style={styles.performanceMetric}>
-                      <Text style={styles.metricValue}>{selectedRetailer.totalOrders}</Text>
-                      <Text style={styles.metricLabel}>Total Orders</Text>
-                    </View>
-                    <View style={styles.performanceMetric}>
-                      <Text style={styles.metricValue}>₹{selectedRetailer.totalRevenue.toLocaleString()}</Text>
-                      <Text style={styles.metricLabel}>Total Revenue</Text>
-                    </View>
-                    <View style={styles.performanceMetric}>
-                      <Text style={styles.metricValue}>{selectedRetailer.products}</Text>
-                      <Text style={styles.metricLabel}>Products</Text>
-                    </View>
-                    <View style={styles.performanceMetric}>
-                      <Text style={styles.metricValue}>{selectedRetailer.rating}/5</Text>
-                      <Text style={styles.metricLabel}>Customer Rating</Text>
-                    </View>
-                  </View>
-                </View>
-              )}
-
               <View style={styles.modalSection}>
-                <Text style={styles.sectionTitle}>Documents</Text>
-                <View style={styles.documentsList}>
-                  {(selectedRetailer.documents || []).length === 0 ? (
-                    <Text style={styles.documentText}>No documents available</Text>
-                  ) : (
-                    selectedRetailer.documents.map((doc, index) => (
-                      <View key={index} style={styles.documentItem}>
-                        <MaterialIcons name="description" size={16} color="#3B82F6" />
-                        <Text style={styles.documentText}>{doc.toUpperCase()} Certificate</Text>
+                <Text style={styles.sectionTitle}>Recent Orders</Text>
+                {(selectedRetailer.recentOrders || []).length === 0 ? (
+                  <Text style={styles.documentText}>No recent orders</Text>
+                ) : (
+                  (selectedRetailer.recentOrders || []).map((o, idx) => (
+                    <View key={idx} style={[styles.documentItem, { justifyContent: 'space-between' }]}>
+                      <View>
+                        <Text style={{ fontWeight: '700', color: '#1E293B' }}>{o.orderId || o.orderNumber || '—'}</Text>
+                        <Text style={{ color: '#64748B' }}>{o.customerName || '—'}</Text>
+                        <Text style={{ color: '#94A3B8', fontSize: 12 }}>{o.status} • {o.createdAt ? new Date(o.createdAt).toLocaleString() : '—'}</Text>
                       </View>
-                    ))
-                  )}
-                </View>
+                      <Text style={{ fontWeight: '700', color: '#1E293B' }}>₹{o.amount ?? 0}</Text>
+                    </View>
+                  ))
+                )}
               </View>
 
               <View style={styles.modalActions}>

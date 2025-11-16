@@ -1,7 +1,9 @@
 // app/(tabs)/supadmin/orders.jsx
+import 'react-native-get-random-values'; // <-- polyfill for uuid in RN/Expo
+import { v4 as uuidv4 } from 'uuid';
+
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,31 +22,31 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
-const API_BASE = `${process.env.EXPO_PUBLIC_API_URL || ''}/api`; // e.g. http://<host>:5000
+const API_BASE = `${process.env.EXPO_PUBLIC_API_URL || ''}/api`; // e.g. http://localhost:5000
 
 export default function OrdersScreen() {
-  // top-level hook usage
   const { authToken, isLoading: authLoading, isAuthenticated } = useAuth();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [ordersData, setOrdersData] = useState(null); // will be { orders: [...], total: n } or null
-  const [selectedOrder, setSelectedOrder] = useState(null); // detailed order object
+  const [ordersData, setOrdersData] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterPayment, setFilterPayment] = useState('all'); // may be unused for stock-orders but kept
+  const [filterPayment, setFilterPayment] = useState('all');
   const [errorMsg, setErrorMsg] = useState(null);
-  const router = useRouter();
   const fadeAnim = useState(new Animated.Value(0))[0];
 
-  // fallback token getter (does NOT call hooks)
+  // cache for retailer details to avoid repeated fetches
+  const [retailerCache, setRetailerCache] = useState({});
+
+  // token fallback
   const getAuthToken = async () => {
     if (authToken) return authToken;
     try {
-      const fallback = (await AsyncStorage.getItem('authtoken')) || (await AsyncStorage.getItem('token'));
-      return fallback || null;
+      return (await AsyncStorage.getItem('authtoken')) || (await AsyncStorage.getItem('token')) || null;
     } catch (e) {
       console.warn('[orders] AsyncStorage read error', e);
       return null;
@@ -55,12 +57,10 @@ export default function OrdersScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  // Fetch orders list
+  // ---------- Fetch orders list ----------
   const fetchOrders = useCallback(async () => {
     setErrorMsg(null);
     setLoadingList(true);
-    console.log('[orders] fetchOrders start', { API_BASE });
-
     try {
       const token = await getAuthToken();
       if (!token) {
@@ -68,55 +68,36 @@ export default function OrdersScreen() {
         setOrdersData(null);
         return;
       }
-
       const url = `${API_BASE}/superadmin/stock-orders`;
-      console.log('[orders] GET', url);
-
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`, // change to `Authorization: token` if your backend expects raw token
-        },
-      });
-
-      console.log('[orders] list status', res.status);
+      const res = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
       if (!res.ok) {
-        const txt = await res.text().catch(() => 'no-text');
-        throw new Error(`HTTP ${res.status} - ${txt}`);
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
       }
-
       const json = await res.json();
-      // expected: { orders: [...], total: N }
-      if (!json || !Array.isArray(json.orders)) {
-        throw new Error('Invalid response format from orders API');
-      }
-
-      // Map API shape into UI shape used elsewhere (keep original property names where possible)
-      const mappedOrders = json.orders.map(o => ({
+      const rawOrders = Array.isArray(json.orders) ? json.orders : (Array.isArray(json.data?.orders) ? json.data.orders : (Array.isArray(json) ? json : []));
+      const mappedOrders = rawOrders.map(o => ({
         id: o._id,
         orderNumber: o.orderNumber || o._id,
         status: o.status || 'unknown',
         isLocked: !!o.isLocked,
-        totalRequestedQty: o.totalRequestedQty ?? 0,
-        totalFulfilledQty: o.totalFulfilledQty ?? 0,
+        totalRequestedQty: o.totalRequestedQty ?? (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (it.requestedQty || 0), 0) : 0),
+        totalFulfilledQty: o.totalFulfilledQty ?? (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (it.fulfilledQty || 0), 0) : 0),
         priority: o.priority || 'normal',
         createdAt: o.createdAt,
         updatedAt: o.updatedAt,
         items: Array.isArray(o.items) ? o.items.map(it => ({
-          productId: it.product?._id || it.product?.id || null,
-          name: it.product?.name || 'Unknown product',
-          requestedQty: it.requestedQty ?? 0,
+          productId: it.product?._id || it.product?.id || it.product || null,
+          name: it.product?.name || it.name || 'Unknown product',
+          requestedQty: it.requestedQty ?? it.qty ?? 0,
           fulfilledQty: it.fulfilledQty ?? 0,
           reservedQty: it.reservedQty ?? 0,
           note: it.note || '',
+          raw: it,
         })) : [],
-        raw: o, // preserve raw response for details if needed
+        raw: o,
       }));
-
       setOrdersData({ orders: mappedOrders, total: json.total ?? mappedOrders.length });
-      setErrorMsg(null);
-      console.log('[orders] loaded', mappedOrders.length, 'orders');
     } catch (err) {
       console.error('[orders] fetchOrders error', err);
       setErrorMsg(err.message || 'Failed to load orders');
@@ -127,74 +108,197 @@ export default function OrdersScreen() {
     }
   }, [authToken]);
 
-  // Fetch single order details
-  const fetchOrderDetails = useCallback(async (orderId) => {
-    setErrorMsg(null);
-    setLoadingDetail(true);
-    console.log('[orders] fetchOrderDetails', orderId);
+  // ---------- Fetch retailer details by id (uses cache) ----------
+  const fetchRetailerDetails = useCallback(async (retailerId) => {
+    if (!retailerId) return null;
+    // return cached if exists
+    if (retailerCache[retailerId]) return retailerCache[retailerId];
 
     try {
       const token = await getAuthToken();
-      if (!token) {
-        setErrorMsg('No auth token found. Please login.');
-        return;
-      }
-
-      const url = `${API_BASE}/superadmin/stock-orders/${encodeURIComponent(orderId)}`;
-      console.log('[orders] GET detail', url);
-
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
+      if (!token) throw new Error('Not authenticated');
+      const url = `${API_BASE}/superadmin/retailers/${encodeURIComponent(retailerId)}`;
+      const res = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
       if (!res.ok) {
-        const txt = await res.text().catch(() => 'no-text');
-        throw new Error(`HTTP ${res.status} - ${txt}`);
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
       }
-
       const json = await res.json();
-      // API returns an order object (per example)
-      if (!json || !json._id) {
-        // some APIs wrap in { order: {...} } — handle both:
-        if (json.order && json.order._id) {
-          setSelectedOrder(json.order);
-          setShowDetailsModal(true);
-          return;
-        }
-        throw new Error('Invalid order detail response');
+
+      // many APIs wrap as { success, data: { retailer, performance, recentOrders } }
+      const payload = json.data ?? json;
+      const retailerObj = payload.retailer ?? payload;
+      // attach performance & recentOrders if present
+      if (payload.performance) retailerObj.performance = payload.performance;
+      if (Array.isArray(payload.recentOrders)) retailerObj.recentOrders = payload.recentOrders;
+
+      // cache
+      setRetailerCache(prev => ({ ...prev, [retailerId]: retailerObj }));
+      return retailerObj;
+    } catch (err) {
+      console.warn('[orders] fetchRetailerDetails error', err);
+      return null;
+    }
+  }, [retailerCache, authToken]);
+
+  // ---------- Fetch single order ----------
+  const fetchOrderDetails = useCallback(async (orderId) => {
+    setErrorMsg(null);
+    setLoadingDetail(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) { setErrorMsg('Not auth'); return; }
+      const url = `${API_BASE}/superadmin/stock-orders/${encodeURIComponent(orderId)}`;
+      const res = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
+      if (!res.ok) { const txt = await res.text().catch(()=> ''); throw new Error(`HTTP ${res.status} ${txt}`); }
+      const json = await res.json();
+
+      // accept many shapes
+      let orderObj = null;
+      if (json == null) throw new Error('Empty response');
+      if (json._id) orderObj = json;
+      else if (json.order && json.order._id) orderObj = json.order;
+      else if (json.success && json.data) {
+        if (json.data._id) orderObj = json.data;
+        else if (json.data.order && json.data.order._id) orderObj = json.data.order;
+        else if (json.data.orderObj && json.data.orderObj._id) orderObj = json.data.orderObj;
+      } else if (json.data && json.data.items && Array.isArray(json.data.items)) orderObj = json.data;
+      if (!orderObj) throw new Error('Invalid order detail response');
+
+      // normalize items
+      orderObj.items = Array.isArray(orderObj.items) ? orderObj.items.map(it => ({
+        product: (it.product && typeof it.product === 'object') ? it.product : (typeof it.product === 'string' ? { _id: it.product, name: it.name || 'Product' } : (it.product ?? {})),
+        requestedQty: it.requestedQty ?? it.qty ?? 0,
+        fulfilledQty: it.fulfilledQty ?? 0,
+        reservedQty: it.reservedQty ?? 0,
+        note: it.note || '',
+        raw: it,
+      })) : [];
+
+      // If retailer is an ID (string), fetch full retailer info using retailer API
+      if (orderObj.retailer && typeof orderObj.retailer === 'string') {
+        const r = await fetchRetailerDetails(orderObj.retailer);
+        if (r) orderObj.retailer = r;
+      } else if (orderObj.retailer && orderObj.retailer._id) {
+        // if object already contains _id, still try to attach performance if cached
+        const rid = orderObj.retailer._id;
+        const cached = await fetchRetailerDetails(rid); // fetch will return cached quickly
+        if (cached) orderObj.retailer = { ...orderObj.retailer, ...cached };
       }
 
-      setSelectedOrder(json);
+      setSelectedOrder(orderObj);
       setShowDetailsModal(true);
-      console.log('[orders] detail loaded', json._id);
     } catch (err) {
       console.error('[orders] fetchOrderDetails error', err);
-      setErrorMsg(err.message || 'Failed to load order details');
       Alert.alert('Error', err.message || 'Failed to load order details');
+      setSelectedOrder(null);
+      setShowDetailsModal(false);
     } finally {
       setLoadingDetail(false);
     }
-  }, [authToken]);
+  }, [authToken, fetchRetailerDetails]);
 
-  // initial fetch when auth is ready
-  useEffect(() => {
-    if (authLoading) {
-      console.log('[orders] waiting for auth to finish');
-      return;
+  // ---------- Act on order (fulfill/reject/cancel) ----------
+  const actOnOrder = async ({ orderId, action, items = [], reason = '' }) => {
+    const token = await getAuthToken();
+    if (!token) { Alert.alert('Auth', 'Not authenticated'); return; }
+    const idempotencyKey = uuidv4();
+    const url = `${API_BASE}/superadmin/stock-orders/${encodeURIComponent(orderId)}/action`;
+    try {
+      // confirm for destructive actions
+      if (action === 'reject' || action === 'cancel') {
+        const ok = await new Promise(resolve => Alert.alert(`${action}`, `Are you sure you want to ${action} this order?`, [
+          { text: 'No', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Yes', onPress: () => resolve(true) },
+        ]));
+        if (!ok) return;
+      }
+      // optimistic spinner
+      setLoadingDetail(true);
+      const body = { action, items, reason, idempotencyKey };
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+      if (!res.ok) {
+        const txt = await res.text().catch(()=> '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+      const json = await res.json();
+      // backend returns the updated order (or message)
+      const updatedOrder = json.order || json || null;
+      if (updatedOrder && updatedOrder._id) {
+        // If retailer is an ID, try to fetch retailer details to attach
+        if (updatedOrder.retailer && typeof updatedOrder.retailer === 'string') {
+          const r = await fetchRetailerDetails(updatedOrder.retailer);
+          if (r) updatedOrder.retailer = r;
+        }
+        setSelectedOrder(updatedOrder);
+        await fetchOrders();
+        Alert.alert('Success', `${action} completed`);
+      } else {
+        // fallback - re-fetch details and list
+        await fetchOrderDetails(orderId);
+        await fetchOrders();
+        Alert.alert('Success', `${action} completed`);
+      }
+    } catch (err) {
+      console.error('[orders] actOnOrder error', err);
+      Alert.alert('Error', err.message || 'Action failed');
+    } finally {
+      setLoadingDetail(false);
     }
+  };
+
+  // ---------- Lock / Release ----------
+  const lockOrder = async (orderId) => {
+    const token = await getAuthToken();
+    if (!token) { Alert.alert('Auth', 'Not authenticated'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/superadmin/stock-orders/${encodeURIComponent(orderId)}/lock`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
+      if (!res.ok) { const txt = await res.text().catch(()=> ''); throw new Error(`HTTP ${res.status} ${txt}`); }
+      const updated = await res.json();
+      // attach retailer details if returned as id
+      if (updated.retailer && typeof updated.retailer === 'string') {
+        const r = await fetchRetailerDetails(updated.retailer);
+        if (r) updated.retailer = r;
+      }
+      setSelectedOrder(updated);
+      await fetchOrders();
+      Alert.alert('Locked', 'Order locked for processing');
+    } catch (err) {
+      console.error('[orders] lockOrder error', err);
+      Alert.alert('Error', err.message || 'Lock failed');
+    }
+  };
+
+  const releaseOrderLock = async (orderId, note = '') => {
+    const token = await getAuthToken();
+    if (!token) { Alert.alert('Auth', 'Not authenticated'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/superadmin/stock-orders/${encodeURIComponent(orderId)}/release-lock`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ note }) });
+      if (!res.ok) { const txt = await res.text().catch(()=> ''); throw new Error(`HTTP ${res.status} ${txt}`); }
+      const updated = await res.json();
+      if (updated.retailer && typeof updated.retailer === 'string') {
+        const r = await fetchRetailerDetails(updated.retailer);
+        if (r) updated.retailer = r;
+      }
+      setSelectedOrder(updated);
+      await fetchOrders();
+      Alert.alert('Released', 'Lock released');
+    } catch (err) {
+      console.error('[orders] releaseOrderLock error', err);
+      Alert.alert('Error', err.message || 'Release failed');
+    }
+  };
+
+  // initial fetch
+  useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated && !authToken) {
       setErrorMsg('Not authenticated. Please login.');
       setOrdersData(null);
       setLoadingList(false);
       return;
     }
-
     fetchOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, authToken, isAuthenticated]);
 
   const onRefresh = async () => {
@@ -204,22 +308,15 @@ export default function OrdersScreen() {
     Alert.alert('✅ Refreshed', 'Orders list updated');
   };
 
-  // Filter logic (works on mapped orders)
   const filteredOrders = (ordersData?.orders || []).filter(order => {
     const q = searchQuery.trim().toLowerCase();
-    const matchesSearch =
-      !q ||
-      (order.orderNumber || '').toLowerCase().includes(q) ||
-      (order.items?.[0]?.name || '').toLowerCase().includes(q);
-
+    const matchesSearch = !q || (order.orderNumber || '').toLowerCase().includes(q) || (order.items?.[0]?.name || '').toLowerCase().includes(q);
     const matchesStatus = filterStatus === 'all' || order.status === filterStatus;
-    // payment filter may not apply to stock-orders; keep as passthrough
     const matchesPayment = filterPayment === 'all' || true;
-
     return matchesSearch && matchesStatus && matchesPayment;
   });
 
-  // UI small components reuse your style names
+  // Reuse your styles and components from previous file
   const StatusBadge = ({ status, type = 'order' }) => {
     const getStatusConfig = (status) => {
       switch (status) {
@@ -231,7 +328,6 @@ export default function OrdersScreen() {
         default: return { color: '#6B7280', bgColor: '#F3F4F6', text: status || 'Unknown', icon: 'help' };
       }
     };
-
     const cfg = getStatusConfig(status);
     return (
       <View style={[styles.statusBadge, { backgroundColor: cfg.bgColor }]}>
@@ -243,10 +339,8 @@ export default function OrdersScreen() {
 
   const OrderCard = ({ order }) => {
     const scaleAnim = useState(new Animated.Value(1))[0];
-
     const handlePressIn = () => Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true }).start();
     const handlePressOut = () => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
-
     return (
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
         <TouchableOpacity
@@ -260,9 +354,7 @@ export default function OrdersScreen() {
             <View style={styles.orderInfo}>
               <Text style={styles.orderId}>{order.orderNumber}</Text>
               <Text style={styles.orderDate}>
-                {order.createdAt ? new Date(order.createdAt).toLocaleString('en-IN', {
-                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-                }) : '—'}
+                {order.createdAt ? new Date(order.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
               </Text>
             </View>
             <View style={styles.statusContainer}>
@@ -301,14 +393,11 @@ export default function OrdersScreen() {
             </View>
 
             <View style={styles.actionButtons}>
-              <TouchableOpacity style={[styles.actionButton, styles.contactButton]} onPress={() => {
-                Alert.alert('Inspect Order', `Open details for ${order.orderNumber}`, [{ text: 'OK' }]);
-              }}>
+              <TouchableOpacity style={[styles.actionButton, styles.contactButton]} onPress={() => fetchOrderDetails(order.id)}>
                 <Feather name="eye" size={14} color="#FFFFFF" />
               </TouchableOpacity>
 
               <TouchableOpacity style={[styles.actionButton, styles.updateButton]} onPress={() => {
-                // example quick action: lock/unlock - implement API call if available
                 Alert.alert('Quick Action', `Toggle lock for ${order.orderNumber}`, [{ text: 'OK' }]);
               }}>
                 <Feather name="lock" size={14} color="#FFFFFF" />
@@ -320,12 +409,8 @@ export default function OrdersScreen() {
     );
   };
 
-  // StatusFilter uses counts from ordersData where possible
   const StatusFilter = () => {
-    const counts = (ordersData?.orders || []).reduce((acc, o) => {
-      acc[o.status] = (acc[o.status] || 0) + 1;
-      return acc;
-    }, {});
+    const counts = (ordersData?.orders || []).reduce((acc, o) => { acc[o.status] = (acc[o.status] || 0) + 1; return acc; }, {});
     const statusFilters = [
       { key: 'all', label: 'All', count: ordersData?.total ?? (ordersData?.orders?.length ?? 0) },
       { key: 'pending', label: 'Pending', count: counts['pending'] ?? 0 },
@@ -333,26 +418,18 @@ export default function OrdersScreen() {
       { key: 'processing', label: 'Processing', count: counts['processing'] ?? 0 },
       { key: 'cancelled', label: 'Cancelled', count: counts['cancelled'] ?? 0 },
     ];
-
     return (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
         {statusFilters.map((filter) => (
-          <TouchableOpacity
-            key={filter.key}
-            style={[styles.filterButton, filterStatus === filter.key && styles.filterButtonActive]}
-            onPress={() => setFilterStatus(filter.key)}
-          >
+          <TouchableOpacity key={filter.key} style={[styles.filterButton, filterStatus === filter.key && styles.filterButtonActive]} onPress={() => setFilterStatus(filter.key)}>
             <Text style={[styles.filterText, filterStatus === filter.key && styles.filterTextActive]}>{filter.label}</Text>
-            <View style={[styles.filterCount, filterStatus === filter.key && styles.filterCountActive]}>
-              <Text style={styles.filterCountText}>{filter.count}</Text>
-            </View>
+            <View style={[styles.filterCount, filterStatus === filter.key && styles.filterCountActive]}><Text style={styles.filterCountText}>{filter.count}</Text></View>
           </TouchableOpacity>
         ))}
       </ScrollView>
     );
   };
 
-  // Render
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
       {/* Header */}
@@ -367,17 +444,8 @@ export default function OrdersScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={<RefreshControl refreshing={refreshing || loadingList} onRefresh={onRefresh} />}
-        showsVerticalScrollIndicator={false}
-      >
-        {errorMsg ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorTitle}>Error</Text>
-            <Text style={styles.errorText}>{errorMsg}</Text>
-          </View>
-        ) : null}
+      <ScrollView style={styles.scrollView} refreshControl={<RefreshControl refreshing={refreshing || loadingList} onRefresh={onRefresh} />} showsVerticalScrollIndicator={false}>
+        {errorMsg ? <View style={styles.errorBanner}><Text style={styles.errorTitle}>Error</Text><Text style={styles.errorText}>{errorMsg}</Text></View> : null}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -385,30 +453,15 @@ export default function OrdersScreen() {
             <TouchableOpacity onPress={fetchOrders}><MaterialIcons name="refresh" size={20} color="#3B82F6" /></TouchableOpacity>
           </View>
 
-          {loadingList && !ordersData ? (
-            <View style={styles.centered}><ActivityIndicator size="large" /></View>
-          ) : (!ordersData ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateTitle}>No orders available</Text>
-              <Text style={styles.emptyStateText}>No stock orders were returned by the server.</Text>
-            </View>
+          {loadingList && !ordersData ? <View style={styles.centered}><ActivityIndicator size="large" /></View> : (!ordersData ? (
+            <View style={styles.emptyState}><Text style={styles.emptyStateTitle}>No orders available</Text><Text style={styles.emptyStateText}>No stock orders were returned by the server.</Text></View>
           ) : (
             <>
               <View style={styles.searchContainer}>
                 <View style={styles.searchInputContainer}>
                   <Feather name="search" size={20} color="#64748B" />
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search orders by number or product..."
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholderTextColor="#94A3B8"
-                  />
-                  {searchQuery.length > 0 && (
-                    <TouchableOpacity onPress={() => setSearchQuery('')}>
-                      <MaterialIcons name="clear" size={20} color="#64748B" />
-                    </TouchableOpacity>
-                  )}
+                  <TextInput style={styles.searchInput} placeholder="Search orders by number or product..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor="#94A3B8" />
+                  {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')}><MaterialIcons name="clear" size={20} color="#64748B" /></TouchableOpacity>}
                 </View>
               </View>
 
@@ -417,14 +470,8 @@ export default function OrdersScreen() {
 
               <View style={styles.ordersList}>
                 {filteredOrders.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Feather name="package" size={48} color="#E2E8F0" />
-                    <Text style={styles.emptyStateTitle}>No orders match filters</Text>
-                    <Text style={styles.emptyStateText}>Try clearing filters or refreshing the list.</Text>
-                  </View>
-                ) : (
-                  filteredOrders.map(order => <OrderCard key={order.id} order={order} />)
-                )}
+                  <View style={styles.emptyState}><Feather name="package" size={48} color="#E2E8F0" /><Text style={styles.emptyStateTitle}>No orders match filters</Text><Text style={styles.emptyStateText}>Try clearing filters or refreshing the list.</Text></View>
+                ) : (filteredOrders.map(order => <OrderCard key={order.id} order={order} />))}
               </View>
             </>
           ))}
@@ -435,15 +482,11 @@ export default function OrdersScreen() {
 
       {/* Order Details Modal */}
       <Modal visible={showDetailsModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowDetailsModal(false)}>
-        {loadingDetail && !selectedOrder ? (
-          <View style={[styles.modalContainer, styles.centered]}><ActivityIndicator size="large" /></View>
-        ) : selectedOrder ? (
+        {loadingDetail && !selectedOrder ? <View style={[styles.modalContainer, styles.centered]}><ActivityIndicator size="large" /></View> : selectedOrder ? (
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedOrder.orderNumber || selectedOrder.orderId || selectedOrder._id}</Text>
-              <TouchableOpacity style={styles.closeButton} onPress={() => setShowDetailsModal(false)}>
-                <MaterialIcons name="close" size={24} color="#000" />
-              </TouchableOpacity>
+              <Text style={styles.modalTitle}>{selectedOrder.orderNumber || selectedOrder._id}</Text>
+              <TouchableOpacity style={styles.closeButton} onPress={() => setShowDetailsModal(false)}><MaterialIcons name="close" size={24} color="#000" /></TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalContent}>
@@ -455,52 +498,115 @@ export default function OrdersScreen() {
                     {selectedOrder.isLocked && <StatusBadge status={'locked'} />}
                   </View>
                 </View>
-                <Text style={styles.orderDateModal}>
-                  Created {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString('en-IN') : '—'}
-                </Text>
+                <Text style={styles.orderDateModal}>Created {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString('en-IN') : '—'}</Text>
+                <Text style={[styles.detailText, { marginTop: 6 }]}>Priority: {selectedOrder.priority || 'normal'}</Text>
+                <Text style={[styles.detailText]}>Requested: {selectedOrder.totalRequestedQty ?? selectedOrder.items.reduce((s, it) => s + (it.requestedQty || 0), 0)} • Fulfilled: {selectedOrder.totalFulfilledQty ?? selectedOrder.items.reduce((s, it) => s + (it.fulfilledQty || 0), 0)}</Text>
+
+                {selectedOrder.retailer && (
+                  <View style={{ marginTop: 10 }}>
+                    <Text style={styles.sectionTitle}>Retailer</Text>
+                    <Text style={styles.detailText}>{selectedOrder.retailer.shopName || selectedOrder.retailer.retailerName || selectedOrder.retailer.ownerName || '—'}</Text>
+                    <Text style={styles.detailText}>{selectedOrder.retailer.mobile || ''}</Text>
+                    <Text style={styles.detailText}>{selectedOrder.retailer.address || selectedOrder.retailer.location?.formattedAddress || ''}</Text>
+
+                    {/* show performance if available */}
+                    {selectedOrder.retailer.performance && (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={[styles.detailText, { fontWeight: '700' }]}>Performance</Text>
+                        <Text style={styles.detailText}>Total Orders: {selectedOrder.retailer.performance.totalOrders ?? '—'}</Text>
+                        <Text style={styles.detailText}>Total Revenue: ₹{(selectedOrder.retailer.performance.totalRevenue ?? 0).toLocaleString()}</Text>
+                        <Text style={styles.detailText}>Completed: {selectedOrder.retailer.performance.completedOrders ?? 0} • Pending: {selectedOrder.retailer.performance.pendingOrders ?? 0}</Text>
+                      </View>
+                    )}
+
+                    {/* recent orders if present */}
+                    {Array.isArray(selectedOrder.retailer.recentOrders) && selectedOrder.retailer.recentOrders.length > 0 && (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={[styles.detailText, { fontWeight: '700' }]}>Recent Orders</Text>
+                        {selectedOrder.retailer.recentOrders.slice(0,5).map((ro, i) => (
+                          <Text key={i} style={styles.detailText}>
+                            {ro.orderId} — ₹{ro.amount} — {ro.status} — {ro.customerName} • {new Date(ro.createdAt).toLocaleString()}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {selectedOrder.createdBy && <Text style={[styles.detailText, { marginTop: 8 }]}>Created by: {selectedOrder.createdBy}</Text>}
               </View>
 
               <View style={styles.modalSection}>
                 <Text style={styles.sectionTitle}>Items</Text>
-                {(selectedOrder.items || []).map((it, idx) => (
-                  <View key={idx} style={styles.productItem}>
-                    <View style={styles.productInfo}>
-                      <Text style={styles.productName}>{it.name}</Text>
-                      <Text style={styles.productQuantity}>Requested: {it.requestedQty} • Fulfilled: {it.fulfilledQty}</Text>
+                {(selectedOrder.items || []).map((it, idx) => {
+                  const product = it.product || it.raw?.product || {};
+                  const name = product.name || it.name || 'Unknown product';
+                  return (
+                    <View key={idx} style={styles.productItem}>
+                      <View style={styles.productInfo}>
+                        <Text style={styles.productName}>{name}</Text>
+                        <Text style={styles.productQuantity}>Requested: {it.requestedQty} • Fulfilled: {it.fulfilledQty}</Text>
+                        {it.note ? <Text style={[styles.detailText, { marginTop: 4 }]}>Note: {it.note}</Text> : null}
+                      </View>
+                      <Text style={styles.productPrice}>ID: {product._id || it.productId || '—'}</Text>
                     </View>
-                    <Text style={styles.productPrice}>ID: {it.productId || '—'}</Text>
+                  );
+                })}
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={styles.sectionTitle}>Notes</Text>
+                {(selectedOrder.notes || []).length === 0 ? <Text style={styles.emptySubtext}>No notes available</Text> : (selectedOrder.notes || []).map((n, i) => (
+                  <View key={i} style={{ marginBottom: 8 }}>
+                    <Text style={styles.detailText}>{n.text || JSON.stringify(n)}</Text>
+                    <Text style={styles.timelineTime}>{n.at ? new Date(n.at).toLocaleString('en-IN') : ''}</Text>
                   </View>
                 ))}
               </View>
 
               <View style={styles.modalSection}>
                 <Text style={styles.sectionTitle}>Logs</Text>
-                {(selectedOrder.logs || selectedOrder.raw?.logs || []).length === 0 ? (
-                  <Text style={styles.emptySubtext}>No logs available</Text>
-                ) : (
-                  (selectedOrder.logs || selectedOrder.raw?.logs || []).map((log, i) => (
-                    <View key={i} style={styles.timelineItem}>
-                      <View style={styles.timelineIconContainer}>
-                        <View style={[styles.timelineIcon, { backgroundColor: '#3B82F6' }]}><MaterialIcons name="history" size={16} color="#fff" /></View>
-                      </View>
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineDescription}>{log.action} {log.note ? `— ${log.note}` : ''}</Text>
-                        <Text style={styles.timelineTime}>{log.at ? new Date(log.at).toLocaleString('en-IN') : (log._id || '')}</Text>
-                      </View>
+                {(selectedOrder.logs || selectedOrder.raw?.logs || []).length === 0 ? <Text style={styles.emptySubtext}>No logs available</Text> : (selectedOrder.logs || selectedOrder.raw?.logs || []).map((log, i) => (
+                  <View key={i} style={styles.timelineItem}>
+                    <View style={styles.timelineIconContainer}><View style={[styles.timelineIcon, { backgroundColor: '#3B82F6' }]}><MaterialIcons name="history" size={16} color="#fff" /></View></View>
+                    <View style={styles.timelineContent}>
+                      <Text style={styles.timelineDescription}>{log.action} {log.note ? `— ${log.note}` : ''}</Text>
+                      <Text style={styles.timelineTime}>{log.at ? new Date(log.at).toLocaleString('en-IN') : (log._id || '')}</Text>
+                      {log.by ? <Text style={[styles.detailText, { marginTop: 4 }]}>By: {log.by}</Text> : null}
                     </View>
-                  ))
-                )}
+                  </View>
+                ))}
               </View>
 
               <View style={styles.modalActions}>
+                {/* Example action buttons */}
                 <TouchableOpacity style={[styles.modalButton, styles.primaryButton]} onPress={() => {
-                  Alert.alert('Action', 'Implement status update API call here.');
+                  // Build items array for fulfill with remaining qtys
+                  const items = (selectedOrder.items || []).map(it => ({ product: it.product._id || it.productId || it.product, fulfilledQty: Math.max(0, (it.requestedQty || 0) - (it.fulfilledQty || 0)) }));
+                  actOnOrder({ orderId: selectedOrder._id, action: 'fulfill', items, reason: 'Fulfilled from SuperAdmin panel' });
                 }}>
-                  <Text style={styles.modalButtonText}>Update Status</Text>
+                  <Text style={styles.modalButtonText}>Fulfill Remaining</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={() => {
-                  setShowDetailsModal(false);
+                  actOnOrder({ orderId: selectedOrder._id, action: 'reject', items: [], reason: 'Rejected by SuperAdmin' });
                 }}>
+                  <Text style={[styles.modalButtonText, { color: '#3B82F6' }]}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.modalActions, { marginTop: 0 }]}>
+                {selectedOrder.isLocked ? (
+                  <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={() => releaseOrderLock(selectedOrder._id, 'Released from UI')}>
+                    <Text style={[styles.modalButtonText, { color: '#3B82F6' }]}>Release Lock</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={[styles.modalButton, styles.primaryButton]} onPress={() => lockOrder(selectedOrder._id)}>
+                    <Text style={styles.modalButtonText}>Lock Order</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={() => setShowDetailsModal(false)}>
                   <Text style={[styles.modalButtonText, { color: '#3B82F6' }]}>Close</Text>
                 </TouchableOpacity>
               </View>
@@ -509,9 +615,7 @@ export default function OrdersScreen() {
         ) : (
           <View style={[styles.modalContainer, styles.centered]}>
             <Text style={styles.emptyStateTitle}>No details</Text>
-            <TouchableOpacity onPress={() => setShowDetailsModal(false)} style={styles.cancelButton}>
-              <Text style={styles.cancelButtonText}>Close</Text>
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowDetailsModal(false)} style={styles.cancelButton}><Text style={styles.cancelButtonText}>Close</Text></TouchableOpacity>
           </View>
         )}
       </Modal>
@@ -519,7 +623,7 @@ export default function OrdersScreen() {
   );
 }
 
-// Styles (kept from your original file for compatibility)
+// Styles (kept from your original file)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   scrollView: { flex: 1 },
@@ -570,7 +674,7 @@ const styles = StyleSheet.create({
   emptyStateText: { fontSize: 14, color: '#94A3B8', textAlign: 'center' },
   bottomSpacer: { height: 20 },
 
-  // Modal styles
+  // Modal styles same as earlier
   modalContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1E293B' },
@@ -605,4 +709,5 @@ const styles = StyleSheet.create({
   errorText: { color: '#7f1d1d', marginTop: 6 },
   cancelButton: { backgroundColor: '#F5F5F5', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, marginTop: 12 },
   cancelButtonText: { color: '#374151', fontWeight: '700' },
+  emptySubtext: { color: '#64748B' },
 });

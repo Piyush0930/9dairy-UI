@@ -53,7 +53,7 @@ export function AuthProvider({ children }) {
 
         // NOTE: redirect to precise dashboard routes
         if (normalizedUser.role === 'admin') {
-          router.replace('/(admin)/dashboard');
+          router.replace('/(admin)/index');
         } else if (normalizedUser.role === 'superadmin') {
           router.replace('/supadmin/dashboard');
         } else {
@@ -98,7 +98,7 @@ export function AuthProvider({ children }) {
 
       // role-based routing (precise dashboard paths)
       if (normalizedUser.role === 'admin') {
-        router.replace('/(admin)/dashboard');
+        router.replace('/(admin)/index');
       } else if (normalizedUser.role === 'superadmin') {
         router.replace('/(supadmin)/dashboard');
       } else {

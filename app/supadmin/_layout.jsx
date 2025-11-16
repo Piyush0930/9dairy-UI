@@ -206,7 +206,7 @@ export default function SupadminLayout() {
               <MaterialIcons name="bar-chart" size={focused ? 26 : 24} color={color} />
             </View>
           ),
-          headerTitle: "Platform Analytics",
+          headerTitle: "Product Catlog",
         }}
       />
 
