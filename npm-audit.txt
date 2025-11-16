@@ -1,0 +1,32 @@
+# npm audit report
+
+js-yaml  <4.1.1
+Severity: moderate
+js-yaml has prototype pollution in merge (<<) - https://github.com/advisories/GHSA-mh29-5h37-fv8m
+fix available via `npm audit fix --force`
+Will install react-native@0.75.5, which is a breaking change
+node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml
+  @istanbuljs/load-nyc-config  *
+  Depends on vulnerable versions of js-yaml
+  node_modules/@istanbuljs/load-nyc-config
+    babel-plugin-istanbul  >=6.0.0-beta.0
+    Depends on vulnerable versions of @istanbuljs/load-nyc-config
+    node_modules/babel-plugin-istanbul
+      @jest/transform  >=25.1.0
+      Depends on vulnerable versions of babel-plugin-istanbul
+      node_modules/@jest/transform
+      babel-jest  >=25.1.0
+      Depends on vulnerable versions of @jest/transform
+      Depends on vulnerable versions of babel-plugin-istanbul
+      node_modules/babel-jest
+        react-native  0.76.0-nightly-20240627-TEMP - 0.84.0-nightly-20251116-d52b9d2f8
+        Depends on vulnerable versions of babel-jest
+        node_modules/react-native
+
+6 moderate severity vulnerabilities
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force

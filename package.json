@@ -70,5 +70,8 @@
     "npm-force-resolutions": "^0.0.10",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+  "js-yaml": "4.1.1"
+}
 }

@@ -1,8 +1,8 @@
 // contexts/AuthContext.js
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import { createContext, useContext, useEffect, useState } from 'react';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 const AuthContext = createContext();
 
@@ -12,44 +12,43 @@ export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authToken, setAuthToken] = useState(null);
 
+  // prevents double-redirects from login() being called multiple times rapidly
+  const hasRedirected = useRef(false);
+
   useEffect(() => {
     checkAuthState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkAuthState = async () => {
     try {
-      console.log('🔐 Checking auth state...');
-      
+      console.log("🔐 Checking auth state...");
+
       const [token, userData] = await Promise.all([
-        SecureStore.getItemAsync('userToken'),
-        AsyncStorage.getItem('userData'),
+        SecureStore.getItemAsync("userToken"),
+        AsyncStorage.getItem("userData"),
       ]);
-      
-      console.log('📱 Auth check results:', { token: !!token, userData: !!userData });
-      
+
+      console.log("📱 Auth check results:", { token: !!token, userData: !!userData });
+
       if (token && userData) {
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
         setAuthToken(token);
         setIsAuthenticated(true);
-        console.log('✅ User authenticated from storage');
-        console.log('👤 User role from storage:', parsedUser.role);
-        
-        // ✅ CORRECTED: Proper role-based routing with correct route names
-        if (parsedUser.role === 'admin') {
-          console.log('🔧 Admin user detected, redirecting to ADMIN app...');
-          router.replace('/(admin)'); // Use your actual admin route
-        } else {
-          console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
-          router.replace('/(tabs)'); // Customer route
-        }
-        
+        console.log("✅ User authenticated from storage");
+        console.log("👤 User role from storage:", parsedUser.role);
+
+        // IMPORTANT: Do NOT perform routing here.
+        // NavigationHandler (a dedicated navigation guard) will handle route changes.
+        // Removing routing from the initial check prevents double-redirect loops
+        // and unnecessary re-renders that break UI behaviours (e.g. stock flags).
       } else {
-        console.log('❌ No valid auth data found');
+        console.log("❌ No valid auth data found");
         setIsAuthenticated(false);
       }
     } catch (error) {
-      console.error('❌ Error checking auth state:', error);
+      console.error("❌ Error checking auth state:", error);
       await clearAuthData();
     } finally {
       setLoading(false);
@@ -58,98 +57,109 @@ export function AuthProvider({ children }) {
 
   const login = async (userData, token) => {
     try {
-      console.log('🔐 Starting login process...');
-      
-      // First update the state synchronously
+      console.log("🔐 Starting login process...");
+
+      // Update state immediately so app can react synchronously
       setUser(userData);
       setAuthToken(token);
       setIsAuthenticated(true);
-      
-      // Then save to storage
+
+      // Persist storage
       await Promise.all([
-        SecureStore.setItemAsync('userToken', token),
-        AsyncStorage.setItem('userData', JSON.stringify(userData)),
+        SecureStore.setItemAsync("userToken", token),
+        AsyncStorage.setItem("userData", JSON.stringify(userData)),
       ]);
-      
-      console.log('✅ Login successful, state updated');
-      console.log('👤 User role:', userData.role);
-      
-      // ✅ CORRECTED: Same routing logic as checkAuthState
-      if (userData.role === 'admin') {
-        console.log('🔧 Admin user detected, redirecting to ADMIN app...');
-        router.replace('/(admin)'); // Use your actual admin route
+
+      console.log("✅ Login successful, state updated");
+      console.log("👤 User role:", userData.role);
+
+      // single guarded redirect — prevents duplicate redirects
+      if (!hasRedirected.current) {
+        hasRedirected.current = true;
+
+        if (userData.role === "admin") {
+          console.log("🔧 Admin user detected, redirecting to ADMIN app...");
+          router.replace("/(admin)");
+        } else {
+          console.log("🛒 Customer user detected, redirecting to CUSTOMER app...");
+          router.replace("/(tabs)");
+        }
       } else {
-        console.log('🛒 Customer user detected, redirecting to CUSTOMER app...');
-        router.replace('/(tabs)'); // Customer route
+        console.log("↪️ Redirect already executed, skipping duplicate redirect.");
       }
-      
     } catch (error) {
-      console.error('❌ Login error:', error);
+      console.error("❌ Login error:", error);
       // Rollback state on error
       setUser(null);
       setAuthToken(null);
       setIsAuthenticated(false);
-      throw new Error('Failed to save login data');
+      throw new Error("Failed to save login data");
+    } finally {
+      // ensure loading toggles off if some UI waits on it
+      setLoading(false);
     }
   };
 
   const clearAuthData = async () => {
     try {
       await Promise.all([
-        SecureStore.deleteItemAsync('userToken'),
-        AsyncStorage.removeItem('userData'),
+        SecureStore.deleteItemAsync("userToken"),
+        AsyncStorage.removeItem("userData"),
       ]);
       setAuthToken(null);
-      console.log('🧹 Auth data cleared');
+      console.log("🧹 Auth data cleared");
     } catch (error) {
-      console.error('Error clearing auth data:', error);
+      console.error("Error clearing auth data:", error);
     }
   };
 
   const logout = async () => {
     try {
+      // Reset redirect guard so next login can redirect again
+      hasRedirected.current = false;
+
       setUser(null);
       setAuthToken(null);
       setIsAuthenticated(false);
       await clearAuthData();
-      console.log('👋 Logout successful');
-      
-      router.replace('/Login');
+      console.log("👋 Logout successful");
+
+      router.replace("/Login");
     } catch (error) {
-      console.error('Error during logout:', error);
+      console.error("Error during logout:", error);
     }
   };
 
   const validateToken = async () => {
     try {
-      const token = await SecureStore.getItemAsync('userToken');
+      const token = await SecureStore.getItemAsync("userToken");
       if (!token) return false;
       return true;
     } catch (error) {
-      console.error('Token validation error:', error);
+      console.error("Token validation error:", error);
       return false;
     }
   };
 
   const getAuthHeaders = async () => {
     try {
-      const token = await SecureStore.getItemAsync('userToken');
+      const token = await SecureStore.getItemAsync("userToken");
       return {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
       };
     } catch (error) {
-      console.error('Error getting auth headers:', error);
-      return { 'Content-Type': 'application/json' };
+      console.error("Error getting auth headers:", error);
+      return { "Content-Type": "application/json" };
     }
   };
 
   const updateUser = async (updatedUserData) => {
     try {
       setUser(updatedUserData);
-      await AsyncStorage.setItem('userData', JSON.stringify(updatedUserData));
+      await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
     } catch (error) {
-      console.error('Error updating user data:', error);
+      console.error("Error updating user data:", error);
     }
   };
 
@@ -175,7 +185,7 @@ export function AuthProvider({ children }) {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

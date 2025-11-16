@@ -17,6 +17,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/contexts/AuthContext";
+import { useProfile } from "@/contexts/ProfileContext";
 
 const getImageSource = (imageName) => {
   // If it's a full URL (from Cloudinary/database), use it directly
@@ -58,6 +60,11 @@ export default function CategoriesScreen() {
   const cartCount = getTotalItems();
   const insets = useSafeAreaInsets();
 
+  // Context hooks for auth and retailer data
+  const { authToken } = useAuth();
+  const token = authToken;
+  const { assignedRetailer } = useProfile();
+
   //for favourite products ---
   const [favoriteProducts, setFavoriteProducts] = useState([]);
   const toggleFavorite = (productId) => {
@@ -75,6 +82,7 @@ export default function CategoriesScreen() {
   // State for dynamic data
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -88,14 +96,13 @@ export default function CategoriesScreen() {
       const data = await response.json();
 
       if (response.ok && Array.isArray(data)) {
-        setCategories(data);
+        return data;
       } else {
-        setCategories([]);
+        return [];
       }
     } catch (error) {
       console.error("Error fetching categories:", error);
-      Alert.alert("Error", "Failed to load categories");
-      setCategories([]);
+      return [];
     }
   };
 
@@ -106,39 +113,182 @@ export default function CategoriesScreen() {
       const data = await response.json();
 
       if (response.ok && Array.isArray(data)) {
-        setProducts(data);
+        return data;
       } else {
-        setProducts([]);
+        return [];
       }
     } catch (error) {
       console.error("Error fetching products:", error);
-      Alert.alert("Error", "Failed to load products");
-      setProducts([]);
+      return [];
     }
+  };
+
+  // Fetch inventory for assigned retailer
+  const fetchInventory = async () => {
+    try {
+      if (!token) {
+        console.log("Inventory fetch skipped (no token)");
+        return [];
+      }
+
+      const res = await fetch(`${API_BASE_URL}/customer/inventory`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = await res.json();
+
+      if (!res.ok) {
+        console.warn("Inventory error:", payload);
+        return [];
+      }
+      
+      return payload?.data?.inventory || [];
+      
+    } catch (err) {
+      console.error("Inventory fetch error:", err);
+      return [];
+    }
+  };
+
+  // Attach inventory to products
+  const attachInventoryToProducts = (products, inventory) => {
+    if (!Array.isArray(products)) return [];
+    if (!Array.isArray(inventory)) return products;
+
+    const inventoryMap = new Map();
+    
+    inventory.forEach(inv => {
+      const product = inv?.product;
+      if (!product) return;
+      
+      const productId = product?.id || product?._id;
+      const productName = product?.name?.toLowerCase().trim();
+      
+      if (productId) {
+        inventoryMap.set(productId, {
+          ...inv,
+          currentStock: inv.currentStock,
+          sellingPrice: inv.sellingPrice,
+          isActive: inv.isActive
+        });
+      }
+      
+      if (productName) {
+        inventoryMap.set(productName, {
+          ...inv,
+          currentStock: inv.currentStock,
+          sellingPrice: inv.sellingPrice,
+          isActive: inv.isActive
+        });
+      }
+    });
+
+    return products.map(product => {
+      const productId = product?.id || product?._id;
+      const productName = product?.name?.toLowerCase().trim();
+      
+      let matchedInventory = null;
+      
+      // Try ID match first
+      if (productId && inventoryMap.has(productId)) {
+        matchedInventory = inventoryMap.get(productId);
+      } 
+      // Then try name match
+      else if (productName && inventoryMap.has(productName)) {
+        matchedInventory = inventoryMap.get(productName);
+      }
+      
+      // Determine if retailer sells this product
+      const soldByRetailer = matchedInventory !== null;
+      
+      // Stock status: Only mark as out of stock if retailer sells it AND has zero stock
+      const retailerStock = matchedInventory?.currentStock;
+      const isOutOfStock = soldByRetailer && retailerStock !== undefined && Number(retailerStock) <= 0;
+      
+      // Price priority: retailer price first, then product price
+      const price = matchedInventory?.sellingPrice ?? 
+                   product?.discountedPrice ?? 
+                   product?.price ?? 0;
+
+      return {
+        ...product,
+        _inventory: matchedInventory,
+        outOfStock: isOutOfStock,
+        price: price,
+        stock: product?.stock,
+        currentStock: matchedInventory?.currentStock,
+        soldByRetailer: soldByRetailer,
+        retailerPrice: matchedInventory?.sellingPrice,
+        // Add availability info
+        availableFromRetailer: soldByRetailer && !isOutOfStock,
+        availableFromCatalog: !soldByRetailer,
+      };
+    });
   };
 
   // Fetch data on component mount
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      await Promise.all([fetchCategories(), fetchProducts()]);
-      setLoading(false);
+      try {
+        const [categoriesData, productsData, inventoryData] = await Promise.all([
+          fetchCategories(),
+          fetchProducts(),
+          fetchInventory(),
+        ]);
+
+        setCategories(categoriesData);
+        
+        // Attach inventory to products and set them
+        const productsWithInventory = attachInventoryToProducts(productsData, inventoryData);
+        setProducts(productsWithInventory);
+        setInventory(inventoryData);
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        // Fallback to products without inventory
+        const productsData = await fetchProducts();
+        setProducts(productsData);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchData();
-  }, []);
+  }, [token, assignedRetailer]);
 
   // Handle pull to refresh
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchCategories(), fetchProducts()]);
-    setRefreshing(false);
+    try {
+      const [categoriesData, productsData, inventoryData] = await Promise.all([
+        fetchCategories(),
+        fetchProducts(),
+        fetchInventory(),
+      ]);
+
+      setCategories(categoriesData);
+      
+      // Attach inventory to products
+      const productsWithInventory = attachInventoryToProducts(productsData, inventoryData);
+      setProducts(productsWithInventory);
+      setInventory(inventoryData);
+
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
+  // Filter and sort products
   let filteredProducts =
     selectedCategory === "all"
       ? products
-      : products.filter((p) => p.category._id.toString() === selectedCategory);
+      : products.filter((p) => p.category?._id?.toString() === selectedCategory);
 
   // Apply search filter
   if (searchQuery.trim()) {
@@ -154,7 +304,7 @@ export default function CategoriesScreen() {
     filteredProducts = [...filteredProducts].sort((a, b) => b.price - a.price);
   } else if (sortOption === "rating") {
     filteredProducts = [...filteredProducts].sort(
-      (a, b) => (b.rating || 0) - (a.rating || 0)
+      (a, b) => (b.rating?.average || 0) - (a.rating?.average || 0)
     );
   }
 
@@ -162,6 +312,38 @@ export default function CategoriesScreen() {
     (total, item) => total + item.product.price * item.quantity,
     0
   );
+
+  // Handle add to cart with inventory check
+  const handleAddToCart = (product) => {
+    // Check if product is out of stock at retailer
+    if (product.outOfStock) {
+      if (product.soldByRetailer) {
+        Alert.alert("Out of stock", "This product is currently out of stock at your assigned retailer.");
+      } else {
+        Alert.alert("Not available", "This product is not currently available from your assigned retailer.");
+      }
+      return;
+    }
+    
+    // If product is not sold by retailer but has catalog price, allow adding to cart
+    if (!product.soldByRetailer) {
+      Alert.alert(
+        "Product Not Available", 
+        "This product is not available from your assigned retailer, but you can browse it in our catalog.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+    
+    addToCart(product);
+  };
+
+  // Get availability status for styling
+  const getAvailabilityStatus = (product) => {
+    if (!product.soldByRetailer) return 'catalog';
+    if (product.outOfStock) return 'out_of_stock';
+    return 'available';
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -191,6 +373,16 @@ export default function CategoriesScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Retailer Info */}
+        {assignedRetailer && (
+          <View style={styles.retailerInfo}>
+            <Ionicons name="storefront" size={14} color={Colors.light.tint} />
+            <Text style={styles.retailerInfoText}>
+              Shopping from: {assignedRetailer.shopName}
+            </Text>
+          </View>
+        )}
 
         {showSearch && (
           <View style={styles.searchContainer}>
@@ -304,7 +496,7 @@ export default function CategoriesScreen() {
                 <View
                   style={[
                     styles.categoryIconContainer,
-                    { backgroundColor: category.color },
+                    { backgroundColor: category.color || "#E3F2FD" },
                   ]}
                 >
                   <Image
@@ -337,186 +529,241 @@ export default function CategoriesScreen() {
             }
           >
             {filteredProducts.length > 0 ? (
-              filteredProducts.map((product) => (
-                <View key={product._id} style={styles.productCard}>
-                  <TouchableOpacity
-                    style={styles.heartButton}
-                    onPress={() => toggleFavorite(product._id)}
-                    activeOpacity={0.6}
-                  >
-                    <FontAwesome
-                      name={
-                        favoriteProducts.includes(product._id)
-                          ? "heart"
-                          : "heart-o"
-                      }
-                      size={20}
-                      color="#EF4444"
-                    />
-                  </TouchableOpacity>
-                  <View style={styles.productHeader}>
-                    {product.discount > 0 ? (
-                      <View style={styles.offerBadge}>
-                        <Text style={styles.offerBadgeText}>
-                          {product.discount}% OFF MRP
-                        </Text>
+              filteredProducts.map((product) => {
+                const availabilityStatus = getAvailabilityStatus(product);
+                
+                return (
+                  <View key={product._id} style={[
+                    styles.productCard,
+                    availabilityStatus === 'out_of_stock' && styles.productCardOutOfStock,
+                    availabilityStatus === 'catalog' && styles.productCardCatalog
+                  ]}>
+                    {/* Availability Badge */}
+                    {availabilityStatus === 'out_of_stock' && (
+                      <View style={styles.availabilityBadge}>
+                        <Text style={styles.availabilityBadgeText}>OUT OF STOCK</Text>
                       </View>
-                    ) : (
-                      // Empty placeholder to maintain spacing
-                      <View style={{ height: 22 }} />
                     )}
-                  </View>
+                    {availabilityStatus === 'catalog' && (
+                      <View style={styles.catalogBadge}>
+                        <Text style={styles.catalogBadgeText}>CATALOG</Text>
+                      </View>
+                    )}
 
-                  <View style={styles.productContent}>
-                    <View style={styles.productInfo}>
-                      <Text style={styles.productName}>{product.name}</Text>
-                      <Text style={styles.productUnit}>{product.unit}</Text>
+                    <TouchableOpacity
+                      style={styles.heartButton}
+                      onPress={() => toggleFavorite(product._id)}
+                      activeOpacity={0.6}
+                    >
+                      <FontAwesome
+                        name={
+                          favoriteProducts.includes(product._id)
+                            ? "heart"
+                            : "heart-o"
+                        }
+                        size={20}
+                        color="#EF4444"
+                      />
+                    </TouchableOpacity>
+                    <View style={styles.productHeader}>
+                      {product.discount > 0 ? (
+                        <View style={styles.offerBadge}>
+                          <Text style={styles.offerBadgeText}>
+                            {product.discount}% OFF MRP
+                          </Text>
+                        </View>
+                      ) : (
+                        // Empty placeholder to maintain spacing
+                        <View style={{ height: 22 }} />
+                      )}
+                    </View>
 
-                      {product.rating && product.rating.average > 0 && (
-                        <View style={styles.ratingRow}>
-                          <View style={styles.ratingBadge}>
-                            <FontAwesome
-                              name="star"
-                              size={12}
-                              color="#FFFFFF"
-                            />
-                            <Text style={styles.ratingText}>
-                              {product.rating.average}
+                    <View style={styles.productContent}>
+                      <View style={styles.productInfo}>
+                        <Text style={styles.productName}>{product.name}</Text>
+                        <Text style={styles.productUnit}>{product.unit}</Text>
+
+                        {/* Retailer Stock Info */}
+                        {product.soldByRetailer && product.currentStock !== undefined && (
+                          <Text style={[
+                            styles.stockInfo,
+                            availabilityStatus === 'out_of_stock' && styles.stockInfoOut
+                          ]}>
+                            Stock: {product.currentStock}
+                          </Text>
+                        )}
+
+                        {/* Catalog Notice */}
+                        {availabilityStatus === 'catalog' && (
+                          <Text style={styles.catalogNotice}>
+                            Available in catalog
+                          </Text>
+                        )}
+
+                        {product.rating && product.rating.average > 0 && (
+                          <View style={styles.ratingRow}>
+                            <View style={styles.ratingBadge}>
+                              <FontAwesome
+                                name="star"
+                                size={12}
+                                color="#FFFFFF"
+                              />
+                              <Text style={styles.ratingText}>
+                                {product.rating.average}
+                              </Text>
+                            </View>
+                            <Text style={styles.reviewsText}>
+                              ({product.rating.count})
                             </Text>
                           </View>
-                          <Text style={styles.reviewsText}>
-                            ({product.rating.count})
-                          </Text>
-                        </View>
-                      )}
+                        )}
 
-                      <View style={styles.priceRow}>
-                        <View style={styles.priceContainer}>
-                          {/* <Text style={styles.price}>₹{product.price}</Text>
-                          <Text style={styles.priceOriginal}>
-                            ₹{Math.round(product.price * 1.14)}
-                          </Text> */}
-
-                          <Text style={styles.price}>
-                            ₹
-                            {product.discountedPrice?.toFixed(2) ||
-                              product.price}
-                          </Text>
-                          {product.discount > 0 && (
-                            <Text style={styles.priceOriginal}>
+                        <View style={styles.priceRow}>
+                          <View style={styles.priceContainer}>
+                            {/* Retailer Price Indicator */}
+                            {product.soldByRetailer && product.retailerPrice && (
+                              <Text style={styles.retailerPriceIndicator}>Retailer Price</Text>
+                            )}
+                            
+                            <Text style={styles.price}>
                               ₹{product.price}
                             </Text>
-                          )}
+                            {product.discount > 0 && product.discountedPrice && (
+                              <Text style={styles.priceOriginal}>
+                                ₹{product.discountedPrice}
+                              </Text>
+                            )}
+                          </View>
+                          {product.bulkPrices &&
+                            (product.bulkPrices[6] || product.bulkPrices[15]) && (
+                              <>
+                                <View style={styles.priceSeparator} />
+                                <View style={styles.bulkContainer}>
+                                  {product.bulkPrices[6] && (
+                                    <Text style={styles.bulkPrice}>
+                                      6+ @ ₹{product.bulkPrices[6]}
+                                    </Text>
+                                  )}
+                                  {product.bulkPrices[15] && (
+                                    <Text style={styles.bulkPrice}>
+                                      15+ @ ₹{product.bulkPrices[15]}
+                                    </Text>
+                                  )}
+                                </View>
+                              </>
+                            )}
                         </View>
-                        {product.bulkPrices &&
-                          (product.bulkPrices[6] || product.bulkPrices[15]) && (
-                            <>
-                              <View style={styles.priceSeparator} />
-                              <View style={styles.bulkContainer}>
-                                {product.bulkPrices[6] && (
-                                  <Text style={styles.bulkPrice}>
-                                    6+ @ ₹{product.bulkPrices[6]}
-                                  </Text>
-                                )}
-                                {product.bulkPrices[15] && (
-                                  <Text style={styles.bulkPrice}>
-                                    15+ @ ₹{product.bulkPrices[15]}
-                                  </Text>
-                                )}
-                              </View>
-                            </>
-                          )}
+                      </View>
+
+                      <View style={styles.productRight}>
+                        {product.image || product.imageUrl ? (
+                          <Image
+                            source={getImageSource(
+                              product.image || product.imageUrl
+                            )}
+                            style={[
+                              styles.productImage,
+                              availabilityStatus === 'out_of_stock' && styles.productImageOut,
+                              availabilityStatus === 'catalog' && styles.productImageCatalog
+                            ]}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.productImagePlaceholder}>
+                            <Text style={styles.productImageText}>📦</Text>
+                          </View>
+                        )}
                       </View>
                     </View>
 
-                    <View style={styles.productRight}>
-                      {product.image || product.imageUrl ? (
-                        <Image
-                          source={getImageSource(
-                            product.image || product.imageUrl
-                          )}
-                          style={{
-                            width: 100,
-                            height: 100,
-                            borderRadius: 12,
-                            backgroundColor: "#F5F5F5",
-                          }}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.productImagePlaceholder}>
-                          <Text style={styles.productImageText}>📦</Text>
+                    <View style={styles.productActions}>
+                      {availabilityStatus === 'out_of_stock' ? (
+                        <View style={styles.outOfStockButton}>
+                          <Text style={styles.outOfStockButtonText}>Out of Stock</Text>
                         </View>
+                      ) : availabilityStatus === 'catalog' ? (
+                        <TouchableOpacity 
+                          style={styles.catalogButton}
+                          onPress={() => {
+                            Alert.alert(
+                              "Catalog Product", 
+                              "This product is available in our catalog but not from your assigned retailer.",
+                              [{ text: "OK" }]
+                            );
+                          }}
+                        >
+                          <Text style={styles.catalogButtonText}>View Details</Text>
+                        </TouchableOpacity>
+                      ) : getItemQuantity(product._id) === 0 ? (
+                        <TouchableOpacity
+                          style={styles.addButton}
+                          onPress={() => handleAddToCart(product)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.addButtonText}>ADD</Text>
+                          <Text style={styles.addButtonPlus}>+</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.addButton}>
+                          <TouchableOpacity
+                            onPress={() => removeFromCart(product._id)}
+                            style={styles.qtyBtn}
+                            activeOpacity={0.7}
+                          >
+                            <Feather
+                              name="minus"
+                              size={16}
+                              color={Colors.light.tint}
+                            />
+                          </TouchableOpacity>
+                          <Text style={styles.qtyText}>
+                            {getItemQuantity(product._id)}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => handleAddToCart(product)}
+                            style={styles.qtyBtn}
+                            activeOpacity={0.7}
+                          >
+                            <Feather
+                              name="plus"
+                              size={16}
+                              color={Colors.light.tint}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      
+                      {/* Bulk actions only for available retailer products */}
+                      {availabilityStatus === 'available' && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.bulkAction}
+                            onPress={() => {
+                              for (let i = 0; i < 6; i++) {
+                                handleAddToCart(product);
+                              }
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.bulkActionText}>Add 6</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.bulkAction}
+                            onPress={() => {
+                              for (let i = 0; i < 15; i++) {
+                                handleAddToCart(product);
+                              }
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.bulkActionText}>Add 15</Text>
+                          </TouchableOpacity>
+                        </>
                       )}
                     </View>
                   </View>
-
-                  <View style={styles.productActions}>
-                    {getItemQuantity(product._id) === 0 ? (
-                      <TouchableOpacity
-                        style={styles.addButton}
-                        onPress={() => {
-                          addToCart(product);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.addButtonText}>ADD</Text>
-                        <Text style={styles.addButtonPlus}>+</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <View style={styles.addButton}>
-                        <TouchableOpacity
-                          onPress={() => removeFromCart(product._id)}
-                          style={styles.qtyBtn}
-                          activeOpacity={0.7}
-                        >
-                          <Feather
-                            name="minus"
-                            size={16}
-                            color={Colors.light.tint}
-                          />
-                        </TouchableOpacity>
-                        <Text style={styles.qtyText}>
-                          {getItemQuantity(product._id)}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => addToCart(product)}
-                          style={styles.qtyBtn}
-                          activeOpacity={0.7}
-                        >
-                          <Feather
-                            name="plus"
-                            size={16}
-                            color={Colors.light.tint}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                    <TouchableOpacity
-                      style={styles.bulkAction}
-                      onPress={() => {
-                        for (let i = 0; i < 6; i++) {
-                          addToCart(product);
-                        }
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.bulkActionText}>Add 6</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.bulkAction}
-                      onPress={() => {
-                        for (let i = 0; i < 15; i++) {
-                          addToCart(product);
-                        }
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.bulkActionText}>Add 15</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))
+                );
+              })
             ) : (
               <View style={styles.requestSection}>
                 <View style={styles.requestIcon}>
@@ -859,6 +1106,14 @@ const styles = StyleSheet.create({
     elevation: 2,
     position: "relative",
   },
+  productCardOutOfStock: {
+    backgroundColor: "#FFF7F7",
+    borderColor: "#F3D3D3",
+  },
+  productCardCatalog: {
+    backgroundColor: "#F8FAFF",
+    borderColor: "#E3F2FD",
+  },
   productHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -977,6 +1232,18 @@ const styles = StyleSheet.create({
   productRight: {
     alignItems: "center",
     gap: 8,
+  },
+  productImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: "#F5F5F5",
+  },
+  productImageOut: {
+    opacity: 0.45,
+  },
+  productImageCatalog: {
+    opacity: 0.7,
   },
   productImagePlaceholder: {
     width: 100,
@@ -1191,5 +1458,108 @@ const styles = StyleSheet.create({
   sortOptionTextActive: {
     fontWeight: "700",
     color: Colors.light.tint,
+  },
+  // New styles for retailer-specific features
+  retailerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F9FF',
+    padding: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+  },
+  retailerInfoText: {
+    fontSize: 12,
+    color: Colors.light.tint,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  // Availability badges
+  availabilityBadge: {
+    position: "absolute",
+    left: 16,
+    top: 16,
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    zIndex: 1,
+  },
+  availabilityBadgeText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 10,
+  },
+  catalogBadge: {
+    position: "absolute",
+    left: 16,
+    top: 16,
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    zIndex: 1,
+  },
+  catalogBadgeText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 10,
+  },
+  // Stock information
+  stockInfo: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 4,
+    fontStyle: "italic",
+  },
+  stockInfoOut: {
+    color: "#EF4444",
+  },
+  // Catalog notice
+  catalogNotice: {
+    fontSize: 12,
+    color: "#3B82F6",
+    marginBottom: 6,
+    fontStyle: "italic",
+  },
+  // Retailer price indicator
+  retailerPriceIndicator: {
+    fontSize: 10,
+    color: Colors.light.tint,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  // Button variations
+  outOfStockButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 8,
+    paddingVertical: 10,
+  },
+  outOfStockButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#B91C1C",
+  },
+  catalogButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E3F2FD",
+    borderWidth: 1,
+    borderColor: "#3B82F6",
+    borderRadius: 8,
+    paddingVertical: 10,
+  },
+  catalogButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#3B82F6",
   },
 });

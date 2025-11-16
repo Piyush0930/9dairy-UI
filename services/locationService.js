@@ -1,13 +1,11 @@
+// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\services\locationService.js
 import * as Location from "expo-location";
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "";
 
 export class LocationService {
-
-  // ======================================================
-  // ✅ 1) GOOGLE PLACE AUTOCOMPLETE SUGGESTIONS
-  // ======================================================
+  // 1) Place Autocomplete
   static async getPlaceSuggestions(query, coords = null) {
     try {
       if (!query || query.trim().length < 2) return [];
@@ -18,7 +16,6 @@ export class LocationService {
         `&key=${GOOGLE_MAPS_API_KEY}` +
         `&components=country:in`;
 
-      // Add location bias if available
       if (coords?.latitude && coords?.longitude) {
         url += `&location=${coords.latitude},${coords.longitude}&radius=50000`;
       }
@@ -43,9 +40,7 @@ export class LocationService {
     }
   }
 
-  // ======================================================
-  // ✅ 2) GET PLACE DETAILS (COORDINATES REQUIRED)
-  // ======================================================
+  // 2) Place Details
   static async getPlaceDetails(placeId) {
     try {
       const url =
@@ -79,11 +74,14 @@ export class LocationService {
     }
   }
 
-  // ======================================================
-  // ✅ 3) SYNC CURRENT LOCATION TO BACKEND
-  // ======================================================
+  // 3) Sync current location to backend (returns backend JSON)
   static async syncLocationToBackend(token, gps) {
     try {
+      if (!token) {
+        console.log("❌ syncLocationToBackend: No token provided");
+        return { success: false, message: "No token provided" };
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/customer/location/current`, {
         method: "PUT",
         headers: {
@@ -91,9 +89,9 @@ export class LocationService {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          latitude: gps.coordinates.latitude,
-          longitude: gps.coordinates.longitude,
-          formattedAddress: gps.formattedAddress,
+          latitude: gps.coordinates?.latitude ?? gps.latitude ?? null,
+          longitude: gps.coordinates?.longitude ?? gps.longitude ?? null,
+          formattedAddress: gps.formattedAddress ?? gps.address ?? "",
         }),
       });
 
@@ -102,16 +100,13 @@ export class LocationService {
       return data;
     } catch (err) {
       console.log("❌ Sync Error:", err);
-      return null;
+      return { success: false, message: err.message || "Sync error" };
     }
   }
 
-  // ======================================================
-  // ✅ 4) GPS ONLY (ACCURATE LAT/LNG)
-  // ======================================================
+  // 4) get GPS
   static async getCurrentLocation() {
     const { status } = await Location.requestForegroundPermissionsAsync();
-
     if (status !== "granted") {
       throw new Error("Location permission denied");
     }
@@ -127,37 +122,27 @@ export class LocationService {
     };
   }
 
-  // ======================================================
-  // ✅ 5) GPS + ADDRESS WITH FALLBACK
-  // ======================================================
+  // 5) GPS + address fallback (reverse geocode)
   static async getLocationWithFallback() {
     const gps = await this.getCurrentLocation();
 
     try {
       const addr = await this.reverseGeocode(gps.latitude, gps.longitude);
-
       return {
-        coordinates: {
-          latitude: gps.latitude,
-          longitude: gps.longitude,
-        },
+        coordinates: { latitude: gps.latitude, longitude: gps.longitude },
         formattedAddress: addr,
         accuracy: gps.accuracy,
       };
     } catch {
       return {
-        coordinates: {
-          latitude: gps.latitude,
-          longitude: gps.longitude,
-        },
+        coordinates: { latitude: gps.latitude, longitude: gps.longitude },
         formattedAddress: `Near ${gps.latitude}, ${gps.longitude}`,
+        accuracy: gps.accuracy,
       };
     }
   }
 
-  // ======================================================
-  // ✅ 6) REVERSE GEOCODE (LAT → ADDRESS)
-  // ======================================================
+  // 6) reverse geocode (using expo-location)
   static async reverseGeocode(lat, lon) {
     try {
       const res = await Location.reverseGeocodeAsync({
@@ -165,11 +150,8 @@ export class LocationService {
         longitude: lon,
       });
 
-      const a = res[0];
-
-      return `${a.name || ""}, ${a.street || ""}, ${a.city || ""}, ${
-        a.region || ""
-      }, ${a.country || ""}`;
+      const a = res[0] || {};
+      return `${a.name || ""}${a.street ? ", " + a.street : ""}${a.city ? ", " + a.city : ""}${a.region ? ", " + a.region : ""}${a.country ? ", " + a.country : ""}`.replace(/^, /, "");
     } catch (err) {
       console.log("❌ reverseGeocode Error:", err);
       return "Unknown Location";
