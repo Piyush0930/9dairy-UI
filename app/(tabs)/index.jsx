@@ -11,24 +11,44 @@ import {
   Alert,
   TextInput,
   StyleSheet,
-  Image
+  Image,
+  Dimensions
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useCart } from "@/contexts/CartContext";
 import Colors from "@/constants/colors";
 import ProductCard from "@/components/ProductCard";
 import CategoryTile from "@/components/CategoryTile";
 import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location"; // recommended
+import { router } from "expo-router";
+import * as Location from "expo-location";
+
+const { width } = Dimensions.get('window');
+const CARD_WIDTH = width - 64;
+const CARD_SPACING = 16;
+const POPULAR_CARD_WIDTH = 165;
+const POPULAR_CARD_SPACING = 12;
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+
+// Store banners (unchanged)
+const storeCards = [
+  { id: 1, image: require('../../assets/images/banner1.jpg') },
+  { id: 2, image: require('../../assets/images/banner2.jpg') },
+  { id: 3, image: require('../../assets/images/banner3.jpg') },
+  { id: 4, image: require('../../assets/images/banner4.jpg') },
+  { id: 5, image: require('../../assets/images/banner5.jpg') },
+];
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { authToken } = useAuth();
   const token = authToken;
-  const { assignedRetailer, currentRetailer: profileCurrentRetailer /* may be null */ } = useProfile();
+  const { assignedRetailer, updateLocationAndRetailer, usedLocationType } = useProfile();
+  const { getTotalItems, items } = useCart(); // ⭐ ADDED items to check cart count
+  const cartCount = getTotalItems();
 
   const [categories, setCategories] = useState([]);
   const [featuredProducts, setFeaturedProducts] = useState([]);
@@ -36,15 +56,12 @@ export default function HomeScreen() {
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // local temporary override (so UI updates immediately)
-  const [currentRetailerLocal, setCurrentRetailerLocal] = useState(profileCurrentRetailer || null);
-
-  // show popup when there is no currentRetailerLocal
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [manualAddress, setManualAddress] = useState("");
 
-  // ------------- attachInventoryToProducts (robust) -------------
+  const popularScrollRef = useRef(null);
+
+  // ------------- Inventory Attachment Logic -------------
   const normalize = (s) => {
     if (!s && s !== 0) return null;
     return String(s).trim().toLowerCase();
@@ -52,281 +69,586 @@ export default function HomeScreen() {
 
   const attachInventoryToProducts = (products, inventoryArr) => {
     if (!Array.isArray(products)) return [];
-    if (!Array.isArray(inventoryArr)) return products;
-
+    
     const invMap = new Map();
-    inventoryArr.forEach((inv) => {
-      const prod = inv?.product || {};
-      const ids = [prod?.productId, prod?.id, prod?._id, prod?.sku, inv?.inventoryId].filter(Boolean);
-      const nameKey = normalize(prod?.name || inv?.productName);
-      ids.forEach(id => invMap.set(String(id), { ...inv }));
-      if (nameKey && !invMap.has(`name:${nameKey}`)) invMap.set(`name:${nameKey}`, { ...inv });
+    
+    // Create mapping for inventory
+    inventoryArr?.forEach(inv => {
+      const prod = inv.product || {};
+      const ids = [prod.id, prod._id, prod.productId, prod.sku].filter(Boolean);
+      const nameKey = normalize(prod.name);
+
+      ids.forEach(id => invMap.set(String(id), inv));
+      if (nameKey) invMap.set("name:" + nameKey, inv);
     });
 
-    const findInv = (prod) => {
-      if (!prod) return null;
-      const candidates = [prod._id, prod.id, prod.productId, prod.sku, prod.barcodeId].filter(Boolean);
-      for (const c of candidates) if (invMap.has(String(c))) return invMap.get(String(c));
-      const nameKey = normalize(prod?.name);
-      if (nameKey && invMap.has(`name:${nameKey}`)) return invMap.get(`name:${nameKey}`);
+    const findInv = (p) => {
+      const ids = [p._id, p.id, p.productId, p.sku].filter(Boolean);
+      for (const id of ids) {
+        if (invMap.has(String(id))) return invMap.get(String(id));
+      }
+
+      const key = normalize(p.name);
+      if (key && invMap.has("name:" + key)) return invMap.get("name:" + key);
+
       return null;
     };
 
-    return products.map(prod => {
-      const inv = findInv(prod);
-      const currentStock = inv?.currentStock ?? null;
-      const soldByRetailer = Boolean(inv);
-      const outOfStock = soldByRetailer && currentStock !== null ? Number(currentStock) <= 0 : false;
-      const price = inv?.sellingPrice ?? prod?.discountedPrice ?? prod?.price ?? 0;
+    return products.map(p => {
+      const inv = findInv(p);
+      const stock = inv?.currentStock ?? null;
+
       return {
-        ...prod,
+        ...p,
         _inventory: inv || null,
-        soldByRetailer,
-        currentStock,
-        outOfStock,
-        price,
-        retailerPrice: inv?.sellingPrice ?? null,
+        soldByRetailer: Boolean(inv),
+        currentStock: stock,
+        outOfStock: stock !== null ? Number(stock) <= 0 : false,
+        price: inv?.sellingPrice ?? p.discountedPrice ?? p.price ?? 0
       };
     });
   };
 
-  // ------------- fetch helper functions -------------
+  // ------------- API Calls -------------
   const fetchCategories = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/catalog/categories`);
       const j = await res.json();
-      return res.ok ? (j.categories ?? j ?? []) : [];
-    } catch (e) { return []; }
+      return j.categories ?? j ?? [];
+    } catch {
+      return [];
+    }
   };
 
   const fetchFeaturedProducts = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/catalog/products/featured`);
       const j = await res.json();
-      return res.ok ? (j.products ?? j ?? []) : [];
-    } catch (e) { return []; }
+      return j.products ?? j ?? [];
+    } catch {
+      return [];
+    }
   };
 
-  const fetchInventoryForAssignedRetailer = async () => {
+  const fetchInventory = async () => {
     if (!token) return [];
     try {
       const res = await fetch(`${API_BASE}/api/customer/inventory`, {
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
       const j = await res.json();
-      if (!res.ok) return [];
-      return j?.data?.inventory ?? [];
-    } catch (e) { return []; }
+      return j.data?.inventory ?? [];
+    } catch {
+      return [];
+    }
   };
 
-  // ------------- assign current retailer endpoint -------------
-  const postAssignRetailer = async ({ lat, lng, address, temporary = true }) => {
+  const fetchProfileAddress = async () => {
     if (!token) return null;
     try {
-      const res = await fetch(`${API_BASE}/api/customer/assign-retailer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ lat, lng, address, temporary })
+      const res = await fetch(`${API_BASE}/api/customer/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      const j = await res.json();
-      if (!res.ok) {
-        console.warn("assign-retailer failed", j);
-        return null;
-      }
-      return j;
-    } catch (err) {
-      console.error("assignRetailer error:", err);
+      const profile = await res.json();
+      return profile?.deliveryAddress;
+    } catch {
       return null;
     }
   };
 
-  // ------------- get device location (expo-location recommended) -------------
+  // ------------- Location Functions -------------
   const getDeviceLocation = async () => {
-    // Try expo-location first
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") {
+      throw new Error("Location permission denied");
+    }
+
+    const pos = await Location.getCurrentPositionAsync({ 
+      accuracy: Location.Accuracy.Highest 
+    });
+
+    return { 
+      lat: pos.coords.latitude, 
+      lng: pos.coords.longitude 
+    };
+  };
+
+  const postAssignRetailer = async (lat, lng, address = "") => {
+    if (!token) return null;
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        throw new Error("Location permission denied");
-      }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
-      const { latitude, longitude } = pos.coords;
-      // optionally reverse geocode:
-      let formattedAddress = "";
-      try {
-        const rev = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (Array.isArray(rev) && rev.length > 0) {
-          const r = rev[0];
-          formattedAddress = [r.name, r.street, r.city, r.region, r.postalCode].filter(Boolean).join(", ");
-        }
-      } catch (e) { /* ignore */ }
-      return { latitude, longitude, formattedAddress };
-    } catch (expoErr) {
-      // fallback to navigator.geolocation (older)
-      return new Promise((resolve, reject) => {
-        try {
-          navigator.geolocation.getCurrentPosition((pos) => {
-            resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, formattedAddress: "" });
-          }, (err) => {
-            reject(err);
-          }, { enableHighAccuracy: true, timeout: 10000 });
-        } catch (err) {
-          return reject(err);
-        }
+      const res = await fetch(`${API_BASE}/api/customer/assign-retailer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ lat, lng, address })
       });
+      return await res.json();
+    } catch {
+      return null;
     }
   };
 
-  // ------------- UI actions -------------
-  const handleUseCurrentAddress = async () => {
-    setShowLocationPrompt(false);
-    setLoading(true);
-    try {
-      const loc = await getDeviceLocation();
-      const lat = loc.latitude;
-      const lng = loc.longitude;
-      const address = loc.formattedAddress || manualAddress || "";
+  // Helper function for address formatting
+  const formatAddress = (addr) => {
+    if (!addr) return "";
+    return [
+      addr.addressLine1,
+      addr.addressLine2,
+      addr.landmark,
+      `${addr.city}, ${addr.state} - ${addr.pincode}`,
+    ]
+      .filter(Boolean)
+      .join(", ");
+  };
 
-      const resp = await postAssignRetailer({ lat, lng, address, temporary: true });
+  // ------------- Location Handlers -------------
+  const handleUseCurrentAddress = async () => {
+    try {
+      setShowLocationPrompt(false);
+      setLoading(true);
+
+      const loc = await getDeviceLocation();
+      const resp = await postAssignRetailer(loc.lat, loc.lng, "Current Location");
+
       if (!resp) {
-        Alert.alert("Error", "Could not assign retailer for current location.");
+        Alert.alert("Error", "Could not assign nearest retailer.");
         return;
       }
 
-      // Update local override
-      setCurrentRetailerLocal(resp.retailer || null);
+      // ⭐ UPDATE PROFILE CONTEXT WITH NEW LOCATION
+      if (updateLocationAndRetailer) {
+        updateLocationAndRetailer(
+          { 
+            coordinates: { latitude: loc.lat, longitude: loc.lng },
+            formattedAddress: "Current Location" 
+          },
+          resp.retailer,
+          "current"
+        );
+      }
 
-      // Update inventory + products
       const inv = resp.inventory ?? [];
       setInventory(inv);
 
-      const prods = await fetchFeaturedProducts();
-      const prodsWithInv = attachInventoryToProducts(prods, inv);
-      setFeaturedProducts(prodsWithInv);
-      setPopularProducts(prodsWithInv.slice(0, 8));
+      const products = await fetchFeaturedProducts();
+      const mapped = attachInventoryToProducts(products, inv);
 
-      // TODO: optionally call ProfileContext.refreshProfile() to persist server-side state
+      setFeaturedProducts(mapped);
+      
+      // Popular products - ONLY in-stock items
+      setPopularProducts(
+        mapped.filter(p => p.soldByRetailer && !p.outOfStock).slice(0, 8)
+      );
+
+      // ⭐ SHOW ALERT IF CART ITEMS AFFECTED
+      if (items.length > 0) {
+        Alert.alert(
+          "Location Changed", 
+          "Your cart items availability has been updated based on new location.",
+          [{ text: "OK" }]
+        );
+      }
+
     } catch (err) {
-      console.error("Use current address failed:", err);
-      Alert.alert("Location error", "Couldn't get location. Please try again or enter address manually.");
+      Alert.alert("Location Error", "Unable to fetch current location.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleSkip = async () => {
-    setShowLocationPrompt(false);
-    setLoading(true);
     try {
-      // clear any temporary currentRetailer on server by calling assign-retailer with no coords
-      // server will return assignedRetailer inventory (home) as fallback
-      const resp = await postAssignRetailer({ temporary: true });
-      if (!resp) {
-        // fallback: still try to fetch inventory normally
-        const inv = await fetchInventoryForAssignedRetailer();
-        setInventory(inv);
-        const prods = await fetchFeaturedProducts();
-        const prodsWithInv = attachInventoryToProducts(prods, inv);
-        setFeaturedProducts(prodsWithInv);
-        setPopularProducts(prodsWithInv.slice(0, 8));
+      setShowLocationPrompt(false);
+      setLoading(true);
+
+      console.log("🔄 Skip clicked - using saved address from profile");
+
+      // 1. Get saved address from profile
+      const savedAddress = await fetchProfileAddress();
+      
+      if (!savedAddress) {
+        Alert.alert("No Saved Address", "Please add an address in your profile.");
+        setLoading(false);
         return;
       }
 
-      setCurrentRetailerLocal(resp.retailer || null);
-      const inv = resp.inventory ?? [];
-      setInventory(inv);
-      const prods = await fetchFeaturedProducts();
-      const prodsWithInv = attachInventoryToProducts(prods, inv);
-      setFeaturedProducts(prodsWithInv);
-      setPopularProducts(prodsWithInv.slice(0, 8));
+      const addr = savedAddress;
+      const lat = Number(
+        addr?.coordinates?.latitude ??
+        addr?.lat ??
+        addr?.latitude
+      );
+      const lng = Number(
+        addr?.coordinates?.longitude ??
+        addr?.lng ??
+        addr?.longitude
+      );
+
+      if (!lat || !lng) {
+        Alert.alert("Invalid Address", "Your saved address has no coordinates.");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Assign retailer using saved address coordinates
+      console.log("📍 Assigning retailer using saved address...");
+      const assignResp = await postAssignRetailer(lat, lng, "Saved Address");
+
+      if (!assignResp) {
+        Alert.alert("Error", "Failed to assign retailer for your saved address.");
+        return;
+      }
+
+      // ⭐ UPDATE PROFILE CONTEXT WITH SAVED ADDRESS
+      if (updateLocationAndRetailer) {
+        updateLocationAndRetailer(
+          { 
+            coordinates: { latitude: lat, longitude: lng },
+            formattedAddress: formatAddress(savedAddress) 
+          },
+          assignResp.retailer,
+          "signup"
+        );
+      }
+
+      const assignedInventory = assignResp?.inventory ?? [];
+
+      // 3. Fetch categories and products
+      const [cats, prods] = await Promise.all([
+        fetchCategories(),
+        fetchFeaturedProducts()
+      ]);
+
+      setCategories(cats);
+
+      // 4. Attach inventory to products
+      const mapped = attachInventoryToProducts(prods, assignedInventory);
+
+      setFeaturedProducts(mapped);
+      
+      // 5. Popular products - ONLY in-stock items
+      setPopularProducts(
+        mapped.filter(p => p.soldByRetailer && !p.outOfStock).slice(0, 8)
+      );
+
+      // ⭐ SHOW ALERT IF CART ITEMS AFFECTED
+      if (items.length > 0) {
+        Alert.alert(
+          "Location Changed", 
+          "Your cart items availability has been updated based on new location.",
+          [{ text: "OK" }]
+        );
+      }
+
+      console.log("✅ Skip completed - Using saved address with correct retailer products");
+
     } catch (err) {
-      console.error("Skip flow failed:", err);
+      console.log("❌ Skip error:", err);
+      Alert.alert("Error", "Failed to load products for your saved address.");
     } finally {
       setLoading(false);
     }
   };
 
-  // ------------- initial load -------------
+  // ------------- Initial Load -------------
   useEffect(() => {
-    const load = async () => {
+    const initialLoad = async () => {
+      if (!token) return;
+      
       setLoading(true);
+      
       try {
-        // If profile has currentRetailer, use it. Else we will ask user.
-        if (profileCurrentRetailer) {
-          setCurrentRetailerLocal(profileCurrentRetailer);
-        } else {
-          // show popup asking for location unless you want to silence it
+        // Check if we already have a retailer assigned
+        const hasExistingRetailer = assignedRetailer && assignedRetailer._id;
+        
+        if (!hasExistingRetailer) {
+          // Show location prompt if no retailer assigned
           setShowLocationPrompt(true);
         }
 
-        // fetch categories and featured products
-        const [cats, prods] = await Promise.all([fetchCategories(), fetchFeaturedProducts()]);
+        // Always load categories and featured products
+        const [cats, prods] = await Promise.all([
+          fetchCategories(),
+          fetchFeaturedProducts()
+        ]);
+
         setCategories(cats);
 
-        // fetch inventory (either currentRetailerLocal or assignedRetailer)
-        // call customer inventory endpoint - it uses profile assignment server-side
-        const inv = await fetchInventoryForAssignedRetailer();
-        console.log("Fetchinv=",inv)
+        // Load inventory based on current retailer assignment
+        const inv = await fetchInventory();
         setInventory(inv);
 
-        // attach inventory
         const mapped = attachInventoryToProducts(prods, inv);
         setFeaturedProducts(mapped);
-        setPopularProducts(mapped.slice(0, 8));
-      } catch (err) {
-        console.error("Initial load error:", err);
+        
+        // Popular products - ONLY in-stock items
+        setPopularProducts(
+          mapped.filter(p => p.soldByRetailer && !p.outOfStock).slice(0, 8)
+        );
+
+      } catch (error) {
+        console.error("Initial load error:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    if (token) load();
-  }, [token, profileCurrentRetailer]);
+    initialLoad();
+  }, [token, assignedRetailer]);
 
-  // ------------- refresh -------------
+  // ------------- Refresh -------------
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      const [cats, prods] = await Promise.all([fetchCategories(), fetchFeaturedProducts()]);
-      const inv = await fetchInventoryForAssignedRetailer();
-      setCategories(cats);
+      const [cats, prods] = await Promise.all([
+        fetchCategories(),
+        fetchFeaturedProducts()
+      ]);
+      
+      const inv = await fetchInventory();
+      
       const mapped = attachInventoryToProducts(prods, inv);
+      
+      setCategories(cats);
       setFeaturedProducts(mapped);
-      setPopularProducts(mapped.slice(0, 8));
-    } catch (err) {
-      console.error("Refresh failed", err);
+      setPopularProducts(
+        mapped.filter(p => p.soldByRetailer && !p.outOfStock).slice(0, 8)
+      );
+    } catch (error) {
+      console.error("Refresh error:", error);
     } finally {
       setRefreshing(false);
     }
   };
 
-  // ------------- rendering -------------
+  // ------------- Infinite Scroll Arrays -------------
+  const infiniteStoreCards = [...storeCards, ...storeCards, ...storeCards];
+  const infinitePopularProducts = [...popularProducts, ...popularProducts, ...popularProducts];
+
+  // ------------- Scroll Handler for Infinite Loop -------------
+  const handlePopularScroll = (event) => {
+    if (popularProducts.length === 0) return;
+
+    const scrollX = event.nativeEvent.contentOffset.x;
+    const cardWidth = POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING;
+    const total = popularProducts.length * cardWidth;
+
+    if (scrollX >= total * 2) {
+      popularScrollRef.current?.scrollTo({ x: total, animated: false });
+    } else if (scrollX <= total - cardWidth) {
+      popularScrollRef.current?.scrollTo({ x: total * 2 - cardWidth, animated: false });
+    }
+  };
+
+  // ------------- Render -------------
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.light.tint]} />}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Colors.light.tint]}
+          />
+        }
       >
+
+        {/* SEARCH BAR */}
         <View style={styles.searchSection}>
           <View style={styles.searchBar}>
             <Ionicons name="search" size={20} color="#EF4444" />
-            <TextInput style={styles.searchInput} placeholder="Search products" placeholderTextColor="#BDBDBD" />
+            <TextInput
+              placeholder="Search 'Salted Butter'"
+              style={styles.searchInput}
+              placeholderTextColor="#BDBDBD"
+            />
           </View>
-          <TouchableOpacity style={styles.iconButton}>
+
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => router.push("/cart")}
+          >
             <Ionicons name="cart-outline" size={22} color="#1A1A1A" />
+            {cartCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>
+                  {cartCount > 99 ? "99+" : cartCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* Featured stores / categories omitted for brevity - reuse your existing UI */}
-        <View style={{ padding: 16 }}>
-          <Text style={{ fontSize: 20, fontWeight: "700" }}>Featured</Text>
-          {loading ? (
-            <ActivityIndicator />
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 12 }}>
-              {featuredProducts.map(prod => (
-                <ProductCard key={prod._id || prod.id || prod.productId} product={prod} />
+        {/* FEATURED STORES */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Featured Stores</Text>
+            <View style={styles.newBadge}>
+              <Text style={styles.newBadgeText}>NEW</Text>
+            </View>
+          </View>
+
+          <View style={styles.storesContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={CARD_WIDTH + CARD_SPACING}
+              decelerationRate="fast"
+              contentContainerStyle={styles.storesScroll}
+            >
+              {infiniteStoreCards.map((store, index) => (
+                <TouchableOpacity
+                  key={`${store.id}-${index}`}
+                  style={styles.storeCard}
+                  onPress={() => router.push("/categories")}
+                  activeOpacity={0.9}
+                >
+                  <Image source={store.image} style={styles.storeImageFull} />
+                </TouchableOpacity>
               ))}
             </ScrollView>
+          </View>
+        </View>
+
+        {/* CATEGORIES */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Shop by category</Text>
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.light.tint} />
+              <Text style={styles.loadingText}>Loading categories...</Text>
+            </View>
+          ) : categories.length > 0 ? (
+            <View style={styles.categoriesGrid}>
+              {categories.map((cat) => (
+                <CategoryTile
+                  key={cat._id || cat.id}
+                  name={cat.name}
+                  image={cat.image}
+                  color={cat.color || "#E3F2FD"}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/categories",
+                      params: { categoryId: cat._id },
+                    })
+                  }
+                />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No categories found</Text>
+            </View>
           )}
+        </View>
+
+        {/* POPULAR PRODUCTS - ONLY AVAILABLE */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Popular</Text>
+            <View style={styles.fireIcon}>
+              <Text style={styles.fireEmoji}>🔥</Text>
+            </View>
+          </View>
+
+          <Text style={styles.popularSubtext}>Most frequently bought</Text>
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.light.tint} />
+              <Text style={styles.loadingText}>Loading popular products...</Text>
+            </View>
+          ) : popularProducts.length > 0 ? (
+            <View style={styles.popularContainer}>
+              <ScrollView
+                ref={popularScrollRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.popularScroll}
+                snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
+                decelerationRate="fast"
+                onScroll={handlePopularScroll}
+                scrollEventThrottle={16}
+              >
+                {infinitePopularProducts
+                  .filter((p) => p && p.soldByRetailer && !p.outOfStock)
+                  .map((product, index) => (
+                    <View
+                      key={`${product._id || product.id}-${index}`}
+                      style={styles.productCardWrapper}
+                    >
+                      <ProductCard product={product} />
+                    </View>
+                  ))}
+              </ScrollView>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No popular products available</Text>
+            </View>
+          )}
+        </View>
+
+        {/* QUICK LINKS */}
+        <View style={[styles.section, { marginBottom: 120 }]}>
+          <Text style={styles.sectionTitle}>Quick links</Text>
+
+          <View style={styles.quickLinksRow}>
+            <TouchableOpacity
+              style={styles.quickLinkCard}
+              onPress={() => router.push("/wallet")}
+            >
+              <View
+                style={[
+                  styles.quickLinkIconContainer,
+                  { backgroundColor: "#06B6D4" },
+                ]}
+              >
+                <Text style={styles.quickLinkEmoji}>💳</Text>
+              </View>
+              <Text style={styles.quickLinkTitle}>Wallet</Text>
+              <Text style={styles.quickLinkSubtext}>₹0.0</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickLinkCard}
+              onPress={() => router.push("/orders")}
+            >
+              <View
+                style={[
+                  styles.quickLinkIconContainer,
+                  { backgroundColor: "#F59E0B" },
+                ]}
+              >
+                <Text style={styles.quickLinkEmoji}>📋</Text>
+              </View>
+              <Text style={styles.quickLinkTitle}>Orders</Text>
+              <Text style={styles.quickLinkSubtext}>Track orders</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickLinkCard}
+              onPress={() => router.push("/categories")}
+            >
+              <View
+                style={[
+                  styles.quickLinkIconContainer,
+                  { backgroundColor: "#EF4444" },
+                ]}
+              >
+                <Text style={styles.quickLinkEmoji}>❤️</Text>
+              </View>
+              <Text style={styles.quickLinkTitle}>My list</Text>
+              <Text style={styles.quickLinkSubtext}>Shop</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
 
@@ -334,31 +656,38 @@ export default function HomeScreen() {
       <Modal visible={showLocationPrompt} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Hey — Do you want to order here?</Text>
-            <Text style={styles.modalSubtitle}>We can show products available near your current location.</Text>
+            <Text style={styles.modalTitle}>Use your location?</Text>
+            <Text style={styles.modalSubtitle}>
+              We will assign your nearest retailer for better product availability.
+            </Text>
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleUseCurrentAddress}>
-              <Text style={styles.primaryBtnText}>Use current address</Text>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleUseCurrentAddress}
+            >
+              <Text style={styles.primaryBtnText}>Use Current Location</Text>
             </TouchableOpacity>
 
-            <Text style={{ textAlign: "center", marginVertical: 8 }}>or</Text>
-
-            <TouchableOpacity style={styles.ghostBtn} onPress={handleSkip}>
-              <Text style={styles.ghostBtnText}>Skip — shop from home retailer</Text>
+            <TouchableOpacity
+              style={styles.ghostBtn}
+              onPress={handleSkip}
+            >
+              <Text style={styles.ghostBtnText}>Skip - Use Saved Address</Text>
             </TouchableOpacity>
 
-            <View style={{ marginTop: 12 }}>
-              <TextInput
-                placeholder="Or type an address (optional)"
-                value={manualAddress}
-                onChangeText={setManualAddress}
-                style={styles.addressInput}
-                placeholderTextColor="#666"
-              />
-            </View>
+            <TextInput
+              placeholder="Or enter address manually (optional)"
+              value={manualAddress}
+              onChangeText={setManualAddress}
+              style={styles.addressInput}
+              placeholderTextColor="#666"
+            />
 
-            <TouchableOpacity onPress={() => setShowLocationPrompt(false)} style={{ marginTop: 10, alignSelf: "center" }}>
-              <Text style={{ color: "#666" }}>Close</Text>
+            <TouchableOpacity 
+              onPress={() => setShowLocationPrompt(false)} 
+              style={{ marginTop: 10, alignSelf: "center" }}
+            >
+              <Text style={{ color: "#666", fontSize: 14 }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -367,13 +696,126 @@ export default function HomeScreen() {
   );
 }
 
-// styles (trimmed for brevity)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
-  searchSection: { flexDirection: "row", padding: 16, gap: 8, alignItems: "center", backgroundColor: Colors.light.white },
-  searchBar: { flex: 1, flexDirection: "row", alignItems: "center", borderRadius: 28, borderWidth: 1, borderColor: "#E8E8E8", padding: 12, gap: 8 },
-  searchInput: { flex: 1 },
-  iconButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.light.white, alignItems: "center", justifyContent: "center" },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingBottom: 20 },
+
+  searchSection: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 8,
+    alignItems: "center",
+    backgroundColor: Colors.light.white,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.light.white,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: "#E8E8E8",
+    paddingHorizontal: 16,
+    height: 52,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: Colors.light.text,
+    fontWeight: "400",
+  },
+  iconButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.light.white,
+    borderWidth: 1.5,
+    borderColor: "#E8E8E8",
+    justifyContent: "center",
+    alignItems: "center",
+    position: 'relative',
+  },
+  cartBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: Colors.light.tint,
+    borderRadius: 10,
+    minWidth: 45,
+    height: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+  cartBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  section: { paddingHorizontal: 16, marginTop: 24 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", marginBottom: 16, gap: 8 },
+  sectionTitle: { fontSize: 20, fontWeight: "700", color: Colors.light.text },
+
+  newBadge: { backgroundColor: "#EF4444", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 5 },
+  newBadgeText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
+
+  storesContainer: { marginHorizontal: -16 },
+  storesScroll: { paddingHorizontal: 32, paddingVertical: 12 },
+  storeCard: {
+    width: CARD_WIDTH,
+    aspectRatio: 16 / 9,
+    marginRight: CARD_SPACING,
+    borderRadius: 16,
+    overflow: "hidden",
+    elevation: 8,
+  },
+  storeImageFull: { width: "100%", height: "100%", borderRadius: 16 },
+
+  categoriesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+
+  popularSubtext: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 12 },
+  popularContainer: { marginHorizontal: -16 },
+  popularScroll: { paddingHorizontal: 16, paddingVertical: 12 },
+  productCardWrapper: { width: POPULAR_CARD_WIDTH, marginRight: POPULAR_CARD_SPACING },
+
+  fireIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#FFF4E6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fireEmoji: { fontSize: 18 },
+
+  loadingContainer: { justifyContent: "center", alignItems: "center", paddingVertical: 40 },
+  loadingText: { marginTop: 10, fontSize: 16, color: Colors.light.textSecondary },
+  emptyState: { justifyContent: "center", alignItems: "center", paddingVertical: 40 },
+  emptyStateText: { fontSize: 16, color: Colors.light.textSecondary },
+
+  quickLinksRow: { flexDirection: "row", gap: 12, marginTop: 12 },
+  quickLinkCard: { flex: 1, alignItems: "center" },
+  quickLinkIconContainer: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  quickLinkEmoji: { fontSize: 36 },
+  quickLinkTitle: { fontSize: 15, fontWeight: "700", color: Colors.light.text },
+  quickLinkSubtext: { fontSize: 13, color: "#9E9E9E" },
 
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   modalCard: { backgroundColor: "#fff", padding: 20, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
@@ -383,5 +825,12 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: "#fff", fontWeight: "700" },
   ghostBtn: { borderWidth: 1, borderColor: "#E8E8E8", paddingVertical: 12, borderRadius: 10, alignItems: "center" },
   ghostBtnText: { color: "#333", fontWeight: "700" },
-  addressInput: { marginTop: 8, borderWidth: 1, borderColor: "#EEE", borderRadius: 8, padding: 10 }
+  addressInput: { 
+    marginTop: 12, 
+    borderWidth: 1, 
+    borderColor: "#EEE", 
+    borderRadius: 8, 
+    padding: 12,
+    fontSize: 14
+  },
 });

@@ -24,18 +24,22 @@ export default function CheckoutScreen() {
   const insets = useSafeAreaInsets();
 
   const { items, getTotalPrice, clearCart } = useCart();
-  const { authToken, isAuthenticated, validateToken, logout, user } = useAuth();
-  const { currentLocation } = useProfile();
+  const { authToken, isAuthenticated, validateToken, logout } = useAuth();
+
+  const {
+    currentLocation,
+    profile,
+    usedLocationType,   // ⭐ This tells us what user selected on home screen
+  } = useProfile();
 
   const [profileData, setProfileData] = useState(null);
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState("upi");
-  const [addressType, setAddressType] = useState("signup");
+  const [addressType, setAddressType] = useState("signup"); // default
   const [loading, setLoading] = useState(false);
   const [fetchingProfile, setFetchingProfile] = useState(true);
 
   const [orderSuccess, setOrderSuccess] = useState(false);
-  const [orderData, setOrderData] = useState(null);
 
   // =========================================
   // FETCH PROFILE WITH SIGNUP ADDRESS
@@ -45,15 +49,49 @@ export default function CheckoutScreen() {
       setFetchingProfile(true);
 
       const response = await fetch(`${API_BASE_URL}/customer/profile`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
+        headers: { Authorization: `Bearer ${authToken}` },
       });
 
       const data = await response.json();
       setProfileData(data);
 
-      if (data.deliveryAddress) {
+      // 🔥 AUTO-SELECT BASED ON usedLocationType
+      if (usedLocationType === "signup" && data.deliveryAddress) {
+        // User selected "Skip - Use Saved Address" on home screen
+        setAddressType("signup");
+        setSelectedAddress({
+          ...data.deliveryAddress,
+          coordinates: {
+            latitude: Number(data.deliveryAddress?.coordinates?.latitude),
+            longitude: Number(data.deliveryAddress?.coordinates?.longitude),
+          },
+        });
+      } else if (usedLocationType === "current" && currentLocation) {
+        // User selected "Use Current Location" on home screen
+        setAddressType("current");
+        const latitude =
+          currentLocation?.coordinates?.latitude ??
+          currentLocation?.latitude ??
+          null;
+        const longitude =
+          currentLocation?.coordinates?.longitude ??
+          currentLocation?.longitude ??
+          null;
+
+        setSelectedAddress({
+          addressLine1: currentLocation.formattedAddress || "Current Location",
+          city: "",
+          state: "",
+          pincode: "",
+          landmark: "",
+          coordinates: {
+            latitude: Number(latitude),
+            longitude: Number(longitude),
+          },
+        });
+      } else if (data.deliveryAddress) {
+        // Default fallback to signup address
+        setAddressType("signup");
         setSelectedAddress({
           ...data.deliveryAddress,
           coordinates: {
@@ -85,64 +123,102 @@ export default function CheckoutScreen() {
         return;
       }
 
-      fetchProfile();
+      await fetchProfile();
     };
 
     init();
   }, [authToken, isAuthenticated]);
 
   // =========================================
-  // SWITCH ADDRESS TYPE → SIGNUP / CURRENT LOCATION
+  // AUTO-SELECT ADDRESS BASED ON user action (HOME SCREEN)
   // =========================================
   useEffect(() => {
-  if (!profileData) return;
+    if (!profileData) return;
 
-  // -----------------------------
-  // SIGNUP SAVED ADDRESS
-  // -----------------------------
-  if (addressType === "signup") {
-    setSelectedAddress({
-      ...profileData.deliveryAddress,
-      coordinates: {
-        latitude: Number(
-          profileData.deliveryAddress?.coordinates?.latitude
-        ),
-        longitude: Number(
-          profileData.deliveryAddress?.coordinates?.longitude
-        ),
-      },
-    });
-  }
+    console.log("🌎 usedLocationType =", usedLocationType);
+    console.log("📍 currentLocation =", currentLocation);
 
-  // -----------------------------
-  // CURRENT LOCATION SELECTED
-  // -----------------------------
-  if (addressType === "current" && currentLocation) {
-    // UNIVERSAL LAT-LNG SAFE EXTRACTION
-    const latitude =
-      currentLocation?.coordinates?.latitude ??
-      currentLocation?.latitude ??
-      null;
+    // 🔵 If user selected saved address (Skip button initially)
+    if (usedLocationType === "signup" && profileData.deliveryAddress) {
+      setAddressType("signup");
+      setSelectedAddress({
+        ...profileData.deliveryAddress,
+        coordinates: {
+          latitude: Number(profileData.deliveryAddress?.coordinates?.latitude),
+          longitude: Number(profileData.deliveryAddress?.coordinates?.longitude),
+        },
+      });
+    }
 
-    const longitude =
-      currentLocation?.coordinates?.longitude ??
-      currentLocation?.longitude ??
-      null;
+    // 🟢 If user selected "Use Current Location"
+    if (usedLocationType === "current" && currentLocation) {
+      setAddressType("current");
 
-    setSelectedAddress({
-      addressLine1: currentLocation.formattedAddress || "Current Location",
-      city: "",
-      state: "",
-      pincode: "",
-      landmark: "",
-      coordinates: {
-        latitude: Number(latitude),
-        longitude: Number(longitude),
-      },
-    });
-  }
-}, [addressType, currentLocation, profileData]);
+      const latitude =
+        currentLocation?.coordinates?.latitude ??
+        currentLocation?.latitude ??
+        null;
 
+      const longitude =
+        currentLocation?.coordinates?.longitude ??
+        currentLocation?.longitude ??
+        null;
+
+      setSelectedAddress({
+        addressLine1: currentLocation.formattedAddress || "Current Location",
+        city: "",
+        state: "",
+        pincode: "",
+        landmark: "",
+        coordinates: {
+          latitude: Number(latitude),
+          longitude: Number(longitude),
+        },
+      });
+    }
+  }, [usedLocationType, currentLocation, profileData]);
+
+  // =========================================
+  // MANUAL SWITCHING OF ADDRESS TYPE
+  // (User taps the cards in checkout screen)
+  // =========================================
+  useEffect(() => {
+    if (!profileData) return;
+
+    if (addressType === "signup" && profileData.deliveryAddress) {
+      setSelectedAddress({
+        ...profileData.deliveryAddress,
+        coordinates: {
+          latitude: Number(profileData.deliveryAddress?.coordinates?.latitude),
+          longitude: Number(profileData.deliveryAddress?.coordinates?.longitude),
+        },
+      });
+    }
+
+    if (addressType === "current" && currentLocation) {
+      const latitude =
+        currentLocation?.coordinates?.latitude ??
+        currentLocation?.latitude ??
+        null;
+
+      const longitude =
+        currentLocation?.coordinates?.longitude ??
+        currentLocation?.longitude ??
+        null;
+
+      setSelectedAddress({
+        addressLine1: currentLocation.formattedAddress || "Current Location",
+        city: "",
+        state: "",
+        pincode: "",
+        landmark: "",
+        coordinates: {
+          latitude: Number(latitude),
+          longitude: Number(longitude),
+        },
+      });
+    }
+  }, [addressType]);
 
   // =========================================
   // PLACE ORDER
@@ -153,18 +229,12 @@ export default function CheckoutScreen() {
     }
 
     if (!selectedAddress?.coordinates?.latitude) {
-      return Alert.alert(
-        "Missing Coordinates",
-        "Address does not have coordinates"
-      );
+      return Alert.alert("Missing Coordinates", "Address does not have coordinates");
     }
 
     try {
       const valid = await validateToken();
-      if (!valid) {
-        logout();
-        return;
-      }
+      if (!valid) return logout();
 
       setLoading(true);
 
@@ -173,17 +243,9 @@ export default function CheckoutScreen() {
           productId: i.product._id,
           quantity: i.quantity,
         })),
-        deliveryAddress: {
-          ...selectedAddress,
-          coordinates: {
-            latitude: Number(selectedAddress.coordinates.latitude),
-            longitude: Number(selectedAddress.coordinates.longitude),
-          },
-        },
+        deliveryAddress: selectedAddress,
         paymentMethod: selectedPayment,
       };
-
-      console.log("🚀 ORDER BODY SENT:", JSON.stringify(body, null, 2));
 
       const res = await fetch(`${API_BASE_URL}/orders`, {
         method: "POST",
@@ -195,17 +257,12 @@ export default function CheckoutScreen() {
       });
 
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.message);
 
-      // SUCCESS
-      setOrderSuccess(true);
-      setOrderData(data.order);
       clearCart();
+      setOrderSuccess(true);
 
-      setTimeout(() => {
-        router.push("/(tabs)/orders");
-      }, 3000);
+      setTimeout(() => router.push("/(tabs)/orders"), 3000);
     } catch (err) {
       Alert.alert("Order Failed", err.message || "Something went wrong.");
     } finally {
@@ -228,7 +285,6 @@ export default function CheckoutScreen() {
   // =========================================
   // UI LOADING / EMPTY STATES
   // =========================================
-
   if (fetchingProfile) {
     return (
       <View style={styles.loadingContainer}>
@@ -282,11 +338,7 @@ export default function CheckoutScreen() {
           >
             <View style={styles.addressHeader}>
               <View style={styles.addressIconContainer}>
-                <Ionicons
-                  name="location-outline"
-                  size={20}
-                  color={Colors.light.accent}
-                />
+                <Ionicons name="location-outline" size={20} color={Colors.light.accent} />
               </View>
 
               <View style={styles.addressInfo}>
@@ -299,11 +351,7 @@ export default function CheckoutScreen() {
               </View>
 
               {addressType === "signup" && (
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={24}
-                  color={Colors.light.accent}
-                />
+                <Ionicons name="checkmark-circle" size={24} color={Colors.light.accent} />
               )}
             </View>
           </TouchableOpacity>
@@ -313,26 +361,53 @@ export default function CheckoutScreen() {
             style={[
               styles.currentLocCard,
               addressType === "current" && styles.addressCardSelected,
+              !currentLocation && styles.disabledCard,
             ]}
-            onPress={() => setAddressType("current")}
+            onPress={() => {
+              if (currentLocation) {
+                setAddressType("current");
+              } else {
+                Alert.alert("No Current Location", "Please enable location services.");
+              }
+            }}
+            disabled={!currentLocation}
           >
-            <Text style={styles.currentLocTitle}>Use Current Location</Text>
+            <View style={styles.currentLocHeader}>
+              <View style={styles.currentLocIconContainer}>
+                <Ionicons name="navigate-outline" size={20} color={Colors.light.accent} />
+              </View>
+              
+              <View style={styles.currentLocInfo}>
+                <Text style={styles.currentLocTitle}>Use Current Location</Text>
+                
+                {currentLocation?.formattedAddress ? (
+                  <Text style={styles.currentLocText}>
+                    {currentLocation.formattedAddress}
+                  </Text>
+                ) : (
+                  <Text style={styles.currentLocText}>
+                    Location not available
+                  </Text>
+                )}
+              </View>
 
-            {currentLocation?.formattedAddress && (
-              <Text style={styles.currentLocText}>
-                {currentLocation.formattedAddress}
-              </Text>
-            )}
-
-            {addressType === "current" && (
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={22}
-                color={Colors.light.accent}
-                style={styles.tickRight}
-              />
-            )}
+              {addressType === "current" && currentLocation && (
+                <Ionicons name="checkmark-circle" size={24} color={Colors.light.accent} />
+              )}
+            </View>
           </TouchableOpacity>
+
+          {/* AUTO-SELECTION INFO */}
+          {usedLocationType && (
+            <View style={styles.autoSelectInfo}>
+              <Ionicons name="information-circle-outline" size={16} color="#666" />
+              <Text style={styles.autoSelectText}>
+                {usedLocationType === "signup" 
+                  ? "Automatically selected your saved address" 
+                  : "Automatically selected your current location"}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* PAYMENT */}
@@ -374,7 +449,7 @@ export default function CheckoutScreen() {
 
               {selectedPayment === method && (
                 <Ionicons
-                  name="checkmark-circle-outline"
+                  name="checkmark-circle"
                   size={24}
                   color={Colors.light.accent}
                 />
@@ -403,9 +478,7 @@ export default function CheckoutScreen() {
 
             <View style={styles.summaryItem}>
               <Text style={styles.summaryTotalLabel}>Total</Text>
-              <Text style={styles.summaryTotalAmount}>
-                ₹{getTotalPrice()}
-              </Text>
+              <Text style={styles.summaryTotalAmount}>₹{getTotalPrice()}</Text>
             </View>
           </View>
         </View>
@@ -436,7 +509,6 @@ export default function CheckoutScreen() {
 }
 
 // ===================== STYLES ===================== //
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   content: { flex: 1 },
@@ -455,7 +527,7 @@ const styles = StyleSheet.create({
   },
   currentLocCard: {
     backgroundColor: "#fff",
-    padding: 14,
+    padding: 16,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
@@ -464,15 +536,18 @@ const styles = StyleSheet.create({
   addressCardSelected: {
     borderColor: Colors.light.accent,
   },
+  disabledCard: {
+    opacity: 0.6,
+  },
 
-  currentLocTitle: { fontWeight: "700", fontSize: 15 },
-  currentLocText: { marginTop: 4, fontSize: 13, color: "#6B7280" },
-
-  tickRight: { position: "absolute", right: 12, top: 12 },
-
-  manageBtn: { fontSize: 14, color: Colors.light.tint },
-
-  addressHeader: { flexDirection: "row" },
+  addressHeader: { 
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  currentLocHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   addressIconContainer: {
     width: 40,
     height: 40,
@@ -482,12 +557,42 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 12,
   },
+  currentLocIconContainer: {
+    width: 40,
+    height: 40,
+    backgroundColor: Colors.light.backgroundLight,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
   addressInfo: { flex: 1 },
+  currentLocInfo: { flex: 1 },
   addressName: { fontSize: 16, fontWeight: "700" },
   addressText: { fontSize: 14, color: Colors.light.textSecondary },
+  currentLocTitle: { fontWeight: "700", fontSize: 15 },
+  currentLocText: { marginTop: 4, fontSize: 13, color: "#6B7280" },
+
+  manageBtn: { fontSize: 14, color: Colors.light.tint },
+
+  // Auto-selection info
+  autoSelectInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  autoSelectText: {
+    fontSize: 12,
+    color: "#666",
+    marginLeft: 6,
+  },
 
   paymentCard: {
     flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#fff",
     padding: 14,
     borderRadius: 12,
@@ -519,6 +624,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 12,
   },
+  summaryItemName: { fontSize: 14, color: Colors.light.textSecondary },
+  summaryItemPrice: { fontSize: 14, fontWeight: "600" },
   summaryDivider: {
     height: 1,
     backgroundColor: Colors.light.border,

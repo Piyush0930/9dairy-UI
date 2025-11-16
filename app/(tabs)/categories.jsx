@@ -375,14 +375,14 @@ export default function CategoriesScreen() {
         </View>
 
         {/* Retailer Info */}
-        {assignedRetailer && (
+        {/* {assignedRetailer && (
           <View style={styles.retailerInfo}>
             <Ionicons name="storefront" size={14} color={Colors.light.tint} />
             <Text style={styles.retailerInfoText}>
               Shopping from: {assignedRetailer.shopName}
             </Text>
           </View>
-        )}
+        )} */}
 
         {showSearch && (
           <View style={styles.searchContainer}>
@@ -677,90 +677,84 @@ export default function CategoriesScreen() {
                     </View>
 
                     <View style={styles.productActions}>
-                      {availabilityStatus === 'out_of_stock' ? (
-                        <View style={styles.outOfStockButton}>
-                          <Text style={styles.outOfStockButtonText}>Out of Stock</Text>
-                        </View>
-                      ) : availabilityStatus === 'catalog' ? (
-                        <TouchableOpacity 
-                          style={styles.catalogButton}
-                          onPress={() => {
-                            Alert.alert(
-                              "Catalog Product", 
-                              "This product is available in our catalog but not from your assigned retailer.",
-                              [{ text: "OK" }]
-                            );
-                          }}
-                        >
-                          <Text style={styles.catalogButtonText}>View Details</Text>
-                        </TouchableOpacity>
-                      ) : getItemQuantity(product._id) === 0 ? (
-                        <TouchableOpacity
-                          style={styles.addButton}
-                          onPress={() => handleAddToCart(product)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.addButtonText}>ADD</Text>
-                          <Text style={styles.addButtonPlus}>+</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={styles.addButton}>
-                          <TouchableOpacity
-                            onPress={() => removeFromCart(product._id)}
-                            style={styles.qtyBtn}
-                            activeOpacity={0.7}
-                          >
-                            <Feather
-                              name="minus"
-                              size={16}
-                              color={Colors.light.tint}
-                            />
-                          </TouchableOpacity>
-                          <Text style={styles.qtyText}>
-                            {getItemQuantity(product._id)}
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => handleAddToCart(product)}
-                            style={styles.qtyBtn}
-                            activeOpacity={0.7}
-                          >
-                            <Feather
-                              name="plus"
-                              size={16}
-                              color={Colors.light.tint}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      )}
+
+                    {/* OUT OF STOCK or CATALOG → same grey disabled UI */}
+                    {(availabilityStatus === 'out_of_stock' || availabilityStatus === 'catalog') ? (
+                      <View style={styles.outOfStockButton}>
+                        <Text style={styles.outOfStockButtonText}>Out of Stock</Text>
+                      </View>
+                    ) : getItemQuantity(product._id) === 0 ? (
                       
-                      {/* Bulk actions only for available retailer products */}
-                      {availabilityStatus === 'available' && (
-                        <>
-                          <TouchableOpacity
-                            style={styles.bulkAction}
-                            onPress={() => {
-                              for (let i = 0; i < 6; i++) {
-                                handleAddToCart(product);
-                              }
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.bulkActionText}>Add 6</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.bulkAction}
-                            onPress={() => {
-                              for (let i = 0; i < 15; i++) {
-                                handleAddToCart(product);
-                              }
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.bulkActionText}>Add 15</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
+                      /* AVAILABLE → ADD BUTTON */
+                      <TouchableOpacity
+                        style={styles.addButton}
+                        onPress={() => handleAddToCart(product)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.addButtonText}>ADD</Text>
+                        <Text style={styles.addButtonPlus}>+</Text>
+                      </TouchableOpacity>
+
+                    ) : (
+
+                      /* AVAILABLE → QUANTITY CONTROLS */
+                      <View style={styles.addButton}>
+                        <TouchableOpacity
+                          onPress={() => removeFromCart(product._id)}
+                          style={styles.qtyBtn}
+                          activeOpacity={0.7}
+                        >
+                          <Feather
+                            name="minus"
+                            size={16}
+                            color={Colors.light.tint}
+                          />
+                        </TouchableOpacity>
+
+                        <Text style={styles.qtyText}>{getItemQuantity(product._id)}</Text>
+
+                        <TouchableOpacity
+                          onPress={() => handleAddToCart(product)}
+                          style={styles.qtyBtn}
+                          activeOpacity={0.7}
+                        >
+                          <Feather
+                            name="plus"
+                            size={16}
+                            color={Colors.light.tint}
+                          />
+                        </TouchableOpacity>
+                      </View>
+
+  )}
+
+  {/* Bulk actions only if AVAILABLE */}
+  {availabilityStatus === 'available' && (
+    <>
+      <TouchableOpacity
+        style={styles.bulkAction}
+        onPress={() => {
+          for (let i = 0; i < 6; i++) handleAddToCart(product);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.bulkActionText}>Add 6</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.bulkAction}
+        onPress={() => {
+          for (let i = 0; i < 15; i++) handleAddToCart(product);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.bulkActionText}>Add 15</Text>
+      </TouchableOpacity>
+    </>
+  )}
+
+</View>
+
                   </View>
                 );
               })

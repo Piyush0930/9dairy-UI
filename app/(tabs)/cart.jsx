@@ -29,7 +29,7 @@ const MIN_TOUCH = 44;
 export default function CartScreen() {
   const { items, addToCart, removeFromCart, getTotalPrice, clearCart, setItemQuantity } = useCart();
   const { authToken, isAuthenticated, validateToken, logout } = useAuth();
-  const profile = useProfile(); // contains assignedRetailer, deliveryAddress, currentLocation
+  const profile = useProfile(); // contains assignedRetailer, deliveryAddress, currentLocation (we will not display)
   const serverAssignedRetailer = profile?.assignedRetailer ?? null;
   const profileDeliveryAddress = profile?.deliveryAddress ?? null;
   const profileCurrentLocation = profile?.currentLocation ?? null;
@@ -40,16 +40,13 @@ export default function CartScreen() {
   const [loading, setLoading] = useState(false); // for network ops
   const [busy, setBusy] = useState(false); // for validation/short ops
   const [inventory, setInventory] = useState([]); // latest retailer inventory
-  const [assignedRetailerLocal, setAssignedRetailerLocal] = useState(null); // local override
-  const [showAssignModal, setShowAssignModal] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [itemStatuses, setItemStatuses] = useState({}); // productId -> { available, reason, availableQty, priceUsed }
 
-  // chosenAddress is set once (initial selection) or when user explicitly changes it
+  // chosenAddress handled at checkout — cart will not show or change address
   const [chosenAddress, setChosenAddress] = useState(null);
 
-  const retailerToUse = assignedRetailerLocal || serverAssignedRetailer || null;
-
+  // helpers: product id normalization
   const productIdOf = (p) => p?.id || p?._id || p?.productId || null;
 
   // ----------------------
@@ -72,92 +69,6 @@ export default function CartScreen() {
       return [];
     }
   };
-
-  // ----------------------
-  // Assign retailer; do not overwrite chosenAddress unless it's null.
-  // ----------------------
-  const assignRetailer = async ({ lat, lng, address = "", temporary = true, assignedFrom = "current" } = {}) => {
-    if (!authToken) {
-      Alert.alert("Login required", "Please login to use location-based retailer assignment.");
-      return null;
-    }
-    setAssigning(true);
-    try {
-      const body = {};
-      if (typeof lat === "number" && typeof lng === "number") {
-        body.lat = lat;
-        body.lng = lng;
-        body.address = address || "";
-      }
-      body.temporary = !!temporary;
-
-      const res = await fetch(`${API_BASE_URL}/customer/assign-retailer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify(body),
-      });
-      const j = await res.json();
-      if (!res.ok) {
-        console.warn("assign-retailer failed", j);
-        Alert.alert("Assignment failed", j?.message || "Unable to assign retailer");
-        setAssigning(false);
-        return null;
-      }
-
-      const { retailer, inventory: inv } = j;
-      if (retailer) {
-        setAssignedRetailerLocal({ ...retailer, assignedFrom });
-        if (!chosenAddress) {
-          if (assignedFrom === "current") {
-            setChosenAddress({ type: "current", coordinates: { latitude: lat, longitude: lng }, formattedAddress: address || retailer?.location?.formattedAddress || "" });
-          } else {
-            if (profileDeliveryAddress) setChosenAddress({ type: "home", address: profileDeliveryAddress });
-            else setChosenAddress({ type: "current", coordinates: { latitude: lat, longitude: lng }, formattedAddress: address || retailer?.location?.formattedAddress || "" });
-          }
-        }
-      }
-
-      if (Array.isArray(inv)) {
-        setInventory(inv);
-        reconcileCartWithInventory(inv);
-      } else {
-        const fetched = await fetchInventoryForCustomer();
-        setInventory(fetched);
-        reconcileCartWithInventory(fetched);
-      }
-
-      setShowAssignModal(false);
-      setAssigning(false);
-      return { retailer: retailer ?? null, inventory: inv ?? [] };
-    } catch (err) {
-      console.error("assignRetailer error:", err);
-      Alert.alert("Error", "Failed to assign retailer. Try again.");
-      setAssigning(false);
-      return null;
-    }
-  };
-
-  // ----------------------
-  // Geolocation fallback
-  // ----------------------
-  const getCurrentLocation = () =>
-    new Promise((resolve, reject) => {
-      try {
-        if (!navigator || !navigator.geolocation) {
-          return reject(new Error("Geolocation not available"));
-        }
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const { latitude, longitude } = pos.coords;
-            resolve({ latitude, longitude });
-          },
-          (err) => reject(err),
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-        );
-      } catch (e) {
-        reject(e);
-      }
-    });
 
   // ----------------------
   // Reconcile cart against inventory
@@ -253,8 +164,7 @@ export default function CartScreen() {
   }, [itemStatuses]);
 
   // ----------------------
-  // Init: fetch inventory if retailer exists, else show assign modal
-  // preserve chosenAddress if already set
+  // Init: fetch inventory if retailer exists (silent); reconcile cart
   // ----------------------
   useEffect(() => {
     let mounted = true;
@@ -266,27 +176,14 @@ export default function CartScreen() {
           return;
         }
 
-        if (serverAssignedRetailer) {
-          const inv = await fetchInventoryForCustomer();
-          if (!mounted) return;
-          setInventory(inv);
-          reconcileCartWithInventory(inv);
+        // fetch inventory for customer (server-side assignment applies)
+        const inv = await fetchInventoryForCustomer();
+        if (!mounted) return;
+        setInventory(inv);
+        reconcileCartWithInventory(inv);
 
-          if (!chosenAddress) {
-            if (profileCurrentLocation && profileCurrentLocation.coordinates) {
-              setChosenAddress({ type: "current", coordinates: profileCurrentLocation.coordinates, formattedAddress: profileCurrentLocation.formattedAddress || "" });
-            } else if (profileDeliveryAddress) {
-              setChosenAddress({ type: "home", address: profileDeliveryAddress });
-            }
-          }
-        } else {
-          // no assigned retailer -> prompt assign modal
-          setShowAssignModal(true);
-          if (!chosenAddress) {
-            if (profileDeliveryAddress) setChosenAddress({ type: "home", address: profileDeliveryAddress });
-            else if (profileCurrentLocation && profileCurrentLocation.coordinates) setChosenAddress({ type: "current", coordinates: profileCurrentLocation.coordinates, formattedAddress: profileCurrentLocation.formattedAddress || "" });
-          }
-        }
+        // do not change or show chosenAddress here — checkout will handle it
+        // keep chosenAddress null (checkout uses profile or ask at checkout)
       } catch (err) {
         console.error("Init cart error:", err);
       } finally {
@@ -321,28 +218,6 @@ export default function CartScreen() {
   };
 
   // ----------------------
-  // Use current location -> assign retailer temporary
-  // ----------------------
-  const handleUseCurrentAddress = async () => {
-    try {
-      setAssigning(true);
-      const loc = await getCurrentLocation();
-      await assignRetailer({ lat: loc.latitude, lng: loc.longitude, temporary: true, assignedFrom: "current" });
-      setAssigning(false);
-    } catch (err) {
-      console.error("Location error:", err);
-      Alert.alert("Location error", "Unable to get current location. Allow permissions or try again.");
-      setAssigning(false);
-    }
-  };
-
-  const handleSkipAssign = async () => {
-    setAssigning(true);
-    await assignRetailer({ temporary: true, assignedFrom: "home" });
-    setAssigning(false);
-  };
-
-  // ----------------------
   // Remove item helper
   // ----------------------
   const removeItem = (product) => {
@@ -367,7 +242,7 @@ export default function CartScreen() {
     const ok = await validateAuthBeforeCall();
     if (!ok) return;
 
-    // re-validate inventory
+    // re-validate inventory silently
     setBusy(true);
     try {
       const inv = await fetchInventoryForCustomer();
@@ -433,10 +308,10 @@ export default function CartScreen() {
         return;
       }
 
-      // Everything good -> go to checkout with chosen address type
+      // Everything good -> go to checkout. Checkout screen should request/confirm address.
       router.push({
         pathname: "/checkout",
-        params: { chosenAddressType: chosenAddress?.type ?? (profileDeliveryAddress ? "home" : "current") }
+        params: { chosenAddressType: null } // checkout will handle selecting address
       });
     } catch (err) {
       console.error("Checkout validation error:", err);
@@ -448,7 +323,6 @@ export default function CartScreen() {
 
   // ----------------------
   // Optional: place order directly
-  // kept for convenience — uses chosenAddress
   // ----------------------
   const placeOrderNow = async () => {
     const ok = await validateAuthBeforeCall();
@@ -462,9 +336,8 @@ export default function CartScreen() {
         return { productId: pid, quantity: it.quantity, unitPrice: price };
       });
 
-      const deliveryAddress = chosenAddress?.type === "current"
-        ? { coordinates: chosenAddress.coordinates, addressLine1: chosenAddress.formattedAddress || "" }
-        : (chosenAddress?.address ?? profileDeliveryAddress ?? {});
+      // Checkout will provide address; we send a placeholder here or you can remove this function if not used.
+      const deliveryAddress = profileDeliveryAddress ?? {};
 
       const orderData = { items: payloadItems, deliveryAddress, paymentMethod: "cash" };
 
@@ -605,102 +478,11 @@ export default function CartScreen() {
         </View>
 
         <View style={styles.infoSection}>
-          <View style={styles.infoItem}>
-            <Ionicons name="time-outline" size={18} color={Colors.light.tint} />
-            <Text style={styles.infoText}>Delivery by tomorrow morning</Text>
-          </View>
-
-          <View style={styles.infoItem}>
-            <Ionicons name="cash-outline" size={18} color={Colors.light.tint} />
-            <Text style={styles.infoText}>Cash on delivery available</Text>
-          </View>
-
-          {/* Delivery address summary */}
           <View style={{ marginTop: 12 }}>
-            <Text style={{ fontWeight: "700", color: Colors.light.text }}>Delivery to</Text>
-
-            {chosenAddress?.type === "current" ? (
-              <View style={{ marginTop: 8 }}>
-                <Text style={{ fontWeight: "600" }}>{chosenAddress.formattedAddress || "Current location"}</Text>
-                <Text style={styles.infoText}>Using current location</Text>
-              </View>
-            ) : chosenAddress?.type === "home" ? (
-              <View style={{ marginTop: 8 }}>
-                <Text style={{ fontWeight: "600" }}>{chosenAddress.address?.addressLine1 ?? "Home address"}</Text>
-                <Text style={styles.infoText}>{chosenAddress.address?.formattedAddress ?? ""}</Text>
-              </View>
-            ) : (
-              <Text style={styles.infoText}>No delivery address selected</Text>
-            )}
-
-            {/* explicit toggles (user action only) */}
             <View style={{ flexDirection: "row", marginTop: 12 }}>
-              {profileCurrentLocation && (
-                <Pressable
-                  style={[styles.smallToggle, { opacity: assigning ? 0.6 : 1 }]}
-                  onPress={async () => {
-                    try {
-                      setAssigning(true);
-                      const loc = profileCurrentLocation?.coordinates;
-                      if (loc?.latitude && loc?.longitude) {
-                        await assignRetailer({ lat: loc.latitude, lng: loc.longitude, temporary: true, assignedFrom: "current" });
-                        setChosenAddress({ type: "current", coordinates: loc, formattedAddress: profileCurrentLocation.formattedAddress || "" });
-                      } else {
-                        const pos = await getCurrentLocation();
-                        await assignRetailer({ lat: pos.latitude, lng: pos.longitude, temporary: true, assignedFrom: "current" });
-                        setChosenAddress({ type: "current", coordinates: pos, formattedAddress: "" });
-                      }
-                    } catch (e) {
-                      console.warn("Could not set current address", e);
-                    } finally {
-                      setAssigning(false);
-                    }
-                  }}
-                >
-                  <Text style={styles.smallToggleText}>Use current</Text>
-                </Pressable>
-              )}
-
-              {profileDeliveryAddress && (
-                <Pressable
-                  style={styles.smallToggleGhost}
-                  onPress={async () => {
-                    try {
-                      setAssigning(true);
-                      const addr = profileDeliveryAddress;
-                      if (addr?.coordinates?.latitude && addr?.coordinates?.longitude) {
-                        await assignRetailer({ lat: addr.coordinates.latitude, lng: addr.coordinates.longitude, temporary: true, assignedFrom: "home" });
-                      } else {
-                        await assignRetailer({ temporary: true, assignedFrom: "home" });
-                      }
-                      setChosenAddress({ type: "home", address: addr });
-                    } catch (e) {
-                      console.warn("Could not set home address", e);
-                    } finally {
-                      setAssigning(false);
-                    }
-                  }}
-                >
-                  <Text style={styles.smallToggleGhostText}>Use home</Text>
-                </Pressable>
-              )}
+              {/* No 'Use current' or 'Use home' toggles here — address handled at checkout */}
             </View>
           </View>
-
-          {/* Retailer info */}
-          {retailerToUse ? (
-            <View style={[styles.infoItem, { marginTop: 12 }]}>
-              <Ionicons name="storefront" size={18} color={Colors.light.tint} />
-              <View style={{ marginLeft: 8 }}>
-                <Text style={{ fontWeight: "700", color: Colors.light.text }}>{retailerToUse.shopName}</Text>
-                <Text style={styles.infoText}>{retailerToUse.address || retailerToUse.location?.formattedAddress || ""}</Text>
-              </View>
-            </View>
-          ) : (
-            <View style={{ marginTop: 12 }}>
-              <Text style={{ color: Colors.light.textSecondary }}>No retailer selected — stock/prices may be inaccurate.</Text>
-            </View>
-          )}
         </View>
       </ScrollView>
 
@@ -719,30 +501,6 @@ export default function CartScreen() {
           {busy || loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.checkoutButtonText}>{hasUnavailable ? "Resolve items" : "Continue"}</Text>}
         </TouchableOpacity>
       </View>
-
-      {/* Assign retailer modal (uses RN Modal so it's reliable) */}
-      <Modal visible={showAssignModal} transparent animationType="fade" onRequestClose={() => setShowAssignModal(false)}>
-        <View style={modalStyles.modalOverlay}>
-          <View style={modalStyles.modalBox}>
-            <Text style={modalStyles.title}>Choose delivery location</Text>
-            <Text style={modalStyles.subtitle}>We can show stock & prices for the retailer near your current location.</Text>
-
-            <View style={{ flexDirection: "row", marginTop: 12 }}>
-              <TouchableOpacity style={[modalStyles.primaryBtn, { flex: 1 }]} onPress={handleUseCurrentAddress} disabled={assigning}>
-                {assigning ? <ActivityIndicator color="#fff" /> : <Text style={modalStyles.primaryBtnText}>Use current address</Text>}
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[modalStyles.ghostBtn, { flex: 1, marginLeft: 8 }]} onPress={handleSkipAssign} disabled={assigning}>
-                <Text style={modalStyles.ghostBtnText}>Use saved / skip</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={{ marginTop: 10, alignSelf: "center" }} onPress={() => setShowAssignModal(false)}>
-              <Text style={{ color: Colors.light.textSecondary }}>Not now</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -793,14 +551,13 @@ const styles = StyleSheet.create({
   checkoutButton: { backgroundColor: Colors.light.tint, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 12, minWidth: 120, alignItems: "center", justifyContent: "center" },
   buttonDisabled: { backgroundColor: "#9ca3af" },
   checkoutButtonText: { color: "#FFF", fontSize: 15, fontWeight: "700" },
-
   smallToggle: { backgroundColor: Colors.light.tint, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginRight: 8, minHeight: MIN_TOUCH, justifyContent: "center" },
   smallToggleText: { color: "#fff", fontWeight: "700" },
   smallToggleGhost: { backgroundColor: "#F3F4F6", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, minHeight: MIN_TOUCH, justifyContent: "center" },
   smallToggleGhostText: { color: Colors.light.text },
 });
 
-/* Modal styles */
+/* Modal styles (kept if you later want to re-enable modal) */
 const modalStyles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" },
   modalBox: { width: Math.min(520, SCREEN_WIDTH - 40), backgroundColor: "#FFF", borderRadius: 12, padding: 18, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 12, elevation: Platform.OS === "android" ? 6 : 12 },

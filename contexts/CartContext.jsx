@@ -1,14 +1,21 @@
-
-
-// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\contexts\CartContext.jsx
-
+// contexts/CartContext.jsx
 import createContextHook from "@nkzw/create-context-hook";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
+import { useProfile } from "./ProfileContext";
 
 export const [CartProvider, useCart] = createContextHook(() => {
+  const { checkCartItemsAvailability, cartItemsStatus } = useProfile();
+  
   const [items, setItems] = useState([]);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+
+  // ⭐ NEW: Check cart items availability when items change
+  useEffect(() => {
+    if (items.length > 0) {
+      checkCartItemsAvailability(items);
+    }
+  }, [items.length, checkCartItemsAvailability]);
 
   const addToCart = useCallback((product) => {
     setItems((prev) => {
@@ -44,6 +51,19 @@ export const [CartProvider, useCart] = createContextHook(() => {
     });
   }, []);
 
+  const setItemQuantity = useCallback((productId, quantity) => {
+    setItems((prev) => {
+      if (quantity <= 0) {
+        return prev.filter((item) => item.product._id !== productId);
+      }
+      return prev.map((item) =>
+        item.product._id === productId
+          ? { ...item, quantity }
+          : item
+      );
+    });
+  }, []);
+
   const clearCart = useCallback(() => {
     setItems([]);
   }, []);
@@ -64,15 +84,42 @@ export const [CartProvider, useCart] = createContextHook(() => {
     return item ? item.quantity : 0;
   }, [items]);
 
+  // ⭐ NEW: Get unavailable items count
+  const getUnavailableItemsCount = useCallback(() => {
+    return cartItemsStatus.filter(item => item.isOutOfStock).length;
+  }, [cartItemsStatus]);
+
+  // ⭐ NEW: Check if cart has unavailable items
+  const hasUnavailableItems = useCallback(() => {
+    return cartItemsStatus.some(item => item.isOutOfStock);
+  }, [cartItemsStatus]);
+
+  // ⭐ NEW: Get items that need quantity adjustment
+  const getItemsNeedingAdjustment = useCallback(() => {
+    return cartItemsStatus.filter(item => 
+      item.isAvailable && item.availableStock < item.requestedQuantity
+    );
+  }, [cartItemsStatus]);
+
   return useMemo(() => ({
     items,
     addToCart,
     removeFromCart,
+    setItemQuantity, // ⭐ NEW
     clearCart,
     getTotalPrice,
     getTotalItems,
     getItemQuantity,
     showToast,
     toastMessage,
-  }), [items, addToCart, removeFromCart, clearCart, getTotalPrice, getTotalItems, getItemQuantity, showToast, toastMessage]);
+    // ⭐ NEW functions
+    getUnavailableItemsCount,
+    hasUnavailableItems,
+    getItemsNeedingAdjustment,
+    cartItemsStatus
+  }), [
+    items, addToCart, removeFromCart, setItemQuantity, clearCart, 
+    getTotalPrice, getTotalItems, getItemQuantity, showToast, toastMessage,
+    getUnavailableItemsCount, hasUnavailableItems, getItemsNeedingAdjustment, cartItemsStatus
+  ]);
 });

@@ -1,5 +1,4 @@
 // contexts/ProfileContext.js
-
 import React, { createContext, useState, useContext, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { LocationService } from "@/services/locationService";
@@ -14,7 +13,10 @@ export const ProfileProvider = ({ children }) => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [assignedRetailer, setAssignedRetailer] = useState(null);
 
-  // Prevent multiple sync calls
+  // ⭐ NEW: store if user used current location OR skipped
+  const [usedLocationType, setUsedLocationType] = useState("signup"); 
+  const [cartItemsStatus, setCartItemsStatus] = useState([]); // ⭐ NEW: Track cart items availability
+
   const hasSyncedLocation = useRef(false);
 
   // ---------------------------------------------------
@@ -45,6 +47,69 @@ export const ProfileProvider = ({ children }) => {
   };
 
   // ---------------------------------------------------
+  // UPDATE LOCATION AND RETAILER (NEW FUNCTION)
+  // ---------------------------------------------------
+  const updateLocationAndRetailer = (location, retailer, locationType) => {
+    setCurrentLocation(location);
+    setAssignedRetailer(retailer);
+    setUsedLocationType(locationType);
+    
+    // ⭐ IMPORTANT: Clear cart status when location changes
+    setCartItemsStatus([]);
+  };
+
+  // ---------------------------------------------------
+  // CHECK CART ITEMS AVAILABILITY (NEW FUNCTION)
+  // ---------------------------------------------------
+  const checkCartItemsAvailability = async (cartItems) => {
+    if (!authToken || !cartItems || cartItems.length === 0) return [];
+
+    try {
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+      const response = await fetch(`${API_BASE}/api/customer/inventory`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      
+      const data = await response.json();
+      const inventory = data.data?.inventory ?? [];
+
+      // Check each cart item against inventory
+      const updatedStatus = cartItems.map(item => {
+        const product = item.product;
+        const inventoryItem = inventory.find(inv => 
+          inv.product?._id === product._id || 
+          inv.product?.id === product.id ||
+          inv.product?.productId === product.productId
+        );
+
+        const isAvailable = inventoryItem && inventoryItem.currentStock > 0;
+        const availableStock = inventoryItem?.currentStock || 0;
+
+        return {
+          productId: product._id || product.id,
+          isAvailable,
+          availableStock,
+          requestedQuantity: item.quantity,
+          isOutOfStock: !isAvailable,
+          outOfStockMessage: !isAvailable ? "Product not available at this location" : 
+                            (availableStock < item.quantity ? `Only ${availableStock} available` : null)
+        };
+      });
+
+      setCartItemsStatus(updatedStatus);
+      return updatedStatus;
+    } catch (error) {
+      console.error("Error checking cart items:", error);
+      return [];
+    }
+  };
+
+  // Clear cart status
+  const clearCartStatus = () => {
+    setCartItemsStatus([]);
+  };
+
+  // ---------------------------------------------------
   // LOAD USER PROFILE FROM auth.user
   // ---------------------------------------------------
   useEffect(() => {
@@ -62,7 +127,7 @@ export const ProfileProvider = ({ children }) => {
   }, [user]);
 
   // ---------------------------------------------------
-  // SYNC LOCATION ONLY ONCE AFTER LOGIN
+  // SYNC LOCATION TO BACKEND ONLY ONCE AFTER LOGIN
   // ---------------------------------------------------
   useEffect(() => {
     const syncLocation = async () => {
@@ -70,7 +135,6 @@ export const ProfileProvider = ({ children }) => {
       if (!isAuthenticated || !authToken) return;
       if (user?.role !== "customer") return;
 
-      // avoid duplicate sync calls
       if (hasSyncedLocation.current) return;
       hasSyncedLocation.current = true;
 
@@ -79,6 +143,9 @@ export const ProfileProvider = ({ children }) => {
         const gps = await LocationService.getLocationWithFallback();
 
         updateCurrentLocation(gps);
+
+        // ⭐ user allowed location → mark type = current
+        setUsedLocationType("current");
 
         console.log("📡 Sending location to backend...");
         const backend = await LocationService.syncLocationToBackend(authToken, gps);
@@ -90,6 +157,9 @@ export const ProfileProvider = ({ children }) => {
         }
       } catch (err) {
         console.log("❌ Location sync failed:", err);
+
+        // ⭐ user denied / failed GPS → fallback to signup address
+        setUsedLocationType("signup");
       }
     };
 
@@ -110,6 +180,14 @@ export const ProfileProvider = ({ children }) => {
 
         assignedRetailer,
         updateAssignedRetailer: setAssignedRetailer,
+
+        // ⭐ expose new location-type flag and cart functions
+        usedLocationType,
+        setUsedLocationType,
+        cartItemsStatus,
+        checkCartItemsAvailability,
+        clearCartStatus,
+        updateLocationAndRetailer // ⭐ NEW
       }}
     >
       {children}
