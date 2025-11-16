@@ -65,7 +65,7 @@ export default function InventoryScreen() {
   const [transactionType, setTransactionType] = useState("STOCK_IN");
   const [reason, setReason] = useState("PURCHASE");
 
-  // Edit product - PRICE OVERRIDE FOCUS
+  // Edit product
   const [editSellingPrice, setEditSellingPrice] = useState("");
   const [editMinStock, setEditMinStock] = useState("");
   const [editMaxStock, setEditMaxStock] = useState("");
@@ -179,6 +179,44 @@ export default function InventoryScreen() {
     console.log("Refreshing data...");
     setRefreshing(true);
     fetchData();
+  };
+
+  // Delete Inventory Item
+  const handleDeleteItem = async (item) => {
+    Alert.alert(
+      "Delete Product",
+      `Are you sure you want to remove ${getProductName(item)} from your inventory?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_BASE_URL}/products/${item._id}`, {
+                method: "DELETE",
+                headers: {
+                  Authorization: `Bearer ${authToken}`,
+                  "Content-Type": "application/json",
+                },
+              });
+
+              const data = await res.json();
+              if (!data.success) throw new Error(data.message);
+
+              Alert.alert("Success", "Product removed from inventory successfully!");
+              
+              // Refresh data
+              await fetchData();
+              
+            } catch (e) {
+              console.error("Delete error:", e);
+              Alert.alert("Error", e.message || "Failed to delete product from inventory");
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Search Products for Adding to Inventory
@@ -342,7 +380,7 @@ export default function InventoryScreen() {
     setReason("PURCHASE");
   };
 
-  // Edit Product - PRICE OVERRIDE FOCUS WITH AUTO-REFRESH
+  // Edit Product - WITH AUTO-REFRESH
   const openEditModal = (item) => {
     setSelectedItem(item);
     setEditSellingPrice(item.sellingPrice?.toString() || "");
@@ -351,37 +389,36 @@ export default function InventoryScreen() {
     setEditModal(true);
   };
 
-// In your frontend inventory page
-const handleEditProduct = async () => {
-  if (!selectedItem) return;
+  const handleEditProduct = async () => {
+    if (!selectedItem) return;
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/products/${selectedItem._id}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sellingPrice: parseFloat(editSellingPrice) || 0,
-        minStockLevel: parseInt(editMinStock) || 0,
-        maxStockLevel: parseInt(editMaxStock) || 0,
-      }),
-    });
+    try {
+      const res = await fetch(`${API_BASE_URL}/products/${selectedItem._id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sellingPrice: parseFloat(editSellingPrice) || 0,
+          minStockLevel: parseInt(editMinStock) || 0,
+          maxStockLevel: parseInt(editMaxStock) || 0,
+        }),
+      });
 
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
 
-    Alert.alert("Success", "Product updated successfully!");
-    setEditModal(false);
-    
-    // AUTO-REFRESH: Fetch updated data immediately
-    await fetchData();
-    
-  } catch (e) {
-    Alert.alert("Error", e.message || "Failed to update product");
-  }
-};
+      Alert.alert("Success", "Product updated successfully!");
+      setEditModal(false);
+      
+      // AUTO-REFRESH: Fetch updated data immediately
+      await fetchData();
+      
+    } catch (e) {
+      Alert.alert("Error", e.message || "Failed to update product");
+    }
+  };
 
   // Open Detail Modal
   const openDetailModal = (item) => {
@@ -417,19 +454,19 @@ const handleEditProduct = async () => {
     return item.product?.image || item.image || "https://via.placeholder.com/80x80?text=No+Img";
   };
 
-  // Get product unit
-  const getProductUnit = (item) => {
-    if (!item) return 'unit';
-    return item.product?.unit || 'unit';
+  // Get default price from product
+  const getDefaultPrice = (item) => {
+    if (!item) return 0;
+    return item.product?.price || 0;
   };
 
-  // Calculate item sales value
+  // Calculate item sales value (frontend calculation)
   const getItemSalesValue = (item) => {
     if (!item) return 0;
     return (item.totalSold || 0) * (item.sellingPrice || 0);
   };
 
-  // Calculate item inventory value
+  // Calculate item inventory value (frontend calculation)
   const getItemInventoryValue = (item) => {
     if (!item) return 0;
     const itemCost = item.costPrice || item.sellingPrice || 0;
@@ -445,14 +482,6 @@ const handleEditProduct = async () => {
     } else {
       return { color: '#4CAF50', icon: 'check-circle', text: 'In Stock' };
     }
-  };
-
-  // Check if price is overridden from default - FIXED NULL CHECK
-  const isPriceOverridden = (item) => {
-    if (!item || !item.product) return false;
-    const defaultPrice = item.product.price || 0;
-    const currentPrice = item.sellingPrice || 0;
-    return currentPrice !== defaultPrice;
   };
 
   if (authLoading || loading) {
@@ -578,11 +607,10 @@ const handleEditProduct = async () => {
           const availableStock = getAvailableStock(item);
           const productName = getProductName(item);
           const productImage = getProductImage(item);
-          const productUnit = getProductUnit(item);
           const stockStatus = getStockStatus(availableStock, item.minStockLevel || 0);
           const itemSalesValue = getItemSalesValue(item);
-          const priceOverridden = isPriceOverridden(item);
-          const defaultPrice = item?.product?.price || 0;
+          const defaultPrice = getDefaultPrice(item);
+          const isPriceOverridden = item.sellingPrice !== defaultPrice;
 
           return (
             <TouchableOpacity 
@@ -606,20 +634,14 @@ const handleEditProduct = async () => {
                   </Text>
                 </View>
                 
-                {/* Price Display with Override Indicator */}
-                <View style={styles.priceRow}>
-                  <View style={styles.priceContainer}>
+                {/* Price Display */}
+                <View style={styles.priceContainer}>
+                  <View style={styles.priceBackground}>
                     <Text style={styles.currentPrice}>₹{item.sellingPrice?.toFixed(0) || '0'}</Text>
-                    {priceOverridden && (
-                      <Text style={styles.originalPrice}>₹{defaultPrice}</Text>
+                    {isPriceOverridden && (
+                      <Text style={styles.defaultPrice}>₹{defaultPrice}</Text>
                     )}
                   </View>
-                  {priceOverridden && (
-                    <View style={styles.overrideBadge}>
-                      <Ionicons name="pricetag" size={12} color="#FFF" />
-                      <Text style={styles.overrideText}>Custom</Text>
-                    </View>
-                  )}
                 </View>
 
                 <View style={styles.stockStatusRow}>
@@ -635,7 +657,7 @@ const handleEditProduct = async () => {
 
                 <View style={styles.stockInfo}>
                   <Text style={styles.availableStock}>
-                    Available: <Text style={styles.stockNumber}>{availableStock}</Text> {productUnit}
+                    Available: <Text style={styles.stockNumber}>{availableStock}</Text>
                   </Text>
                 </View>
 
@@ -673,6 +695,15 @@ const handleEditProduct = async () => {
                   }}
                 >
                   <Feather name="edit-2" size={18} color={Colors.light.accent} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDeleteItem(item);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#F44336" />
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
@@ -986,7 +1017,7 @@ const handleEditProduct = async () => {
         </View>
       </Modal>
 
-      {/* Edit Product Modal - PRICE OVERRIDE FOCUS */}
+      {/* Edit Product Modal */}
       <Modal visible={editModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -1002,7 +1033,7 @@ const handleEditProduct = async () => {
                 {selectedItem ? getProductName(selectedItem) : ''}
               </Text>
 
-              {/* Price Override Section */}
+              {/* Price Section */}
               <View style={styles.inputGroup}>
                 <View style={styles.priceOverrideHeader}>
                   <Text style={styles.inputLabel}>Your Selling Price (₹) *</Text>
@@ -1019,15 +1050,6 @@ const handleEditProduct = async () => {
                   onChangeText={setEditSellingPrice}
                   placeholder="Enter your selling price"
                 />
-                {selectedItem?.product?.price && editSellingPrice && (
-                  <Text style={[
-                    styles.priceDifference,
-                    parseFloat(editSellingPrice) > (selectedItem.product.price) ? styles.priceHigher : styles.priceLower
-                  ]}>
-                    {parseFloat(editSellingPrice) > selectedItem.product.price ? '+' : ''}
-                    {(parseFloat(editSellingPrice) - selectedItem.product.price).toFixed(2)} from default
-                  </Text>
-                )}
               </View>
 
               <View style={styles.inputGroup}>
@@ -1102,41 +1124,17 @@ const handleEditProduct = async () => {
                 </View>
               </View>
 
-              {/* Pricing Information - Highlight Price Override */}
+              {/* Pricing Information */}
               <View style={styles.detailSection}>
                 <Text style={styles.detailSectionTitle}>Pricing Information</Text>
                 <View style={styles.detailGrid}>
                   <View style={styles.detailItemLarge}>
                     <Text style={styles.detailLabelLarge}>Your Price</Text>
                     <Text style={styles.detailValueLarge}>₹{selectedItem?.sellingPrice?.toFixed(2) || '0.00'}</Text>
-                    {isPriceOverridden(selectedItem) && (
-                      <View style={styles.overrideIndicator}>
-                        <Ionicons name="pricetag" size={12} color="#FFF" />
-                        <Text style={styles.overrideIndicatorText}>Custom Price</Text>
-                      </View>
-                    )}
                   </View>
                   <View style={styles.detailItemLarge}>
                     <Text style={styles.detailLabelLarge}>Default Price</Text>
                     <Text style={styles.detailValueLarge}>₹{selectedItem?.product?.price?.toFixed(2) || '0.00'}</Text>
-                  </View>
-                  <View style={styles.detailItemLarge}>
-                    <Text style={styles.detailLabelLarge}>Cost Price</Text>
-                    <Text style={styles.detailValueLarge}>₹{selectedItem?.costPrice?.toFixed(2) || selectedItem?.sellingPrice?.toFixed(2) || '0.00'}</Text>
-                  </View>
-                  <View style={styles.detailItemLarge}>
-                    <Text style={styles.detailLabelLarge}>Price Difference</Text>
-                    <Text style={[
-                      styles.detailValueLarge,
-                      isPriceOverridden(selectedItem) ? 
-                        (selectedItem?.sellingPrice > selectedItem?.product?.price ? styles.pricePositive : styles.priceNegative)
-                        : styles.priceNeutral
-                    ]}>
-                      {isPriceOverridden(selectedItem) && selectedItem && selectedItem.product ? 
-                        `${selectedItem.sellingPrice > selectedItem.product.price ? '+' : ''}${(selectedItem.sellingPrice - selectedItem.product.price).toFixed(2)}`
-                        : '0.00'
-                      }
-                    </Text>
                   </View>
                 </View>
               </View>
@@ -1148,7 +1146,7 @@ const handleEditProduct = async () => {
                   <View style={styles.detailItemLarge}>
                     <Text style={styles.detailLabelLarge}>Available Stock</Text>
                     <Text style={styles.detailValueLarge}>
-                      {selectedItem ? getAvailableStock(selectedItem) : 0} {selectedItem ? getProductUnit(selectedItem) : ''}
+                      {selectedItem ? getAvailableStock(selectedItem) : 0}
                     </Text>
                   </View>
                   <View style={styles.detailItemLarge}>
@@ -1402,7 +1400,7 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
   },
 
-  // Consistent Product Card - Matching Products Page
+  // Consistent Product Card - Updated Design
   productCard: {
     backgroundColor: "#FFF",
     borderRadius: 16,
@@ -1445,41 +1443,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#4CAF50',
   },
-  // Price Row with Override
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  // Price Container with Background
+  priceContainer: {
     marginBottom: 6,
   },
-  priceContainer: {
+  priceBackground: {
+    backgroundColor: '#F0F8FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    alignSelf: 'flex-start',
   },
   currentPrice: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.light.accent,
   },
-  originalPrice: {
+  defaultPrice: {
     fontSize: 12,
     color: Colors.light.textSecondary,
     textDecorationLine: 'line-through',
-  },
-  overrideBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
-  },
-  overrideText: {
-    fontSize: 10,
-    color: '#FFF',
-    fontWeight: '600',
+    marginLeft: 8,
   },
   stockStatusRow: {
     flexDirection: "row",
@@ -1533,6 +1519,9 @@ const styles = StyleSheet.create({
   },
   editButton: {
     backgroundColor: '#E8F5E9',
+  },
+  deleteButton: {
+    backgroundColor: '#FFEBEE',
   },
 
   // Empty State - Consistent with Products Page
@@ -1641,17 +1630,6 @@ const styles = StyleSheet.create({
   defaultPriceNote: {
     fontSize: 12,
     color: Colors.light.textSecondary,
-  },
-  priceDifference: {
-    fontSize: 12,
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  priceHigher: {
-    color: '#4CAF50',
-  },
-  priceLower: {
-    color: '#F44336',
   },
   helperText: {
     fontSize: 12,
@@ -1912,7 +1890,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.light.border,
-    position: 'relative',
   },
   detailLabelLarge: {
     fontSize: 14,
@@ -1923,33 +1900,6 @@ const styles = StyleSheet.create({
   detailValueLarge: {
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.light.text,
-  },
-  // Price Override Indicators
-  overrideIndicator: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    gap: 2,
-  },
-  overrideIndicatorText: {
-    fontSize: 9,
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  pricePositive: {
-    color: '#4CAF50',
-  },
-  priceNegative: {
-    color: '#F44336',
-  },
-  priceNeutral: {
     color: Colors.light.text,
   },
 });
