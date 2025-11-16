@@ -144,64 +144,87 @@ export default function OfflineOrder() {
     setTimeout(resetScannerState, 300);
   };
 
-  /* ------------------------------------------------------------------ */
-  /* FIXED BARCODE SCANNING LOGIC                                      */
-  /* ------------------------------------------------------------------ */
-  const handleBarcodeScanned = async ({ data }) => {
-    if (isScanningLocked) return;
+/* ------------------------------------------------------------------ */
+/* FIXED BARCODE SCANNING LOGIC WITH INVENTORY PRICES                */
+/* ------------------------------------------------------------------ */
+const handleBarcodeScanned = async ({ data }) => {
+  if (isScanningLocked) return;
 
-    const barcodeId = data.trim();
-    console.log('🔍 Scanning barcode:', barcodeId);
+  const barcodeId = data.trim();
+  console.log('🔍 Scanning barcode:', barcodeId);
 
-    // Check if recently scanned to prevent duplicates
-    if (recentlyScannedRef.current.has(barcodeId)) {
-      console.log('⏭️ Skipping recently scanned barcode:', barcodeId);
-      return;
-    }
+  // Check if recently scanned to prevent duplicates
+  if (recentlyScannedRef.current.has(barcodeId)) {
+    console.log('⏭️ Skipping recently scanned barcode:', barcodeId);
+    return;
+  }
 
-    // Lock scanning to prevent multiple scans
-    setIsScanningLocked(true);
+  // Lock scanning to prevent multiple scans
+  setIsScanningLocked(true);
+  
+  // Add to recently scanned set with timeout
+  recentlyScannedRef.current.add(barcodeId);
+  setTimeout(() => {
+    recentlyScannedRef.current.delete(barcodeId);
+  }, 3000);
+
+  // Show visual feedback
+  showFlashFeedback();
+
+  // Check if item already exists in cart
+  const existingItem = scannedItems.find((item) => 
+    item.barcodeId === barcodeId || 
+    item.scannedBarcodeId === barcodeId ||
+    item._id === barcodeId
+  );
+
+  if (existingItem) {
+    console.log('⚠️ Item already in cart:', barcodeId);
+    setScanFeedback("duplicate");
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     
-    // Add to recently scanned set with timeout
-    recentlyScannedRef.current.add(barcodeId);
     setTimeout(() => {
-      recentlyScannedRef.current.delete(barcodeId);
-    }, 3000);
+      setIsScanningLocked(false);
+      setScanFeedback(null);
+    }, 1500);
+    return;
+  }
 
-    // Show visual feedback
-    showFlashFeedback();
-
-    // Check if item already exists in cart
-    const existingItem = scannedItems.find((item) => 
-      item.barcodeId === barcodeId || 
-      item.scannedBarcodeId === barcodeId ||
-      item._id === barcodeId
-    );
-
-    if (existingItem) {
-      console.log('⚠️ Item already in cart:', barcodeId);
-      setScanFeedback("duplicate");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  setLoading(true);
+  
+  try {
+    console.log('📡 Fetching product data for barcode:', barcodeId);
+    
+    let productData = null;
+    let retailerPrice = null;
+    
+    // STEP 1: First find the product by barcode
+    try {
+      const response1 = await fetch(
+        `${API_BASE_URL}/api/catalog/products/barcode/${barcodeId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
       
-      setTimeout(() => {
-        setIsScanningLocked(false);
-        setScanFeedback(null);
-      }, 1500);
-      return;
+      if (response1.ok) {
+        const data = await response1.json();
+        if (data.product) {
+          productData = data.product;
+          console.log('✅ Found product by scanned barcode:', productData.name);
+        }
+      }
+    } catch (error) {
+      console.log('❌ Scanned barcode search failed:', error.message);
     }
 
-    setLoading(true);
-    
-    try {
-      console.log('📡 Fetching product data for barcode:', barcodeId);
-      
-      // Try multiple endpoints to find the product
-      let productData = null;
-      
-      // First try: Search by barcode (scanned barcode)
+    // STEP 2: If product not found by barcode, try by product ID
+    if (!productData) {
       try {
-        const response1 = await fetch(
-          `${API_BASE_URL}/api/catalog/products/barcode/${barcodeId}`,
+        const response2 = await fetch(
+          `${API_BASE_URL}/api/catalog/products/${barcodeId}`,
           {
             headers: {
               Authorization: `Bearer ${authToken}`,
@@ -209,118 +232,145 @@ export default function OfflineOrder() {
           }
         );
         
-        if (response1.ok) {
-          const data = await response1.json();
+        if (response2.ok) {
+          const data = await response2.json();
           if (data.product) {
             productData = data.product;
-            console.log('✅ Found product by scanned barcode:', productData.name);
+            console.log('✅ Found product by ID (generated barcode):', productData.name);
           }
         }
       } catch (error) {
-        console.log('❌ Scanned barcode search failed:', error.message);
+        console.log('❌ Product ID search failed:', error.message);
       }
-
-      // Second try: Search by product ID (generated barcode)
-      if (!productData) {
-        try {
-          const response2 = await fetch(
-            `${API_BASE_URL}/api/catalog/products/${barcodeId}`,
-            {
-              headers: {
-                Authorization: `Bearer ${authToken}`,
-              },
-            }
-          );
-          
-          if (response2.ok) {
-            const data = await response2.json();
-            if (data.product) {
-              productData = data.product;
-              console.log('✅ Found product by ID (generated barcode):', productData.name);
-            }
-          }
-        } catch (error) {
-          console.log('❌ Product ID search failed:', error.message);
-        }
-      }
-
-      // Third try: Search all products and filter by barcode
-      if (!productData) {
-        try {
-          const response3 = await fetch(
-            `${API_BASE_URL}/api/catalog/products`,
-            {
-              headers: {
-                Authorization: `Bearer ${authToken}`,
-              },
-            }
-          );
-          
-          if (response3.ok) {
-            const data = await response3.json();
-            const products = Array.isArray(data) ? data : data.products || [];
-            
-            // Look for product with matching barcodeId or scannedBarcodeId
-            productData = products.find(product => 
-              product.barcodeId === barcodeId || 
-              product.scannedBarcodeId === barcodeId ||
-              product._id === barcodeId
-            );
-            
-            if (productData) {
-              console.log('✅ Found product in products list:', productData.name);
-            }
-          }
-        } catch (error) {
-          console.log('❌ Products list search failed:', error.message);
-        }
-      }
-
-      if (!productData) {
-        throw new Error("Product not found for this barcode");
-      }
-
-      // Prepare the item for cart
-      const newItem = {
-        ...productData,
-        productId: productData._id,
-        barcodeId: productData.barcodeId || barcodeId,
-        scannedBarcodeId: productData.scannedBarcodeId || barcodeId,
-        quantity: 1,
-        price: parseFloat(productData.price) || 0,
-        discountedPrice: productData.discount > 0 
-          ? parseFloat(productData.price) * (1 - (productData.discount / 100))
-          : parseFloat(productData.price)
-      };
-
-      console.log('🛒 Adding to cart:', newItem.name, newItem);
-
-      // Add to scanned items
-      setScannedItems((prev) => [...prev, newItem]);
-      setScanFeedback("success");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    } catch (error) {
-      console.error("❌ Scan error:", error);
-      setScanFeedback("error");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      
-      // Show specific error message
-      Alert.alert(
-        "Product Not Found",
-        `No product found for barcode: ${barcodeId}\n\nMake sure the product exists in your catalog and has a barcode assigned.`,
-        [{ text: "OK" }]
-      );
-    } finally {
-      setLoading(false);
-      
-      // Unlock scanning after delay
-      setTimeout(() => {
-        setIsScanningLocked(false);
-        setScanFeedback(null);
-      }, 1500);
     }
-  };
+
+    // STEP 3: If still not found, search all products
+    if (!productData) {
+      try {
+        const response3 = await fetch(
+          `${API_BASE_URL}/api/catalog/products`,
+          {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
+        );
+        
+        if (response3.ok) {
+          const data = await response3.json();
+          const products = Array.isArray(data) ? data : data.products || [];
+          
+          // Look for product with matching barcodeId or scannedBarcodeId
+          productData = products.find(product => 
+            product.barcodeId === barcodeId || 
+            product.scannedBarcodeId === barcodeId ||
+            product._id === barcodeId
+          );
+          
+          if (productData) {
+            console.log('✅ Found product in products list:', productData.name);
+          }
+        }
+      } catch (error) {
+        console.log('❌ Products list search failed:', error.message);
+      }
+    }
+
+    if (!productData) {
+      throw new Error("Product not found for this barcode");
+    }
+
+    // STEP 4: 🔥 CRITICAL FIX - Get retailer's inventory price
+    console.log('💰 Fetching retailer inventory price for product:', productData._id);
+    try {
+      const inventoryResponse = await fetch(
+        `${API_BASE_URL}/api/retailer/inventory`,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
+
+      if (inventoryResponse.ok) {
+        const inventoryData = await inventoryResponse.json();
+        if (inventoryData.success && inventoryData.data) {
+          // Find this product in retailer's inventory
+          const inventoryItem = inventoryData.data.inventory?.find(item => 
+            item.product?._id === productData._id || 
+            item.product?._id === productData.productId
+          );
+
+          if (inventoryItem) {
+            retailerPrice = inventoryItem.sellingPrice;
+            console.log('🎯 Found retailer price:', retailerPrice, 'Default price:', productData.price);
+            
+            if (retailerPrice && retailerPrice !== productData.price) {
+              console.log('💰 Using OVERRIDDEN price from inventory');
+            } else {
+              console.log('💰 Using DEFAULT price from catalog');
+            }
+          } else {
+            console.log('⚠️ Product not found in retailer inventory, using catalog price');
+          }
+        }
+      }
+    } catch (error) {
+      console.log('❌ Inventory fetch failed, using catalog price:', error.message);
+    }
+
+    // STEP 5: Prepare the item for cart with correct price
+    const finalPrice = retailerPrice || parseFloat(productData.price) || 0;
+    const finalDiscountedPrice = productData.discount > 0 
+      ? finalPrice * (1 - (productData.discount / 100))
+      : finalPrice;
+
+    const newItem = {
+      ...productData,
+      productId: productData._id,
+      barcodeId: productData.barcodeId || barcodeId,
+      scannedBarcodeId: productData.scannedBarcodeId || barcodeId,
+      quantity: 1,
+      price: finalPrice, // 🔥 Use retailer's overridden price
+      discountedPrice: finalDiscountedPrice,
+      isPriceOverridden: retailerPrice && retailerPrice !== productData.price, // Track if price is overridden
+      originalPrice: parseFloat(productData.price) || 0 // Keep original for reference
+    };
+
+    console.log('🛒 Adding to cart:', {
+      name: newItem.name,
+      price: newItem.price,
+      originalPrice: newItem.originalPrice,
+      isOverridden: newItem.isPriceOverridden,
+      retailerPrice: retailerPrice
+    });
+
+    // Add to scanned items
+    setScannedItems((prev) => [...prev, newItem]);
+    setScanFeedback("success");
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+  } catch (error) {
+    console.error("❌ Scan error:", error);
+    setScanFeedback("error");
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    
+    // Show specific error message
+    Alert.alert(
+      "Product Not Found",
+      `No product found for barcode: ${barcodeId}\n\nMake sure the product exists in your catalog and has a barcode assigned.`,
+      [{ text: "OK" }]
+    );
+  } finally {
+    setLoading(false);
+    
+    // Unlock scanning after delay
+    setTimeout(() => {
+      setIsScanningLocked(false);
+      setScanFeedback(null);
+    }, 1500);
+  }
+};
 
   const showFlashFeedback = () => {
     flashAnim.setValue(0);
@@ -406,77 +456,80 @@ export default function OfflineOrder() {
     setIsScannerOpen(false);
   };
 
-  const placeOrder = async () => {
-    if (scannedItems.length === 0) {
-      Alert.alert("No Items", "Please scan some items before placing order.");
-      return;
+const placeOrder = async () => {
+  if (scannedItems.length === 0) {
+    Alert.alert("No Items", "Please scan some items before placing order.");
+    return;
+  }
+
+  setLoading(true);
+  
+  try {
+    const orderData = {
+      items: scannedItems.map(item => ({
+        productId: item.productId || item._id,
+        quantity: item.quantity,
+        price: item.discountedPrice || item.price, // This now uses retailer's price
+        originalPrice: item.originalPrice, // Include original price for reference
+        isPriceOverridden: item.isPriceOverridden, // Track if price was overridden
+        barcodeId: item.barcodeId,
+        scannedBarcodeId: item.scannedBarcodeId,
+        productName: item.name
+      })),
+      total: calculateTotal(),
+      subtotal: calculateSubtotal(),
+      discount: calculateDiscount(),
+      orderType: "offline",
+      paymentMethod: "cash",
+      paymentStatus: "paid",
+      status: "completed",
+      priceSource: "retailer_inventory" // Indicate prices came from retailer inventory
+    };
+
+    console.log('💳 Placing offline order with retailer prices:', orderData);
+
+    const response = await fetch(`${API_BASE_URL}/api/orders/offline`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(orderData),
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      throw new Error(responseData.message || "Failed to place order");
     }
 
-    setLoading(true);
-    
-    try {
-      const orderData = {
-        items: scannedItems.map(item => ({
-          productId: item.productId || item._id,
-          quantity: item.quantity,
-          price: item.discountedPrice || item.price,
-          barcodeId: item.barcodeId,
-          scannedBarcodeId: item.scannedBarcodeId,
-          productName: item.name
-        })),
-        total: calculateTotal(),
-        subtotal: calculateSubtotal(),
-        discount: calculateDiscount(),
-        orderType: "offline",
-        paymentMethod: "cash",
-        paymentStatus: "paid",
-        status: "completed"
-      };
-
-      console.log('💳 Placing offline order:', orderData);
-
-      const response = await fetch(`${API_BASE_URL}/api/orders/offline`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify(orderData),
-      });
-
-      const responseData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(responseData.message || "Failed to place order");
-      }
-
-      Alert.alert(
-        "🎉 Order Placed Successfully!",
-        `Offline order has been created.\n\nItems: ${scannedItems.reduce((sum, item) => sum + item.quantity, 0)}\nTotal: ₹${calculateTotal().toFixed(2)}`,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setScannedItems([]);
-              setCurrentView('scanning');
-              router.back();
-            }
+    Alert.alert(
+      "🎉 Order Placed Successfully!",
+      `Offline order has been created.\n\nItems: ${scannedItems.reduce((sum, item) => sum + item.quantity, 0)}\nTotal: ₹${calculateTotal().toFixed(2)}`,
+      [
+        {
+          text: "OK",
+          onPress: () => {
+            setScannedItems([]);
+            setCurrentView('scanning');
+            router.back();
           }
-        ]
-      );
+        }
+      ]
+    );
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    } catch (error) {
-      console.error("❌ Order placement error:", error);
-      Alert.alert(
-        "Order Failed", 
-        error.message || "Failed to place order. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  } catch (error) {
+    console.error("❌ Order placement error:", error);
+    Alert.alert(
+      "Order Failed", 
+      error.message || "Failed to place order. Please try again."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   const backToScanning = () => {
     setCurrentView('scanning');
@@ -791,45 +844,59 @@ export default function OfflineOrder() {
     </View>
   );
 
-  /* ------------------------------------------------------------------ */
-  /* MAIN SCANNING VIEW                                                */
-  /* ------------------------------------------------------------------ */
-  const renderItemCard = (item, index) => (
-    <View key={`${item.barcodeId}-${index}`} style={styles.itemCard}>
-      <Image
-        source={{ uri: item.image || "https://via.placeholder.com/80" }}
-        style={styles.itemImage}
-      />
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+const renderItemCard = (item, index) => (
+  <View key={`${item.barcodeId}-${index}`} style={styles.itemCard}>
+    <Image
+      source={{ uri: item.image || "https://via.placeholder.com/80" }}
+      style={styles.itemImage}
+    />
+    <View style={styles.itemInfo}>
+      <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+      
+      {/* Show price override indicator */}
+      <View style={styles.priceRow}>
         <Text style={styles.itemPrice}>₹{item.discountedPrice || item.price}</Text>
-        {item.scannedBarcodeId && (
-          <Text style={styles.itemBarcode}>Barcode: {item.scannedBarcodeId}</Text>
+        {item.isPriceOverridden && (
+          <View style={styles.overrideBadge}>
+            <Ionicons name="pricetag" size={10} color="#FFF" />
+            <Text style={styles.overrideText}>Custom</Text>
+          </View>
         )}
       </View>
-      <View style={styles.quantityControls}>
-        <TouchableOpacity
-          style={styles.quantityButton}
-          onPress={() => decrementQuantity(item.barcodeId || item.scannedBarcodeId)}
-        >
-          <Ionicons name="remove" size={16} color={Colors.light.text} />
-        </TouchableOpacity>
-        <Text style={styles.quantityText}>{item.quantity}</Text>
-        <TouchableOpacity
-          style={styles.quantityButton}
-          onPress={() => incrementQuantity(item.barcodeId || item.scannedBarcodeId)}
-        >
-          <Ionicons name="add" size={16} color={Colors.light.text} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.removeButton}
-          onPress={() => removeItem(item.barcodeId || item.scannedBarcodeId)}
-        >
-          <Ionicons name="trash-outline" size={16} color="#FF3B30" />
-        </TouchableOpacity>
-      </View>
+      
+      {item.originalPrice && item.isPriceOverridden && (
+        <Text style={styles.originalPriceText}>
+          Default: ₹{item.originalPrice}
+        </Text>
+      )}
+      
+      {item.scannedBarcodeId && (
+        <Text style={styles.itemBarcode}>Barcode: {item.scannedBarcodeId}</Text>
+      )}
     </View>
-  );
+    <View style={styles.quantityControls}>
+      <TouchableOpacity
+        style={styles.quantityButton}
+        onPress={() => decrementQuantity(item.barcodeId || item.scannedBarcodeId)}
+      >
+        <Ionicons name="remove" size={16} color={Colors.light.text} />
+      </TouchableOpacity>
+      <Text style={styles.quantityText}>{item.quantity}</Text>
+      <TouchableOpacity
+        style={styles.quantityButton}
+        onPress={() => incrementQuantity(item.barcodeId || item.scannedBarcodeId)}
+      >
+        <Ionicons name="add" size={16} color={Colors.light.text} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.removeButton}
+        onPress={() => removeItem(item.barcodeId || item.scannedBarcodeId)}
+      >
+        <Ionicons name="trash-outline" size={16} color="#FF3B30" />
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
   const EmptyList = () => (
     <View style={styles.emptyContainer}>
@@ -1557,4 +1624,32 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 16,
   },
+  priceRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginBottom: 2,
+},
+overrideBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: Colors.light.accent,
+  paddingHorizontal: 6,
+  paddingVertical: 2,
+  borderRadius: 4,
+  gap: 2,
+},
+overrideText: {
+  fontSize: 8,
+  color: '#FFF',
+  fontWeight: '600',
+},
+originalPriceText: {
+  fontSize: 10,
+  color: Colors.light.textSecondary,
+  textDecorationLine: 'line-through',
+  marginBottom: 2,
+},
 });
+
+

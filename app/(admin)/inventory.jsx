@@ -1,4 +1,3 @@
-// J:\dairy9\9dairy-UI\app\(admin)\inventory.jsx
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -66,7 +65,7 @@ export default function InventoryScreen() {
   const [transactionType, setTransactionType] = useState("STOCK_IN");
   const [reason, setReason] = useState("PURCHASE");
 
-  // Edit product
+  // Edit product - PRICE OVERRIDE FOCUS
   const [editSellingPrice, setEditSellingPrice] = useState("");
   const [editMinStock, setEditMinStock] = useState("");
   const [editMaxStock, setEditMaxStock] = useState("");
@@ -216,7 +215,7 @@ export default function InventoryScreen() {
     }
   };
 
-  // Add Product to Inventory
+  // Add Product to Inventory - WITH AUTO-REFRESH
   const handleAddProductToInventory = async () => {
     if (!selectedProduct) {
       Alert.alert("Error", "Please select a product");
@@ -255,7 +254,10 @@ export default function InventoryScreen() {
       Alert.alert("Success", "Product added to inventory successfully!");
       resetAddProductModal();
       setAddProductModal(false);
-      fetchData();
+      
+      // AUTO-REFRESH: Fetch updated data immediately
+      await fetchData();
+      
     } catch (e) {
       console.error("Add product error:", e);
       Alert.alert("Error", e.message || "Failed to add product to inventory");
@@ -282,7 +284,7 @@ export default function InventoryScreen() {
     setAddProductModal(true);
   };
 
-  // Stock Update
+  // Stock Update - WITH AUTO-REFRESH
   const handleStockUpdate = async () => {
     if (!selectedItem || !qty) {
       Alert.alert("Error", "Please enter quantity");
@@ -316,7 +318,10 @@ export default function InventoryScreen() {
       Alert.alert("Success", "Stock updated successfully!");
       setStockModal(false);
       resetStockModal();
-      fetchData();
+      
+      // AUTO-REFRESH: Fetch updated data immediately
+      await fetchData();
+      
     } catch (e) {
       console.error("Stock update error:", e);
       Alert.alert("Error", e.message || "Failed to update stock");
@@ -337,7 +342,7 @@ export default function InventoryScreen() {
     setReason("PURCHASE");
   };
 
-  // Edit Product
+  // Edit Product - PRICE OVERRIDE FOCUS WITH AUTO-REFRESH
   const openEditModal = (item) => {
     setSelectedItem(item);
     setEditSellingPrice(item.sellingPrice?.toString() || "");
@@ -346,33 +351,37 @@ export default function InventoryScreen() {
     setEditModal(true);
   };
 
-  const handleEditProduct = async () => {
-    if (!selectedItem) return;
+// In your frontend inventory page
+const handleEditProduct = async () => {
+  if (!selectedItem) return;
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/products/${selectedItem._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sellingPrice: parseFloat(editSellingPrice) || 0,
-          minStockLevel: parseInt(editMinStock) || 0,
-          maxStockLevel: parseInt(editMaxStock) || 0,
-        }),
-      });
+  try {
+    const res = await fetch(`${API_BASE_URL}/products/${selectedItem._id}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sellingPrice: parseFloat(editSellingPrice) || 0,
+        minStockLevel: parseInt(editMinStock) || 0,
+        maxStockLevel: parseInt(editMaxStock) || 0,
+      }),
+    });
 
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
 
-      Alert.alert("Success", "Product updated successfully!");
-      setEditModal(false);
-      fetchData();
-    } catch (e) {
-      Alert.alert("Error", e.message || "Failed to update product");
-    }
-  };
+    Alert.alert("Success", "Product updated successfully!");
+    setEditModal(false);
+    
+    // AUTO-REFRESH: Fetch updated data immediately
+    await fetchData();
+    
+  } catch (e) {
+    Alert.alert("Error", e.message || "Failed to update product");
+  }
+};
 
   // Open Detail Modal
   const openDetailModal = (item) => {
@@ -392,31 +401,37 @@ export default function InventoryScreen() {
 
   // Calculate available stock
   const getAvailableStock = (item) => {
+    if (!item) return 0;
     return Math.max(0, (item.currentStock || 0) - (item.committedStock || 0));
   };
 
   // Get product display name
   const getProductName = (item) => {
+    if (!item) return 'Unknown Product';
     return item.productName || item.product?.name || 'Unknown Product';
   };
 
   // Get product image
   const getProductImage = (item) => {
+    if (!item) return "https://via.placeholder.com/80x80?text=No+Img";
     return item.product?.image || item.image || "https://via.placeholder.com/80x80?text=No+Img";
   };
 
   // Get product unit
   const getProductUnit = (item) => {
+    if (!item) return 'unit';
     return item.product?.unit || 'unit';
   };
 
   // Calculate item sales value
   const getItemSalesValue = (item) => {
+    if (!item) return 0;
     return (item.totalSold || 0) * (item.sellingPrice || 0);
   };
 
   // Calculate item inventory value
   const getItemInventoryValue = (item) => {
+    if (!item) return 0;
     const itemCost = item.costPrice || item.sellingPrice || 0;
     return (item.currentStock || 0) * itemCost;
   };
@@ -430,6 +445,14 @@ export default function InventoryScreen() {
     } else {
       return { color: '#4CAF50', icon: 'check-circle', text: 'In Stock' };
     }
+  };
+
+  // Check if price is overridden from default - FIXED NULL CHECK
+  const isPriceOverridden = (item) => {
+    if (!item || !item.product) return false;
+    const defaultPrice = item.product.price || 0;
+    const currentPrice = item.sellingPrice || 0;
+    return currentPrice !== defaultPrice;
   };
 
   if (authLoading || loading) {
@@ -558,6 +581,8 @@ export default function InventoryScreen() {
           const productUnit = getProductUnit(item);
           const stockStatus = getStockStatus(availableStock, item.minStockLevel || 0);
           const itemSalesValue = getItemSalesValue(item);
+          const priceOverridden = isPriceOverridden(item);
+          const defaultPrice = item?.product?.price || 0;
 
           return (
             <TouchableOpacity 
@@ -581,6 +606,22 @@ export default function InventoryScreen() {
                   </Text>
                 </View>
                 
+                {/* Price Display with Override Indicator */}
+                <View style={styles.priceRow}>
+                  <View style={styles.priceContainer}>
+                    <Text style={styles.currentPrice}>₹{item.sellingPrice?.toFixed(0) || '0'}</Text>
+                    {priceOverridden && (
+                      <Text style={styles.originalPrice}>₹{defaultPrice}</Text>
+                    )}
+                  </View>
+                  {priceOverridden && (
+                    <View style={styles.overrideBadge}>
+                      <Ionicons name="pricetag" size={12} color="#FFF" />
+                      <Text style={styles.overrideText}>Custom</Text>
+                    </View>
+                  )}
+                </View>
+
                 <View style={styles.stockStatusRow}>
                   <MaterialIcons 
                     name={stockStatus.icon} 
@@ -608,8 +649,8 @@ export default function InventoryScreen() {
                     <Text style={styles.detailValue}>{item.totalSold || 0}</Text>
                   </View>
                   <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Price</Text>
-                    <Text style={styles.detailValue}>₹{item.sellingPrice?.toFixed(0) || '0'}</Text>
+                    <Text style={styles.detailLabel}>Min Stock</Text>
+                    <Text style={styles.detailValue}>{item.minStockLevel || 0}</Text>
                   </View>
                 </View>
               </View>
@@ -714,6 +755,7 @@ export default function InventoryScreen() {
                           <Text style={styles.searchResultName}>{product.name}</Text>
                           <Text style={styles.searchResultSku}>SKU: {product.sku}</Text>
                           <Text style={styles.searchResultCategory}>{product.category?.name || 'Uncategorized'}</Text>
+                          <Text style={styles.searchResultPrice}>Default: ₹{product.price}</Text>
                         </View>
                         {selectedProduct?._id === product._id && (
                           <MaterialIcons name="check-circle" size={20} color={Colors.light.accent} />
@@ -743,6 +785,7 @@ export default function InventoryScreen() {
                       <Text style={styles.previewName}>{selectedProduct.name}</Text>
                       <Text style={styles.previewSku}>SKU: {selectedProduct.sku}</Text>
                       <Text style={styles.previewCategory}>{selectedProduct.category?.name || 'Uncategorized'}</Text>
+                      <Text style={styles.previewPrice}>Default Price: ₹{selectedProduct.price}</Text>
                     </View>
                   </View>
                 </View>
@@ -762,14 +805,17 @@ export default function InventoryScreen() {
 
               {/* Pricing Information */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Selling Price (₹) *</Text>
+                <Text style={styles.inputLabel}>Your Selling Price (₹) *</Text>
                 <TextInput
                   style={styles.textInput}
                   keyboardType="numeric"
                   value={sellingPrice}
                   onChangeText={setSellingPrice}
-                  placeholder="Enter selling price"
+                  placeholder="Enter your selling price"
                 />
+                <Text style={styles.helperText}>
+                  You can override the default price of ₹{selectedProduct?.price || '0'}
+                </Text>
               </View>
 
               <View style={styles.inputGroup}>
@@ -940,7 +986,7 @@ export default function InventoryScreen() {
         </View>
       </Modal>
 
-      {/* Edit Product Modal */}
+      {/* Edit Product Modal - PRICE OVERRIDE FOCUS */}
       <Modal visible={editModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -956,19 +1002,36 @@ export default function InventoryScreen() {
                 {selectedItem ? getProductName(selectedItem) : ''}
               </Text>
 
+              {/* Price Override Section */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Selling Price (₹) *</Text>
+                <View style={styles.priceOverrideHeader}>
+                  <Text style={styles.inputLabel}>Your Selling Price (₹) *</Text>
+                  {selectedItem?.product?.price && (
+                    <Text style={styles.defaultPriceNote}>
+                      Default: ₹{selectedItem.product.price}
+                    </Text>
+                  )}
+                </View>
                 <TextInput
                   style={styles.textInput}
                   keyboardType="numeric"
                   value={editSellingPrice}
                   onChangeText={setEditSellingPrice}
-                  placeholder="Enter selling price"
+                  placeholder="Enter your selling price"
                 />
+                {selectedItem?.product?.price && editSellingPrice && (
+                  <Text style={[
+                    styles.priceDifference,
+                    parseFloat(editSellingPrice) > (selectedItem.product.price) ? styles.priceHigher : styles.priceLower
+                  ]}>
+                    {parseFloat(editSellingPrice) > selectedItem.product.price ? '+' : ''}
+                    {(parseFloat(editSellingPrice) - selectedItem.product.price).toFixed(2)} from default
+                  </Text>
+                )}
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Min Stock Level *</Text>
+                <Text style={styles.inputLabel}>Min Stock Level</Text>
                 <TextInput
                   style={styles.textInput}
                   keyboardType="numeric"
@@ -979,7 +1042,7 @@ export default function InventoryScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Max Stock Level *</Text>
+                <Text style={styles.inputLabel}>Max Stock Level</Text>
                 <TextInput
                   style={styles.textInput}
                   keyboardType="numeric"
@@ -998,8 +1061,12 @@ export default function InventoryScreen() {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.submitButton} 
+                style={[
+                  styles.submitButton,
+                  (!editSellingPrice || isNaN(parseFloat(editSellingPrice))) && styles.submitButtonDisabled
+                ]} 
                 onPress={handleEditProduct}
+                disabled={!editSellingPrice || isNaN(parseFloat(editSellingPrice))}
               >
                 <Text style={styles.submitButtonText}>Save Changes</Text>
               </TouchableOpacity>
@@ -1035,6 +1102,45 @@ export default function InventoryScreen() {
                 </View>
               </View>
 
+              {/* Pricing Information - Highlight Price Override */}
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Pricing Information</Text>
+                <View style={styles.detailGrid}>
+                  <View style={styles.detailItemLarge}>
+                    <Text style={styles.detailLabelLarge}>Your Price</Text>
+                    <Text style={styles.detailValueLarge}>₹{selectedItem?.sellingPrice?.toFixed(2) || '0.00'}</Text>
+                    {isPriceOverridden(selectedItem) && (
+                      <View style={styles.overrideIndicator}>
+                        <Ionicons name="pricetag" size={12} color="#FFF" />
+                        <Text style={styles.overrideIndicatorText}>Custom Price</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.detailItemLarge}>
+                    <Text style={styles.detailLabelLarge}>Default Price</Text>
+                    <Text style={styles.detailValueLarge}>₹{selectedItem?.product?.price?.toFixed(2) || '0.00'}</Text>
+                  </View>
+                  <View style={styles.detailItemLarge}>
+                    <Text style={styles.detailLabelLarge}>Cost Price</Text>
+                    <Text style={styles.detailValueLarge}>₹{selectedItem?.costPrice?.toFixed(2) || selectedItem?.sellingPrice?.toFixed(2) || '0.00'}</Text>
+                  </View>
+                  <View style={styles.detailItemLarge}>
+                    <Text style={styles.detailLabelLarge}>Price Difference</Text>
+                    <Text style={[
+                      styles.detailValueLarge,
+                      isPriceOverridden(selectedItem) ? 
+                        (selectedItem?.sellingPrice > selectedItem?.product?.price ? styles.pricePositive : styles.priceNegative)
+                        : styles.priceNeutral
+                    ]}>
+                      {isPriceOverridden(selectedItem) && selectedItem && selectedItem.product ? 
+                        `${selectedItem.sellingPrice > selectedItem.product.price ? '+' : ''}${(selectedItem.sellingPrice - selectedItem.product.price).toFixed(2)}`
+                        : '0.00'
+                      }
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
               {/* Stock Information */}
               <View style={styles.detailSection}>
                 <Text style={styles.detailSectionTitle}>Stock Information</Text>
@@ -1060,18 +1166,10 @@ export default function InventoryScreen() {
                 </View>
               </View>
 
-              {/* Pricing Information */}
+              {/* Value Information */}
               <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Pricing & Value</Text>
+                <Text style={styles.detailSectionTitle}>Value Information</Text>
                 <View style={styles.detailGrid}>
-                  <View style={styles.detailItemLarge}>
-                    <Text style={styles.detailLabelLarge}>Selling Price</Text>
-                    <Text style={styles.detailValueLarge}>₹{selectedItem?.sellingPrice?.toFixed(2) || '0.00'}</Text>
-                  </View>
-                  <View style={styles.detailItemLarge}>
-                    <Text style={styles.detailLabelLarge}>Cost Price</Text>
-                    <Text style={styles.detailValueLarge}>₹{selectedItem?.costPrice?.toFixed(2) || selectedItem?.sellingPrice?.toFixed(2) || '0.00'}</Text>
-                  </View>
                   <View style={styles.detailItemLarge}>
                     <Text style={styles.detailLabelLarge}>Sales Value</Text>
                     <Text style={styles.detailValueLarge}>₹{selectedItem ? getItemSalesValue(selectedItem).toLocaleString() : '0'}</Text>
@@ -1110,10 +1208,10 @@ export default function InventoryScreen() {
                 style={styles.submitButton}
                 onPress={() => {
                   setDetailModal(false);
-                  openStockModal(selectedItem);
+                  openEditModal(selectedItem);
                 }}
               >
-                <Text style={styles.submitButtonText}>Update Stock</Text>
+                <Text style={styles.submitButtonText}>Edit Price & Settings</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1347,6 +1445,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#4CAF50',
   },
+  // Price Row with Override
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  currentPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.accent,
+  },
+  originalPrice: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  overrideBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  overrideText: {
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '600',
+  },
   stockStatusRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1498,6 +1632,33 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
     marginBottom: 8,
   },
+  // Price Override Styles
+  priceOverrideHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  defaultPriceNote: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+  priceDifference: {
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  priceHigher: {
+    color: '#4CAF50',
+  },
+  priceLower: {
+    color: '#F44336',
+  },
+  helperText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1555,6 +1716,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.light.accent,
   },
+  searchResultPrice: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+  },
   noResults: {
     padding: 16,
     alignItems: 'center',
@@ -1606,6 +1771,10 @@ const styles = StyleSheet.create({
   previewCategory: {
     fontSize: 12,
     color: Colors.light.accent,
+  },
+  previewPrice: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
   },
 
   chipScroll: {
@@ -1743,6 +1912,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.light.border,
+    position: 'relative',
   },
   detailLabelLarge: {
     fontSize: 14,
@@ -1753,6 +1923,33 @@ const styles = StyleSheet.create({
   detailValueLarge: {
     fontSize: 18,
     fontWeight: '700',
+    color: Colors.light.text,
+  },
+  // Price Override Indicators
+  overrideIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 2,
+  },
+  overrideIndicatorText: {
+    fontSize: 9,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  pricePositive: {
+    color: '#4CAF50',
+  },
+  priceNegative: {
+    color: '#F44336',
+  },
+  priceNeutral: {
     color: Colors.light.text,
   },
 });
