@@ -1,21 +1,37 @@
 // contexts/CartContext.jsx
 import createContextHook from "@nkzw/create-context-hook";
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { useProfile } from "./ProfileContext";
 
 export const [CartProvider, useCart] = createContextHook(() => {
-  const { checkCartItemsAvailability, cartItemsStatus } = useProfile();
+  const { checkCartItemsAvailability, cartItemsStatus, clearCartStatus } = useProfile();
   
   const [items, setItems] = useState([]);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  
+  // ⭐ Use ref to prevent infinite loops
+  const itemsRef = useRef(items);
+  const isCheckingRef = useRef(false);
 
-  // ⭐ NEW: Check cart items availability when items change
+  // Update ref when items change
   useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  // ⭐ FIXED: Check cart items availability with proper dependencies
+  useEffect(() => {
+    if (isCheckingRef.current) return;
+    
     if (items.length > 0) {
-      checkCartItemsAvailability(items);
+      isCheckingRef.current = true;
+      checkCartItemsAvailability(items).finally(() => {
+        isCheckingRef.current = false;
+      });
+    } else {
+      clearCartStatus();
     }
-  }, [items.length, checkCartItemsAvailability]);
+  }, [items.length]); // ⭐ Only depend on items.length, not items array
 
   const addToCart = useCallback((product) => {
     setItems((prev) => {
@@ -66,7 +82,8 @@ export const [CartProvider, useCart] = createContextHook(() => {
 
   const clearCart = useCallback(() => {
     setItems([]);
-  }, []);
+    clearCartStatus();
+  }, [clearCartStatus]);
 
   const getTotalPrice = useCallback(() => {
     return items.reduce(
@@ -84,20 +101,27 @@ export const [CartProvider, useCart] = createContextHook(() => {
     return item ? item.quantity : 0;
   }, [items]);
 
-  // ⭐ NEW: Get unavailable items count
+  // ⭐ Get unavailable items count
   const getUnavailableItemsCount = useCallback(() => {
     return cartItemsStatus.filter(item => item.isOutOfStock).length;
   }, [cartItemsStatus]);
 
-  // ⭐ NEW: Check if cart has unavailable items
+  // ⭐ Check if cart has unavailable items
   const hasUnavailableItems = useCallback(() => {
     return cartItemsStatus.some(item => item.isOutOfStock);
   }, [cartItemsStatus]);
 
-  // ⭐ NEW: Get items that need quantity adjustment
+  // ⭐ Get items that need quantity adjustment
   const getItemsNeedingAdjustment = useCallback(() => {
     return cartItemsStatus.filter(item => 
       item.isAvailable && item.availableStock < item.requestedQuantity
+    );
+  }, [cartItemsStatus]);
+
+  // ⭐ Get item status by product ID
+  const getItemStatus = useCallback((productId) => {
+    return cartItemsStatus.find(status => 
+      status.productId === productId
     );
   }, [cartItemsStatus]);
 
@@ -105,21 +129,23 @@ export const [CartProvider, useCart] = createContextHook(() => {
     items,
     addToCart,
     removeFromCart,
-    setItemQuantity, // ⭐ NEW
+    setItemQuantity,
     clearCart,
     getTotalPrice,
     getTotalItems,
     getItemQuantity,
     showToast,
     toastMessage,
-    // ⭐ NEW functions
+    // ⭐ Cart status functions
     getUnavailableItemsCount,
     hasUnavailableItems,
     getItemsNeedingAdjustment,
+    getItemStatus,
     cartItemsStatus
   }), [
     items, addToCart, removeFromCart, setItemQuantity, clearCart, 
     getTotalPrice, getTotalItems, getItemQuantity, showToast, toastMessage,
-    getUnavailableItemsCount, hasUnavailableItems, getItemsNeedingAdjustment, cartItemsStatus
+    getUnavailableItemsCount, hasUnavailableItems, getItemsNeedingAdjustment, 
+    getItemStatus, cartItemsStatus
   ]);
 });

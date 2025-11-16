@@ -1,10 +1,10 @@
-// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\(tabs)\cart.jsx
+// app/(tabs)/cart.jsx
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Alert,
   Image,
@@ -15,9 +15,6 @@ import {
   View,
   Dimensions,
   ActivityIndicator,
-  Platform,
-  Modal,
-  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useProfile } from "@/contexts/ProfileContext";
@@ -27,109 +24,29 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const MIN_TOUCH = 44;
 
 export default function CartScreen() {
-  const { items, addToCart, removeFromCart, getTotalPrice, clearCart, setItemQuantity } = useCart();
+  const { 
+    items, 
+    addToCart, 
+    removeFromCart, 
+    getTotalPrice, 
+    clearCart, 
+    setItemQuantity,
+    hasUnavailableItems,
+    getItemStatus,
+    cartItemsStatus
+  } = useCart();
+  
   const { authToken, isAuthenticated, validateToken, logout } = useAuth();
-  const profile = useProfile(); // contains assignedRetailer, deliveryAddress, currentLocation (we will not display)
-  const serverAssignedRetailer = profile?.assignedRetailer ?? null;
-  const profileDeliveryAddress = profile?.deliveryAddress ?? null;
-  const profileCurrentLocation = profile?.currentLocation ?? null;
+  const { checkCartItemsAvailability } = useProfile();
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [loading, setLoading] = useState(false); // for network ops
-  const [busy, setBusy] = useState(false); // for validation/short ops
-  const [inventory, setInventory] = useState([]); // latest retailer inventory
-  const [assigning, setAssigning] = useState(false);
-  const [itemStatuses, setItemStatuses] = useState({}); // productId -> { available, reason, availableQty, priceUsed }
-
-  // chosenAddress handled at checkout — cart will not show or change address
-  const [chosenAddress, setChosenAddress] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // helpers: product id normalization
   const productIdOf = (p) => p?.id || p?._id || p?.productId || null;
-
-  // ----------------------
-  // Fetch inventory for assigned retailer (customer endpoint)
-  // ----------------------
-  const fetchInventoryForCustomer = async () => {
-    if (!authToken) return [];
-    try {
-      const res = await fetch(`${API_BASE_URL}/customer/inventory`, {
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-      });
-      const j = await res.json();
-      if (!res.ok) {
-        console.warn("Inventory fetch failed:", j);
-        return [];
-      }
-      return j?.data?.inventory ?? [];
-    } catch (err) {
-      console.error("Inventory fetch error:", err);
-      return [];
-    }
-  };
-
-  // ----------------------
-  // Reconcile cart against inventory
-  // ----------------------
-  const reconcileCartWithInventory = (inv = []) => {
-    const map = new Map();
-    inv.forEach((entry) => {
-      const prod = entry?.product ?? {};
-      const idKeys = [prod?.id, prod?._id, prod?.productId, prod?.sku].filter(Boolean);
-      idKeys.forEach((k) => map.set(String(k), entry));
-      if (prod?.name) map.set(`name:${prod.name.toLowerCase().trim()}`, entry);
-    });
-
-    const statuses = {};
-    items.forEach((cartItem) => {
-      const pid = productIdOf(cartItem.product);
-      let matched = null;
-      if (pid && map.has(String(pid))) matched = map.get(String(pid));
-      else if (cartItem.product?.name && map.has(`name:${cartItem.product.name.toLowerCase().trim()}`)) {
-        matched = map.get(`name:${cartItem.product.name.toLowerCase().trim()}`);
-      }
-
-      if (!matched) {
-        statuses[pid || cartItem.product._id] = {
-          available: false,
-          reason: "not_sold_by_retailer",
-          availableQty: 0,
-          priceUsed: cartItem.product.price ?? 0,
-        };
-      } else {
-        const stock = matched.currentStock ?? null;
-        const sellingPrice = matched.sellingPrice ?? null;
-        if (stock === null || stock === undefined) {
-          statuses[pid] = {
-            available: true,
-            reason: "available_unknown_stock",
-            availableQty: Number.MAX_SAFE_INTEGER,
-            priceUsed: sellingPrice ?? cartItem.product.price ?? 0,
-          };
-        } else if (Number(stock) <= 0) {
-          statuses[pid] = {
-            available: false,
-            reason: "out_of_stock",
-            availableQty: 0,
-            priceUsed: sellingPrice ?? cartItem.product.price ?? 0,
-          };
-        } else {
-          const qty = cartItem.quantity ?? 0;
-          statuses[pid] = {
-            available: Number(stock) >= qty,
-            reason: Number(stock) >= qty ? "ok" : "partial_stock",
-            availableQty: Number(stock),
-            priceUsed: sellingPrice ?? cartItem.product.price ?? 0,
-          };
-        }
-      }
-    });
-
-    setItemStatuses(statuses);
-    return statuses;
-  };
 
   // ----------------------
   // Totals using retailer price when available
@@ -138,73 +55,34 @@ export default function CartScreen() {
     let itemsTotal = 0;
     items.forEach((it) => {
       const pid = productIdOf(it.product);
-      const status = itemStatuses[pid];
+      const status = getItemStatus(pid);
       const price = status?.priceUsed ?? it.product?.price ?? 0;
       itemsTotal += Number(price) * (it.quantity ?? 0);
     });
     return { itemsTotal };
-  }, [items, itemStatuses]);
+  }, [items, getItemStatus]);
 
   // ----------------------
-  // Derived flags
-  // ----------------------
-  const { hasUnavailable, unavailableItems, hasPartial } = useMemo(() => {
-    const unavailable = [];
-    const partial = [];
-    Object.entries(itemStatuses).forEach(([pid, s]) => {
-      if (!s) return;
-      if (!s.available && (s.reason === "not_sold_by_retailer" || s.reason === "out_of_stock")) unavailable.push(pid);
-      if (s.reason === "partial_stock") partial.push({ pid, availableQty: s.availableQty });
-    });
-    return {
-      hasUnavailable: unavailable.length > 0,
-      unavailableItems: unavailable,
-      hasPartial: partial.length > 0,
-    };
-  }, [itemStatuses]);
-
-  // ----------------------
-  // Init: fetch inventory if retailer exists (silent); reconcile cart
+  // FIXED: Refresh cart status only once when screen focuses
   // ----------------------
   useEffect(() => {
-    let mounted = true;
-    const init = async () => {
-      setLoading(true);
-      try {
-        if (!authToken) {
-          setLoading(false);
-          return;
-        }
-
-        // fetch inventory for customer (server-side assignment applies)
-        const inv = await fetchInventoryForCustomer();
-        if (!mounted) return;
-        setInventory(inv);
-        reconcileCartWithInventory(inv);
-
-        // do not change or show chosenAddress here — checkout will handle it
-        // keep chosenAddress null (checkout uses profile or ask at checkout)
-      } catch (err) {
-        console.error("Init cart error:", err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    init();
-    return () => {
-      mounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authToken, serverAssignedRetailer]);
+    if (items.length > 0) {
+      const timer = setTimeout(() => {
+        checkCartItemsAvailability(items);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, []); // ⭐ Empty dependency array - run only once
 
   // ----------------------
   // Auth helpers
   // ----------------------
-  const handleApiAuthIssue = () => {
+  const handleApiAuthIssue = useCallback(() => {
     Alert.alert("Session Expired", "Please login again.", [{ text: "OK", onPress: () => logout() }]);
-  };
+  }, [logout]);
 
-  const validateAuthBeforeCall = async () => {
+  const validateAuthBeforeCall = useCallback(async () => {
     if (!authToken || !isAuthenticated) {
       Alert.alert("Login Required", "Please login to place an order", [{ text: "Cancel", style: "cancel" }, { text: "Login", onPress: () => router.push("/Login") }]);
       return false;
@@ -215,25 +93,41 @@ export default function CartScreen() {
       return false;
     }
     return true;
-  };
+  }, [authToken, isAuthenticated, validateToken, handleApiAuthIssue, router]);
 
   // ----------------------
-  // Remove item helper
+  // Handle resolve unavailable items
   // ----------------------
-  const removeItem = (product) => {
-    const pid = productIdOf(product);
-    removeFromCart(pid);
-    setItemStatuses((prev) => {
-      const copy = { ...prev };
-      delete copy[pid];
-      return copy;
+  const handleResolveUnavailableItems = useCallback(() => {
+    const unavailableItems = items.filter(item => {
+      const status = getItemStatus(productIdOf(item.product));
+      return status?.isOutOfStock;
     });
-  };
+
+    if (unavailableItems.length > 0) {
+      Alert.alert(
+        "Remove Unavailable Items",
+        `The following items are not available at your current location:\n\n${unavailableItems.map(item => `• ${item.product.name}`).join('\n')}\n\nDo you want to remove them?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { 
+            text: "Remove All", 
+            style: "destructive",
+            onPress: () => {
+              unavailableItems.forEach(item => {
+                removeFromCart(productIdOf(item.product));
+              });
+            }
+          }
+        ]
+      );
+    }
+  }, [items, getItemStatus, removeFromCart]);
 
   // ----------------------
   // Continue to checkout flow
   // ----------------------
-  const handleContinueToCheckout = async () => {
+  const handleContinueToCheckout = useCallback(async () => {
     if (items.length === 0) {
       Alert.alert("Cart empty", "Add some items before checkout.");
       return;
@@ -242,129 +136,67 @@ export default function CartScreen() {
     const ok = await validateAuthBeforeCall();
     if (!ok) return;
 
-    // re-validate inventory silently
+    // Refresh cart status
     setBusy(true);
-    try {
-      const inv = await fetchInventoryForCustomer();
-      setInventory(inv);
-      const statuses = reconcileCartWithInventory(inv);
+    await checkCartItemsAvailability(items);
 
-      // compute unavailable & partial with product names
-      const unavailable = [];
-      const partial = [];
-
-      items.forEach((it) => {
-        const pid = productIdOf(it.product);
-        const s = statuses[pid];
-        if (!s) unavailable.push({ product: it.product, reason: "unknown" });
-        else if (!s.available && (s.reason === "not_sold_by_retailer" || s.reason === "out_of_stock")) unavailable.push({ product: it.product, reason: s.reason });
-        else if (s.reason === "partial_stock") partial.push({ product: it.product, availableQty: s.availableQty });
-      });
-
-      if (unavailable.length > 0) {
-        Alert.alert(
-          "Some items are unavailable",
-          `The following items are not available from your assigned retailer:\n\n${unavailable.map(u => `• ${u.product.name}`).join("\n")}\n\nRemove them to continue.`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Remove items",
-              style: "destructive",
-              onPress: () => unavailable.forEach(u => removeItem(u.product)),
-            }
-          ]
-        );
-        setBusy(false);
-        return;
-      }
-
-      if (partial.length > 0) {
-        Alert.alert(
-          "Limited stock",
-          `Some items have less stock than requested. Example:\n\n${partial.map(p => `• ${p.product.name} — available ${p.availableQty}`).join("\n")}\n\nAuto-adjust to available quantity?`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Auto-adjust",
-              onPress: () => {
-                partial.forEach(p => {
-                  const pid = productIdOf(p.product);
-                  try {
-                    if (setItemQuantity) setItemQuantity(pid, p.availableQty);
-                    else {
-                      removeFromCart(pid);
-                      for (let i = 0; i < p.availableQty; i++) addToCart(p.product);
-                    }
-                  } catch (e) {
-                    console.warn("Auto-adjust failed", e);
-                  }
-                });
-                // After adjustments user should re-continue
-              }
-            }
-          ]
-        );
-        setBusy(false);
-        return;
-      }
-
-      // Everything good -> go to checkout. Checkout screen should request/confirm address.
-      router.push({
-        pathname: "/checkout",
-        params: { chosenAddressType: null } // checkout will handle selecting address
-      });
-    } catch (err) {
-      console.error("Checkout validation error:", err);
-      Alert.alert("Error", "Failed to validate cart. Please try again.");
-    } finally {
+    // Check if still has unavailable items
+    if (hasUnavailableItems()) {
+      Alert.alert(
+        "Unavailable Items", 
+        "Some items in your cart are not available at your current location. Please remove them to continue.",
+        [{ text: "OK" }]
+      );
       setBusy(false);
+      return;
     }
-  };
 
-  // ----------------------
-  // Optional: place order directly
-  // ----------------------
-  const placeOrderNow = async () => {
-    const ok = await validateAuthBeforeCall();
-    if (!ok) return;
-    setLoading(true);
-    try {
-      const payloadItems = items.map((it) => {
-        const pid = productIdOf(it.product);
-        const status = itemStatuses[pid];
-        const price = status?.priceUsed ?? it.product?.price ?? 0;
-        return { productId: pid, quantity: it.quantity, unitPrice: price };
-      });
+    // Check for items needing quantity adjustment
+    const itemsNeedingAdjustment = cartItemsStatus.filter(item => 
+      item.isAvailable && item.availableStock < item.requestedQuantity
+    );
 
-      // Checkout will provide address; we send a placeholder here or you can remove this function if not used.
-      const deliveryAddress = profileDeliveryAddress ?? {};
+    if (itemsNeedingAdjustment.length > 0) {
+      const adjustmentMessage = itemsNeedingAdjustment.map(item => {
+        const product = items.find(i => productIdOf(i.product) === item.productId);
+        return `• ${product?.product.name} - Available: ${item.availableQty}`;
+      }).join('\n');
 
-      const orderData = { items: payloadItems, deliveryAddress, paymentMethod: "cash" };
-
-      const res = await fetch(`${API_BASE_URL}/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify(orderData),
-      });
-
-      const j = await res.json();
-      if (!res.ok) {
-        if (j?.message?.includes("Unauthorized") || j?.status === 401) { handleApiAuthIssue(); return; }
-        throw new Error(j?.message || "Order failed");
-      }
-
-      if (j?.success) {
-        Alert.alert("Order Placed", `Order id: ${j.order.orderId}\nTotal: ₹${j.order.finalAmount}`, [
-          { text: "OK", onPress: () => { clearCart(); router.push("/(tabs)/orders"); } }
-        ]);
-      } else throw new Error(j?.message || "Order failed");
-    } catch (err) {
-      console.error("Place order error:", err);
-      Alert.alert("Error", err.message || "Failed to place order");
-    } finally {
-      setLoading(false);
+      Alert.alert(
+        "Limited Stock Available",
+        `Some items have limited stock:\n\n${adjustmentMessage}\n\nWe'll auto-adjust quantities for you.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Auto-Adjust & Continue",
+            onPress: () => {
+              // Auto-adjust quantities
+              itemsNeedingAdjustment.forEach(adjustment => {
+                setItemQuantity(adjustment.productId, adjustment.availableQty);
+              });
+              
+              // Proceed to checkout after adjustment
+              setTimeout(() => {
+                router.push({
+                  pathname: "/checkout",
+                  params: { chosenAddressType: null }
+                });
+              }, 1000);
+            }
+          }
+        ]
+      );
+      setBusy(false);
+      return;
     }
-  };
+
+    // Everything is good, proceed to checkout
+    router.push({
+      pathname: "/checkout",
+      params: { chosenAddressType: null }
+    });
+    setBusy(false);
+  }, [items, validateAuthBeforeCall, checkCartItemsAvailability, hasUnavailableItems, cartItemsStatus, setItemQuantity, router]);
 
   // ----------------------
   // Empty state UI
@@ -414,15 +246,19 @@ export default function CartScreen() {
         <View style={styles.itemsList}>
           {items.map((item) => {
             const pid = productIdOf(item.product);
-            const status = itemStatuses[pid] ?? {};
-            const availabilityText = !status.available
-              ? status.reason === "not_sold_by_retailer" ? "Not sold by retailer" : status.reason === "out_of_stock" ? "Out of stock" : "Unavailable"
-              : status.reason === "partial_stock" ? `Only ${status.availableQty} available` : "";
+            const status = getItemStatus(pid);
+            
+            const availabilityText = status?.isOutOfStock 
+              ? "Not available at this location"
+              : status?.outOfStockMessage || "";
 
             const priceToShow = status?.priceUsed ?? item.product.price ?? 0;
 
             return (
-              <View key={pid || item.product._id} style={styles.cartItem}>
+              <View key={pid || item.product._id} style={[
+                styles.cartItem,
+                status?.isOutOfStock && styles.unavailableItem
+              ]}>
                 <Image
                   source={typeof item.product.image === "string" ? { uri: item.product.image } : item.product.image ? item.product.image : require("../../assets/images/NO-IMAGE.png")}
                   style={styles.productImage}
@@ -434,20 +270,31 @@ export default function CartScreen() {
                   <Text style={styles.productPrice}>₹{priceToShow}</Text>
 
                   {availabilityText ? (
-                    <Text style={[styles.availabilityText, status.available ? styles.availableText : styles.unavailableText]}>
+                    <Text style={[
+                      styles.availabilityText, 
+                      status?.isOutOfStock ? styles.unavailableText : styles.availableText
+                    ]}>
                       {availabilityText}
                     </Text>
                   ) : null}
                 </View>
 
                 <View style={styles.quantityContainer}>
-                  <TouchableOpacity style={styles.quantityButton} onPress={() => removeFromCart(pid)} disabled={busy} accessibilityLabel="Decrease quantity">
+                  <TouchableOpacity 
+                    style={styles.quantityButton} 
+                    onPress={() => removeFromCart(pid)} 
+                    disabled={busy}
+                  >
                     <Feather name="minus" size={16} color={Colors.light.text} />
                   </TouchableOpacity>
 
                   <Text style={styles.quantity}>{item.quantity}</Text>
 
-                  <TouchableOpacity style={styles.quantityButton} onPress={() => addToCart(item.product)} disabled={busy} accessibilityLabel="Increase quantity">
+                  <TouchableOpacity 
+                    style={styles.quantityButton} 
+                    onPress={() => addToCart(item.product)} 
+                    disabled={busy}
+                  >
                     <Feather name="plus" size={16} color={Colors.light.text} />
                   </TouchableOpacity>
                 </View>
@@ -476,14 +323,6 @@ export default function CartScreen() {
             <Text style={styles.totalValue}>₹{computedTotals.itemsTotal.toFixed(2)}</Text>
           </View>
         </View>
-
-        <View style={styles.infoSection}>
-          <View style={{ marginTop: 12 }}>
-            <View style={{ flexDirection: "row", marginTop: 12 }}>
-              {/* No 'Use current' or 'Use home' toggles here — address handled at checkout */}
-            </View>
-          </View>
-        </View>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -493,19 +332,31 @@ export default function CartScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.checkoutButton, (busy || loading || hasUnavailable) && styles.buttonDisabled]}
-          onPress={handleContinueToCheckout}
-          disabled={busy || loading || hasUnavailable}
-          accessibilityLabel="Continue to checkout"
+          style={[
+            styles.checkoutButton, 
+            (busy || loading || hasUnavailableItems()) && styles.buttonDisabled
+          ]}
+          onPress={hasUnavailableItems() ? handleResolveUnavailableItems : handleContinueToCheckout}
+          disabled={busy || loading}
         >
-          {busy || loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.checkoutButtonText}>{hasUnavailable ? "Resolve items" : "Continue"}</Text>}
+          {busy || loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.checkoutButtonText}>
+              {hasUnavailableItems() 
+                ? "Resolve Unavailable Items" 
+                : `Continue - ₹${getTotalPrice()}`
+              }
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-/* Styles (kept compact and responsive) */
+
+// Styles remain the same as your original...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.light.border },
@@ -521,6 +372,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: 160 },
   itemsList: { padding: 12 },
   cartItem: { flexDirection: "row", backgroundColor: "#FFF", borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: Colors.light.border, alignItems: "center" },
+  unavailableItem: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
   productImage: { width: Math.min(96, Math.floor(SCREEN_WIDTH * 0.22)), height: Math.min(96, Math.floor(SCREEN_WIDTH * 0.22)), borderRadius: 8, backgroundColor: "#f5f5f5" },
   itemInfo: { flex: 1, marginLeft: 12, justifyContent: "center" },
   productName: { fontSize: 15, fontWeight: "700", color: Colors.light.text, marginBottom: 4 },
@@ -541,9 +393,6 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: Colors.light.border, marginVertical: 12 },
   totalLabel: { fontSize: 16, fontWeight: "700", color: Colors.light.text },
   totalValue: { fontSize: 18, fontWeight: "700", color: Colors.light.text },
-  infoSection: { marginHorizontal: 16, backgroundColor: "#FFF", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.light.border, marginBottom: 12 },
-  infoItem: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  infoText: { fontSize: 14, color: Colors.light.textSecondary, marginLeft: 8 },
   footer: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#FFF", borderTopWidth: 1, borderTopColor: Colors.light.border, paddingHorizontal: 16, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 16, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 8 },
   totalSection: { flex: 1 },
   footerLabel: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
@@ -551,20 +400,4 @@ const styles = StyleSheet.create({
   checkoutButton: { backgroundColor: Colors.light.tint, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 12, minWidth: 120, alignItems: "center", justifyContent: "center" },
   buttonDisabled: { backgroundColor: "#9ca3af" },
   checkoutButtonText: { color: "#FFF", fontSize: 15, fontWeight: "700" },
-  smallToggle: { backgroundColor: Colors.light.tint, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginRight: 8, minHeight: MIN_TOUCH, justifyContent: "center" },
-  smallToggleText: { color: "#fff", fontWeight: "700" },
-  smallToggleGhost: { backgroundColor: "#F3F4F6", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, minHeight: MIN_TOUCH, justifyContent: "center" },
-  smallToggleGhostText: { color: Colors.light.text },
-});
-
-/* Modal styles (kept if you later want to re-enable modal) */
-const modalStyles = StyleSheet.create({
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" },
-  modalBox: { width: Math.min(520, SCREEN_WIDTH - 40), backgroundColor: "#FFF", borderRadius: 12, padding: 18, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 12, elevation: Platform.OS === "android" ? 6 : 12 },
-  title: { fontSize: 18, fontWeight: "700", marginBottom: 6, color: Colors.light.text },
-  subtitle: { color: Colors.light.textSecondary, marginBottom: 12 },
-  primaryBtn: { backgroundColor: Colors.light.tint, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 8, alignItems: "center", justifyContent: "center", marginRight: 8 },
-  primaryBtnText: { color: "#fff", fontWeight: "700" },
-  ghostBtn: { backgroundColor: "#F3F4F6", paddingVertical: 12, paddingHorizontal: 14, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  ghostBtnText: { color: Colors.light.text },
 });
