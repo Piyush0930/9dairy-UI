@@ -63,7 +63,6 @@ export default function Signup() {
   const [resendLoading, setResendLoading] = useState(false);
   const [userId, setUserId] = useState(null);
   const [locationData, setLocationData] = useState(null);
-  const [generatedOtp, setGeneratedOtp] = useState(''); // NEW: Store the actual OTP from backend
   const router = useRouter();
   const otpRefs = useRef([]);
 
@@ -102,11 +101,6 @@ export default function Signup() {
     
     if (!contactNo || contactNo.length !== 10 || !/^\d+$/.test(contactNo)) {
       showAlert('Validation Error', 'Please enter a valid 10-digit contact number');
-      return false;
-    }
-    
-    if (userType === 'admin' && !shopName.trim()) {
-      showAlert('Validation Error', 'Please enter shop name');
       return false;
     }
     
@@ -190,7 +184,6 @@ export default function Signup() {
       address: locationData?.formattedAddress || address,
       contactNo,
       userType,
-      ...(userType === 'admin' && { shopName }),
       ...locationParams  // ✅ Direct parameters, NOT nested under location
     };
 
@@ -215,16 +208,6 @@ export default function Signup() {
     console.log('✅ Server response:', data);
 
     if (data.success) {
-      // NEW: Store the actual OTP from backend for display
-      if (data.debug && data.debug.otp) {
-        setGeneratedOtp(data.debug.otp);
-      } else {
-        // If no debug OTP in response, generate a random one for testing
-        const testOtp = Math.floor(100000 + Math.random() * 900000).toString();
-        setGeneratedOtp(testOtp);
-        console.log('Generated test OTP:', testOtp);
-      }
-      
       setUserId(data.userId);
       if (!isResend) {
         setOtpShown(true);
@@ -319,7 +302,6 @@ export default function Signup() {
     setOtpShown(false);
     setUserId(null);
     setLocationData(null);
-    setGeneratedOtp(''); // NEW: Clear generated OTP
   };
 
   return (
@@ -346,28 +328,6 @@ export default function Signup() {
 
         {/* Main Content */}
         <View style={styles.mainContent}>
-          {/* User Type Toggle */}
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[styles.toggleButton, userType === 'customer' && styles.toggleButtonActive]}
-              onPress={() => setUserType('customer')}
-              disabled={loading}
-            >
-              <Text style={[styles.toggleText, userType === 'customer' && styles.toggleTextActive]}>
-                Customer
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleButton, userType === 'admin' && styles.toggleButtonActive]}
-              onPress={() => setUserType('admin')}
-              disabled={loading}
-            >
-              <Text style={[styles.toggleText, userType === 'admin' && styles.toggleTextActive]}>
-                Retailer
-              </Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Form Fields */}
           <View style={styles.formContainer}>
             <View style={styles.inputContainer}>
@@ -410,20 +370,6 @@ export default function Signup() {
               />
             </View>
 
-            {userType === 'admin' && (
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Shop Name *"
-                  placeholderTextColor="#94a3b8"
-                  value={shopName}
-                  onChangeText={setShopName}
-                  editable={!loading && !otpShown}
-                  returnKeyType="done"
-                />
-              </View>
-            )}
-
             {!otpShown ? (
               <TouchableOpacity
                 style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -444,16 +390,6 @@ export default function Signup() {
                 <Text style={styles.otpSubtitle}>
                   OTP sent to +91 {contactNo}
                 </Text>
-
-                {/* TEMPORARY OTP DISPLAY - FOR TESTING ONLY */}
-                <View style={styles.otpDisplayContainer}>
-                  <Text style={styles.otpDisplayText}>
-                    OTP for testing: {generatedOtp || 'Waiting for OTP...'}
-                  </Text>
-                  <Text style={styles.otpDisplaySubtext}>
-                    Use this OTP to verify: {generatedOtp}
-                  </Text>
-                </View>
                 
                 <View style={styles.otpContainer}>
                   {otp.map((value, index) => (
@@ -563,30 +499,6 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
   },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 32,
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  toggleButtonActive: {
-    backgroundColor: '#3b82f6',
-  },
-  toggleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  toggleTextActive: {
-    color: '#ffffff',
-  },
   formContainer: {
     marginBottom: 32,
   },
@@ -649,30 +561,6 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginBottom: 24,
     textAlign: 'center',
-  },
-  // NEW STYLES FOR OTP DISPLAY
-  otpDisplayContainer: {
-    backgroundColor: '#fef3c7',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: '#f59e0b',
-    borderStyle: 'dashed',
-    width: '100%',
-  },
-  otpDisplayText: {
-    fontSize: 16,
-    color: '#92400e',
-    textAlign: 'center',
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  otpDisplaySubtext: {
-    fontSize: 14,
-    color: '#b45309',
-    textAlign: 'center',
-    fontWeight: '600',
   },
   otpContainer: {
     flexDirection: 'row',
