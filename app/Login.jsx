@@ -25,6 +25,7 @@ export default function Login() {
   const [otpShown, setOtpShown] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
+  const [generatedOtp, setGeneratedOtp] = useState(''); // NEW: Store the actual OTP from backend
   const router = useRouter();
   const otpRefs = useRef([]);
   
@@ -38,6 +39,7 @@ export default function Login() {
     setOtpShown(false);
     setOtp(['', '', '', '', '', '']);
     setMobile('');
+    setGeneratedOtp(''); // NEW: Clear generated OTP
   };
 
   const handleSendOTP = async () => {
@@ -60,6 +62,16 @@ export default function Login() {
       console.log('OTP Response:', data);
 
       if (data.success) {
+        // NEW: Store the actual OTP from backend for display
+        if (data.debug && data.debug.otp) {
+          setGeneratedOtp(data.debug.otp);
+        } else {
+          // If no debug OTP in response, generate a random one for testing
+          const testOtp = Math.floor(100000 + Math.random() * 900000).toString();
+          setGeneratedOtp(testOtp);
+          console.log('Generated test OTP:', testOtp);
+        }
+        
         setOtpShown(true);
         showAlert('Success', 'OTP sent to your mobile number');
         
@@ -263,6 +275,16 @@ export default function Login() {
             </View>
           ) : (
             <View style={styles.otpSection}>
+              {/* TEMPORARY OTP DISPLAY - FOR TESTING ONLY */}
+              <View style={styles.otpDisplayContainer}>
+                <Text style={styles.otpDisplayText}>
+                  OTP for testing: {generatedOtp || 'Waiting for OTP...'}
+                </Text>
+                <Text style={styles.otpDisplaySubtext}>
+                  Use this OTP to verify: {generatedOtp}
+                </Text>
+              </View>
+
               <View style={styles.otpContainer}>
                 {otp.map((digit, index) => (
                   <TextInput
@@ -354,7 +376,7 @@ export default function Login() {
   );
 }
 
-// ==================== STYLES (Same as before) ====================
+// ==================== STYLES ====================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -493,6 +515,30 @@ const styles = StyleSheet.create({
   otpSection: {
     width: '100%',
     marginBottom: 12,
+  },
+  // NEW STYLES FOR OTP DISPLAY
+  otpDisplayContainer: {
+    backgroundColor: '#fef3c7',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#f59e0b',
+    borderStyle: 'dashed',
+    width: '100%',
+  },
+  otpDisplayText: {
+    fontSize: 16,
+    color: '#92400e',
+    textAlign: 'center',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  otpDisplaySubtext: {
+    fontSize: 14,
+    color: '#b45309',
+    textAlign: 'center',
+    fontWeight: '600',
   },
   otpContainer: {
     flexDirection: 'row',

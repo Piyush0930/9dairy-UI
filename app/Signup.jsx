@@ -63,6 +63,7 @@ export default function Signup() {
   const [resendLoading, setResendLoading] = useState(false);
   const [userId, setUserId] = useState(null);
   const [locationData, setLocationData] = useState(null);
+  const [generatedOtp, setGeneratedOtp] = useState(''); // NEW: Store the actual OTP from backend
   const router = useRouter();
   const otpRefs = useRef([]);
 
@@ -214,6 +215,16 @@ export default function Signup() {
     console.log('✅ Server response:', data);
 
     if (data.success) {
+      // NEW: Store the actual OTP from backend for display
+      if (data.debug && data.debug.otp) {
+        setGeneratedOtp(data.debug.otp);
+      } else {
+        // If no debug OTP in response, generate a random one for testing
+        const testOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        setGeneratedOtp(testOtp);
+        console.log('Generated test OTP:', testOtp);
+      }
+      
       setUserId(data.userId);
       if (!isResend) {
         setOtpShown(true);
@@ -308,6 +319,7 @@ export default function Signup() {
     setOtpShown(false);
     setUserId(null);
     setLocationData(null);
+    setGeneratedOtp(''); // NEW: Clear generated OTP
   };
 
   return (
@@ -432,6 +444,16 @@ export default function Signup() {
                 <Text style={styles.otpSubtitle}>
                   OTP sent to +91 {contactNo}
                 </Text>
+
+                {/* TEMPORARY OTP DISPLAY - FOR TESTING ONLY */}
+                <View style={styles.otpDisplayContainer}>
+                  <Text style={styles.otpDisplayText}>
+                    OTP for testing: {generatedOtp || 'Waiting for OTP...'}
+                  </Text>
+                  <Text style={styles.otpDisplaySubtext}>
+                    Use this OTP to verify: {generatedOtp}
+                  </Text>
+                </View>
                 
                 <View style={styles.otpContainer}>
                   {otp.map((value, index) => (
@@ -627,6 +649,30 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginBottom: 24,
     textAlign: 'center',
+  },
+  // NEW STYLES FOR OTP DISPLAY
+  otpDisplayContainer: {
+    backgroundColor: '#fef3c7',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#f59e0b',
+    borderStyle: 'dashed',
+    width: '100%',
+  },
+  otpDisplayText: {
+    fontSize: 16,
+    color: '#92400e',
+    textAlign: 'center',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  otpDisplaySubtext: {
+    fontSize: 14,
+    color: '#b45309',
+    textAlign: 'center',
+    fontWeight: '600',
   },
   otpContainer: {
     flexDirection: 'row',

@@ -18,30 +18,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Import Camera and CameraType from expo-camera
-let Camera = null;
-let CameraType = null;
-let FlashMode = null;
-let BarCodeType = null;
-let useCameraPermissions = null;
-let getCameraPermissionsAsync = null;
-let requestCameraPermissionsAsync = null;
-
-try {
-  const cameraModule = require("expo-camera");
-  Camera = cameraModule.CameraView;
-  CameraType = cameraModule.CameraType;
-  FlashMode = cameraModule.FlashMode;
-  BarCodeType = cameraModule.BarCodeType;
-  
-  if (cameraModule.useCameraPermissions) {
-    useCameraPermissions = cameraModule.useCameraPermissions;
-  }
-  getCameraPermissionsAsync = cameraModule.getCameraPermissionsAsync;
-  requestCameraPermissionsAsync = cameraModule.requestCameraPermissionsAsync;
-} catch (error) {
-  console.warn("Camera not available:", error.message);
-}
+import { Camera, useCameraPermissions } from 'expo-camera';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
