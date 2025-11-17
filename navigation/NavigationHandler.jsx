@@ -1,11 +1,11 @@
 // navigation/NavigationHandler.jsx
 import { useEffect, useRef } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 import { useRouter, useSegments } from "expo-router";
-import { View, Text } from "react-native";
+import { View, Text, ActivityIndicator } from "react-native";
 
 export default function NavigationHandler() {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth(); // Changed from 'loading' to 'isLoading'
   const segments = useSegments();
   const router = useRouter();
 
@@ -18,65 +18,118 @@ export default function NavigationHandler() {
   };
 
   useEffect(() => {
-    if (loading) return; // wait for auth to finish
-    if (redirected.current) return; // prevent loop
+    console.log("🧭 NavigationHandler State:", {
+      isLoading,
+      isAuthenticated,
+      userRole: user?.role,
+      segments,
+      redirected: redirected.current
+    });
+
+    if (isLoading) {
+      console.log("⏳ Auth still loading, waiting...");
+      return;
+    }
+
+    if (redirected.current) {
+      console.log("↪️ Already redirected, skipping...");
+      return;
+    }
 
     const currentRoute = getCurrentRoute();
-    console.log("🔍 NavigationHandler → Current route:", currentRoute);
+    console.log("📍 Current route:", currentRoute);
 
-    const isProtected =
+    // More comprehensive route checking
+    const isProtected = 
       segments[0] === "(tabs)" ||
       segments[0] === "(admin)" ||
+      segments[0] === "(superadmin)" ||
       segments[0] === "checkout" ||
-      segments[0] === "order-success";
+      segments[0] === "order-success" ||
+      currentRoute.includes("(tabs)") ||
+      currentRoute.includes("(admin)") ||
+      currentRoute.includes("(superadmin)");
 
     const isAuthRoute =
       segments[0] === "Login" ||
       segments[0] === "Signup" ||
-      segments[0] === "GetStarted";
+      segments[0] === "GetStarted" ||
+      currentRoute === "/Login" ||
+      currentRoute === "/Signup" ||
+      currentRoute === "/GetStarted";
+
+    const isRootRoute = currentRoute === "/";
+
+    console.log("🛣️ Route Analysis:", {
+      isProtected,
+      isAuthRoute,
+      isRootRoute,
+      currentRoute
+    });
 
     // -----------------------------
-    // RULE 1: User NOT logged in → redirect from PROTECTED routes
+    // RULE 1: User NOT logged in → redirect from PROTECTED routes to Login
     // -----------------------------
-    if (!isAuthenticated && isProtected) {
+    if (!isAuthenticated && (isProtected || isRootRoute)) {
       if (currentRoute !== "/Login") {
-        console.log("🔐 Not logged in → redirect → /Login");
+        console.log("🚫 Not authenticated - redirecting to /Login");
         redirected.current = true;
-        router.replace("/Login");
+        // Use setTimeout to avoid navigation during render
+        setTimeout(() => {
+          router.replace("/Login");
+        }, 100);
       }
       return;
     }
 
     // -----------------------------
-    // RULE 2: Logged in user visiting auth screens → redirect to dashboard
+    // RULE 2: Logged in user visiting auth screens → redirect to appropriate home
     // -----------------------------
-    if (isAuthenticated && isAuthRoute) {
-      if (user?.role === "admin") {
-        if (currentRoute !== "/(admin)") {
-          console.log("🔧 Admin logged in → redirect → /(admin)");
-          redirected.current = true;
-          router.replace("/(admin)");
-        }
-      } else {
-        if (currentRoute !== "/(tabs)") {
-          console.log("🛒 Customer logged in → redirect → /(tabs)");
-          redirected.current = true;
-          router.replace("/(tabs)");
-        }
+    if (isAuthenticated && (isAuthRoute || isRootRoute)) {
+      const role = user?.role?.toLowerCase();
+      let targetRoute = "/(tabs)";
+      
+      if (role === "superadmin") targetRoute = "/(superadmin)/dashboard";
+      else if (role === "admin") targetRoute = "/(admin)/dashboard";
+      
+      if (currentRoute !== targetRoute) {
+        console.log(`✅ Authenticated ${role} - redirecting to ${targetRoute}`);
+        redirected.current = true;
+        setTimeout(() => {
+          router.replace(targetRoute);
+        }, 100);
       }
       return;
     }
 
-    // If no redirect is needed → allow navigation normally
+    // -----------------------------
+    // RULE 3: Authenticated but no specific route match
+    // -----------------------------
+    if (isAuthenticated && !isProtected && !isAuthRoute && !isRootRoute) {
+      console.log("✅ Authenticated user accessing allowed route:", currentRoute);
+      redirected.current = false;
+      return;
+    }
+
+    // Reset redirect flag for next navigation
     redirected.current = false;
-  }, [isAuthenticated, loading, user, segments]);
 
-  if (loading)
+  }, [isAuthenticated, isLoading, user, segments, router]);
+
+  // Show loading while checking auth
+  if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <Text>Checking authentication...</Text>
+      <View style={{ 
+        flex: 1, 
+        justifyContent: "center", 
+        alignItems: "center",
+        backgroundColor: '#fff'
+      }}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={{ marginTop: 10 }}>Checking authentication...</Text>
       </View>
     );
+  }
 
   return null;
 }

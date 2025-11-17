@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { CartProvider } from '@/contexts/CartContext';
 import { ProfileProvider } from '@/contexts/ProfileContext';
 import { ScannerProvider } from '@/contexts/ScannerContext';
-import NavigationHandler from '../contexts/NavigationContext';
+import NavigationHandler from '../navigation/NavigationHandler';
 import { Slot } from 'expo-router';
 import { View, Text, ActivityIndicator } from 'react-native';
 
