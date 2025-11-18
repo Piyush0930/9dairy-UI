@@ -17,11 +17,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import LocationPicker from '../../components/LocationPicker';
 import { useAuth } from '../../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
 
-const API_BASE = `${process.env.EXPO_PUBLIC_API_URL}/api`; // ensure EXPO_PUBLIC_API_URL is set in .env
+// keep api base and auth base (Signup.jsx uses /api/auth)
+const API_BASE = `${process.env.EXPO_PUBLIC_API_URL}/api`;
+const API_AUTH = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
 export default function RetailersScreen() {
   // ✅ call hook at top-level only
@@ -36,10 +39,25 @@ export default function RetailersScreen() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedRetailer, setSelectedRetailer] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showAddRetailerModal, setShowAddRetailerModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const router = useRouter();
   const fadeAnim = useState(new Animated.Value(0))[0];
+
+  // Add Retailer Form State
+  const [newRetailer, setNewRetailer] = useState({
+    fullName: '',
+    shopName: '',
+    contactNo: '',
+    address: '',
+  });
+  const [locationData, setLocationData] = useState(null);
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otpShown, setOtpShown] = useState(false);
+  const [addRetailerLoading, setAddRetailerLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [userId, setUserId] = useState(null);
 
   // helper that DOES NOT call hooks — uses top-level authToken or AsyncStorage fallback
   const getAuthToken = async () => {
@@ -71,7 +89,6 @@ export default function RetailersScreen() {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          // Most servers expect 'Bearer <token>'. If your server expects raw token, remove 'Bearer '.
           Authorization: `Bearer ${token}`,
         },
       });
@@ -103,8 +120,8 @@ export default function RetailersScreen() {
         location: item.location?.formattedAddress || item.address || 'N/A',
         joinDate: item.createdAt || item.created_at || '',
         status: item.isActive === true ? 'active' : 'pending',
-        totalOrders: item.totalOrders ?? 0,
-        totalRevenue: item.totalRevenue ?? 0,
+        totalOrders: item.totalOrders ?? item.orders ?? 0,
+        totalRevenue: item.totalRevenue ?? item.revenue ?? 0,
         rating: item.rating ?? 0,
         products: item.products ?? 0,
         lastActive: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '',
@@ -134,7 +151,7 @@ export default function RetailersScreen() {
     }
   }, [authToken]);
 
-  // Fetch a single retailer's full details (from your provided endpoint)
+  // Fetch a single retailer's full details
   const fetchRetailerDetails = async (retailerId) => {
     setDetailsLoading(true);
     setShowDetailsModal(true); // open modal early to show loader
@@ -203,6 +220,221 @@ export default function RetailersScreen() {
     setRefreshing(true);
     await fetchRetailers();
     Alert.alert('✅ Refreshed', 'Retailers data updated');
+  };
+
+  // ---------- Add Retailer Functions ----------
+  const handleLocationSelect = (location) => {
+    console.log('📍 Selected location:', {
+      address: location.formattedAddress,
+      coordinates: location.coordinates,
+    });
+
+    let city = '';
+    let state = '';
+    
+    if (location.addressComponents) {
+      const cityComponent = location.addressComponents.find(comp => 
+        comp.types.includes('locality') || comp.types.includes('administrative_area_level_2')
+      );
+      const stateComponent = location.addressComponents.find(comp => 
+        comp.types.includes('administrative_area_level_1')
+      );
+      
+      city = cityComponent?.long_name || '';
+      state = stateComponent?.long_name || '';
+    }
+    
+    const enhancedLocation = {
+      ...location,
+      city,
+      state
+    };
+    
+    setLocationData(enhancedLocation);
+    
+    if (location.formattedAddress) {
+      setNewRetailer(prev => ({ ...prev, address: location.formattedAddress }));
+    }
+  };
+
+  const validateRetailerForm = () => {
+    if (!newRetailer.fullName.trim()) {
+      Alert.alert('Validation Error', 'Please enter retailer full name');
+      return false;
+    }
+    
+    if (!newRetailer.shopName.trim()) {
+      Alert.alert('Validation Error', 'Please enter shop name');
+      return false;
+    }
+    
+    if (!newRetailer.address.trim()) {
+      Alert.alert('Validation Error', 'Please enter address');
+      return false;
+    }
+    
+    if (!newRetailer.contactNo || newRetailer.contactNo.length !== 10 || !/^\d+$/.test(newRetailer.contactNo)) {
+      Alert.alert('Validation Error', 'Please enter a valid 10-digit contact number');
+      return false;
+    }
+    
+    return true;
+  };
+
+  // ----- UPDATED: handleGetOtp to match Signup.jsx shape -----
+  const handleGetOtp = async (isResend = false) => {
+    if (!validateRetailerForm()) return;
+
+    setAddRetailerLoading(true);
+    if (isResend) setResendLoading(true);
+
+    try {
+      // build location / coords in the same shape the backend expects (top-level fields)
+      let locationParams = {};
+      if (locationData && locationData.coordinates && locationData.coordinates.latitude && locationData.coordinates.longitude) {
+        locationParams = {
+          coordinates: {
+            latitude: locationData.coordinates.latitude,
+            longitude: locationData.coordinates.longitude,
+          },
+          formattedAddress: locationData.formattedAddress || newRetailer.address,
+        };
+      } else {
+        // fallback coords if user didn't pick location — match Signup.jsx defaults
+        locationParams = {
+          coordinates: {
+            latitude: 20.0983745,
+            longitude: 73.9296103,
+          },
+          formattedAddress: newRetailer.address,
+        };
+      }
+
+      const signupData = {
+        phone: newRetailer.contactNo,
+        fullName: newRetailer.fullName,
+        shopName: newRetailer.shopName,
+        address: locationData?.formattedAddress || newRetailer.address,
+        contactNo: newRetailer.contactNo,
+        userType: 'admin',
+        // ...(userType === 'admin' && { shopName }),
+        ...locationParams, // flattened fields expected by backend
+      };
+
+      console.log('📤 Creating retailer with payload:', JSON.stringify(signupData, null, 2));
+
+      const response = await fetch(`${API_AUTH}/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(signupData),
+      });
+
+      console.log('📥 Signup response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Retailer creation response:', data);
+
+      if (data.success) {
+        // backend might return userId or user._id — be defensive
+        setUserId(data.userId || data.user?._id || null);
+        if (!isResend) setOtpShown(true);
+        Alert.alert('Success', isResend ? 'OTP resent successfully!' : (data.message || 'Retailer created! Please verify OTP.'));
+      } else {
+        throw new Error(data.message || 'Retailer creation failed');
+      }
+    } catch (error) {
+      console.error('❌ Retailer Creation Error:', error);
+
+      if (error.message.includes('coordinates')) {
+        Alert.alert('Location Error', 'Please select a valid location from suggestions.');
+      } else if (error.message.includes('Network request failed')) {
+        Alert.alert('Network Error', 'Please check your internet connection and try again.');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to create retailer. Please try again.');
+      }
+    } finally {
+      setAddRetailerLoading(false);
+      if (isResend) setResendLoading(false);
+    }
+  };
+
+  // ----- UPDATED: handleVerifyOtp to match Signup.jsx -----
+  const handleVerifyOtp = async () => {
+    const otpCode = otp.join('');
+    if (otpCode.length !== 6) {
+      Alert.alert('Validation Error', 'Please enter complete 6-digit OTP');
+      return;
+    }
+
+    setAddRetailerLoading(true);
+
+    try {
+      const verifyData = {
+        phone: newRetailer.contactNo,
+        otp: otpCode,
+      };
+
+      const response = await fetch(`${API_AUTH}/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(verifyData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'OTP verification failed');
+      }
+
+      // success path
+      Alert.alert('Success', data.message || 'Retailer account verified successfully!');
+
+      // Reset form and close modal
+      resetAddRetailerForm();
+      setShowAddRetailerModal(false);
+
+      // Refresh retailer list in UI
+      fetchRetailers();
+    } catch (error) {
+      console.error('Verification Error:', error);
+      if (error.message === 'Network request failed') {
+        Alert.alert('Network Error', 'Please check your internet connection and try again.');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to verify OTP. Please try again.');
+      }
+    } finally {
+      setAddRetailerLoading(false);
+    }
+  };
+
+  const resetAddRetailerForm = () => {
+    setNewRetailer({
+      fullName: '',
+      shopName: '',
+      contactNo: '',
+      address: '',
+    });
+    setLocationData(null);
+    setOtp(['', '', '', '', '', '']);
+    setOtpShown(false);
+    setUserId(null);
+  };
+
+  const handleOtpChange = (text, index) => {
+    if (/^\d*$/.test(text)) {
+      const newOtp = [...otp];
+      newOtp[index] = text;
+      setOtp(newOtp);
+    }
   };
 
   // ---------- Filter/Search ----------
@@ -286,8 +518,6 @@ export default function RetailersScreen() {
     );
   };
 
-  // For quick actions we only update locally; if you have a backend endpoint to change status,
-  // replace the local update with an API call (example commented near handleStatusChange).
   const handleStatusChange = async (retailerId, newStatus) => {
     setRetailersData(prev => ({
       ...prev,
@@ -456,7 +686,10 @@ export default function RetailersScreen() {
           <Text style={styles.headerTitle}>Retailers Management</Text>
           <Text style={styles.headerSubtitle}>Manage all retailers on the platform</Text>
         </View>
-        <TouchableOpacity style={styles.addButton}>
+        <TouchableOpacity 
+          style={styles.addButton} 
+          onPress={() => setShowAddRetailerModal(true)}
+        >
           <MaterialIcons name="person-add" size={20} color="#FFFFFF" />
           <Text style={styles.addButtonText}>Add Retailer</Text>
         </TouchableOpacity>
@@ -641,12 +874,147 @@ export default function RetailersScreen() {
           </View>
         )}
       </Modal>
+
+      {/* Add Retailer Modal */}
+      <Modal visible={showAddRetailerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAddRetailerModal(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add New Retailer</Text>
+            <TouchableOpacity style={styles.closeButton} onPress={() => {
+              setShowAddRetailerModal(false);
+              resetAddRetailerForm();
+            }}>
+              <MaterialIcons name="close" size={24} color="#000" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {!otpShown ? (
+              <>
+                <View style={styles.modalSection}>
+                  <Text style={styles.sectionTitle}>Retailer Information</Text>
+                  
+                  <View style={styles.inputContainerModal}>
+                    <TextInput
+                      style={styles.inputModal}
+                      placeholder="Full Name *"
+                      placeholderTextColor="#94a3b8"
+                      value={newRetailer.fullName}
+                      onChangeText={(text) => setNewRetailer(prev => ({ ...prev, fullName: text }))}
+                    />
+                  </View>
+
+                  <View style={styles.inputContainerModal}>
+                    <TextInput
+                      style={styles.inputModal}
+                      placeholder="Shop Name *"
+                      placeholderTextColor="#94a3b8"
+                      value={newRetailer.shopName}
+                      onChangeText={(text) => setNewRetailer(prev => ({ ...prev, shopName: text }))}
+                    />
+                  </View>
+
+                  <View style={styles.locationContainerModal}>
+                    <Text style={styles.locationLabel}>Address *</Text>
+                    <LocationPicker
+                      onLocationSelect={handleLocationSelect}
+                      placeholder="Enter shop address"
+                      showCurrentLocation={true}
+                      style={styles.locationPicker}
+                    />
+                  </View>
+
+                  <View style={styles.inputContainerModal}>
+                    <View style={styles.flagContainer}>
+                      <Text style={styles.flag}>🇮🇳</Text>
+                      <Text style={styles.countryCode}>+91</Text>
+                    </View>
+                    <TextInput
+                      style={[styles.inputModal, { marginLeft: 12 }]}
+                      placeholder="Contact Number *"
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                      value={newRetailer.contactNo}
+                      onChangeText={(text) => setNewRetailer(prev => ({ ...prev, contactNo: text }))}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.primaryButton, addRetailerLoading && styles.buttonDisabled]}
+                    onPress={() => handleGetOtp(false)}
+                    disabled={addRetailerLoading}
+                  >
+                    {addRetailerLoading ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.modalButtonText}>Create Retailer</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.modalSection}>
+                  <Text style={styles.otpTitle}>Verify Retailer Account</Text>
+                  <Text style={styles.otpSubtitle}>
+                    OTP sent to +91 {newRetailer.contactNo}
+                  </Text>
+                  
+                  <View style={styles.otpContainer}>
+                    {otp.map((value, index) => (
+                      <TextInput
+                        key={index}
+                        style={[styles.otpInput, value && styles.otpInputActive]}
+                        keyboardType="number-pad"
+                        maxLength={1}
+                        value={value}
+                        onChangeText={(text) => handleOtpChange(text, index)}
+                        textAlign="center"
+                        editable={!addRetailerLoading}
+                        selectTextOnFocus
+                      />
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.primaryButton, addRetailerLoading && styles.buttonDisabled]}
+                    onPress={handleVerifyOtp}
+                    disabled={addRetailerLoading}
+                  >
+                    {addRetailerLoading ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.modalButtonText}>Verify & Complete</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.modalButton, styles.secondaryButton]}
+                    onPress={() => handleGetOtp(true)}
+                    disabled={resendLoading}
+                  >
+                    {resendLoading ? (
+                      <ActivityIndicator color="#3b82f6" size="small" />
+                    ) : (
+                      <Text style={[styles.modalButtonText, { color: '#3b82f6' }]}>Resend OTP</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  /* ... keep your original styles unchanged (same as your file) ... */
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
@@ -1086,5 +1454,98 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  buttonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  // Add Retailer Modal Styles
+  inputContainerModal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    marginBottom: 16,
+    backgroundColor: '#f8fafc',
+    minHeight: 56,
+  },
+  inputModal: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1e293b',
+    paddingVertical: 8,
+    fontWeight: '500',
+  },
+  locationContainerModal: {
+    marginBottom: 16,
+  },
+  locationLabel: {
+    fontSize: 16,
+    color: '#1e293b',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  flagContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 12,
+    borderRightWidth: 1.5,
+    borderRightColor: '#e2e8f0',
+  },
+  flag: {
+    fontSize: 18,
+    marginRight: 6,
+  },
+  countryCode: {
+    fontSize: 14,
+    color: '#1e293b',
+    fontWeight: '600',
+  },
+  otpTitle: {
+    fontSize: 18,
+    color: '#0f172a',
+    marginBottom: 8,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  otpSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    paddingHorizontal: 10,
+  },
+  otpInput: {
+    width: 48,
+    height: 48,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    fontSize: 20,
+    fontWeight: '700',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    textAlign: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  otpInputActive: {
+    borderColor: '#3b82f6',
+    backgroundColor: '#f0f9ff',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
   },
 });

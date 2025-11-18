@@ -17,14 +17,13 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import { useAuth } from '../contexts/AuthContext';
 
 const { width, height } = Dimensions.get('window');
-const API_BASE_URL =`${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
 export default function Login() {
   const [mobile, setMobile] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [secret, setSecret] = useState(['', '', '', '', '', '']);
-  const [otpShown, setOtpShown] = useState(false);
-  const [secretShown, setSecretShown] = useState(false);
+  const [currentStep, setCurrentStep] = useState('mobile'); // 'mobile' | 'otp' | 'secret'
   const [sessionToken, setSessionToken] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
@@ -39,13 +38,22 @@ export default function Login() {
     Alert.alert(title, message, [{ text: 'OK' }]);
   };
 
-  const handleBackFromOtp = () => {
-    setOtpShown(false);
-    setSecretShown(false);
+  const resetForm = () => {
+    setCurrentStep('mobile');
     setOtp(['', '', '', '', '', '']);
     setSecret(['', '', '', '', '', '']);
     setMobile('');
     setSessionToken(null);
+  };
+
+  const handleBack = () => {
+    if (currentStep === 'otp') {
+      setCurrentStep('mobile');
+      setOtp(['', '', '', '', '', '']);
+    } else if (currentStep === 'secret') {
+      setCurrentStep('otp');
+      setSecret(['', '', '', '', '', '']);
+    }
   };
 
   // 🔹 Step 1: Send OTP
@@ -57,6 +65,8 @@ export default function Login() {
 
     setSendingOtp(true);
     try {
+      console.log('📩 Sending OTP to:', mobile);
+
       const response = await fetch(`${API_BASE_URL}/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -67,7 +77,7 @@ export default function Login() {
       console.log('📩 Send OTP Response:', data);
 
       if (data.success) {
-        setOtpShown(true);
+        setCurrentStep('otp');
         showAlert('Success', 'OTP sent to your mobile number');
         setTimeout(() => otpRefs.current[0]?.focus(), 100);
       } else {
@@ -81,7 +91,7 @@ export default function Login() {
     }
   };
 
-  // 🔹 Step 2: OTP Input Handling
+  // 🔹 OTP Input Handling
   const handleOtpChange = (text, index) => {
     if (!/^\d?$/.test(text)) return;
 
@@ -89,11 +99,15 @@ export default function Login() {
     newOtp[index] = text;
     setOtp(newOtp);
 
-    if (text && index < 5) otpRefs.current[index + 1]?.focus();
+    if (text && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
 
     if (text && index === 5) {
       const finalOtp = newOtp.join('');
-      if (finalOtp.length === 6) handleVerifyOTP(finalOtp);
+      if (finalOtp.length === 6) {
+        handleVerifyOTP(finalOtp);
+      }
     }
   };
 
@@ -106,7 +120,7 @@ export default function Login() {
     }
   };
 
-  // 🔹 Step 3: Verify OTP
+  // 🔹 Step 2: Verify OTP
   const handleVerifyOTP = async (otpCode) => {
     console.log('🔐 Verifying OTP:', otpCode, 'for mobile:', mobile);
 
@@ -130,16 +144,23 @@ export default function Login() {
         // 🔐 If SuperAdmin, ask for Secret Key
         if (data.requirePassword && data.sessionToken) {
           setSessionToken(data.sessionToken);
-          setOtpShown(false);
-          setSecretShown(true);
+          setCurrentStep('secret');
           setTimeout(() => secretRefs.current[0]?.focus(), 100);
+          showAlert('SuperAdmin Access', 'Please enter your secret key');
         } else if (data.token && data.user) {
           // ✅ Normal user login
           await login(data.user, data.token);
           showAlert('Success', 'Login successful!');
+          
           setTimeout(() => {
             const userRole = data.user?.role;
-            router.replace(userRole === 'admin' ? '/(admin)' : '/(tabs)');
+            if (userRole === 'admin') {
+              router.replace('/(admin)');
+            } else if (userRole === 'superadmin') {
+              router.replace('/supadmin');
+            } else {
+              router.replace('/(tabs)');
+            }
           }, 300);
         } else {
           throw new Error('Invalid server response');
@@ -155,7 +176,7 @@ export default function Login() {
     }
   };
 
-  // 🔹 Step 4: Secret Key Handling
+  // 🔹 Secret Key Handling
   const handleSecretChange = (text, index) => {
     if (!/^\d?$/.test(text)) return;
 
@@ -163,11 +184,15 @@ export default function Login() {
     newSecret[index] = text;
     setSecret(newSecret);
 
-    if (text && index < 5) secretRefs.current[index + 1]?.focus();
+    if (text && index < 5) {
+      secretRefs.current[index + 1]?.focus();
+    }
 
     if (text && index === 5) {
       const finalSecret = newSecret.join('');
-      if (finalSecret.length === 6) handleVerifySuperAdmin(finalSecret);
+      if (finalSecret.length === 6) {
+        handleVerifySuperAdmin(finalSecret);
+      }
     }
   };
 
@@ -180,7 +205,7 @@ export default function Login() {
     }
   };
 
-  // 🔹 Step 5: Verify SuperAdmin Secret Key
+  // 🔹 Step 3: Verify SuperAdmin Secret Key
   const handleVerifySuperAdmin = async (secretKey) => {
     if (!secretKey || secretKey.length !== 6) {
       showAlert('Validation Error', 'Please enter complete 6-digit secret key');
@@ -189,7 +214,7 @@ export default function Login() {
 
     if (!sessionToken) {
       showAlert('Error', 'Session expired. Please restart login.');
-      handleBackFromOtp();
+      resetForm();
       return;
     }
 
@@ -198,7 +223,11 @@ export default function Login() {
       const response = await fetch(`${API_BASE_URL}/superadmin/verify-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: mobile, secretKey, sessionToken }),
+        body: JSON.stringify({ 
+          phone: mobile, 
+          secretKey, 
+          sessionToken 
+        }),
       });
 
       const data = await response.json();
@@ -214,13 +243,34 @@ export default function Login() {
     } catch (error) {
       console.error('❌ SuperAdmin Verify Error:', error);
       showAlert('Error', error.message || 'Failed to verify secret key.');
+      
+      // Clear secret input on failure
+      setSecret(['', '', '', '', '', '']);
+      setTimeout(() => secretRefs.current[0]?.focus(), 100);
     } finally {
       setLoading(false);
     }
   };
 
+  // Manual verification buttons
+  const handleManualVerifyOTP = () => {
+    const otpCode = otp.join('');
+    handleVerifyOTP(otpCode);
+  };
+
+  const handleManualVerifySecret = () => {
+    const secretKey = secret.join('');
+    handleVerifySuperAdmin(secretKey);
+  };
+
+  // Resend OTP
+  const handleResendOTP = async () => {
+    await handleSendOTP();
+  };
+
   // Redirect if already authenticated
   if (isAuthenticated) {
+    console.log('🔄 Already authenticated, redirecting...');
     setTimeout(() => router.replace('/(tabs)'), 100);
     return (
       <View style={styles.loadingContainer}>
@@ -230,21 +280,44 @@ export default function Login() {
     );
   }
 
+  const getStepTitle = () => {
+    switch (currentStep) {
+      case 'otp': return 'Enter OTP';
+      case 'secret': return 'Enter Secret Key';
+      default: return 'Fresh dairy delivered daily';
+    }
+  };
+
+  const getStepSubtitle = () => {
+    switch (currentStep) {
+      case 'secret': return 'SuperAdmin verification required';
+      case 'otp': return `Sent to +91 ${mobile}`;
+      default: return 'Sign in with your mobile number';
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      {otpShown || secretShown ? (
+      
+      {/* Header with Back Button */}
+      {(currentStep === 'otp' || currentStep === 'secret') && (
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBackFromOtp} disabled={loading}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={handleBack}
+            disabled={loading}
+          >
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {secretShown ? 'Enter Secret Key' : 'Enter OTP'}
+            {currentStep === 'secret' ? 'Enter Secret Key' : 'Enter OTP'}
           </Text>
           <View style={styles.headerPlaceholder} />
         </View>
-      ) : null}
+      )}
 
+      {/* Background Image */}
       <View style={styles.imageContainer}>
         <Image
           source={{ uri: 'https://images.unsplash.com/photo-1628088062854-d1870b4553da?w=800&q=80' }}
@@ -257,122 +330,199 @@ export default function Login() {
         contentContainerStyle={styles.scrollContent}
         enableOnAndroid
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.spacer} />
 
+        {/* White Card */}
         <View style={styles.bottomCard}>
-          {!otpShown && !secretShown && (
+          {/* Logo */}
+          {currentStep === 'mobile' && (
             <View style={styles.logoContainer}>
               <Text style={styles.logoText}>Dairy Nine</Text>
             </View>
           )}
 
-          <Text style={styles.title}>
-            {secretShown ? 'Enter Secret Key' : otpShown ? 'Enter OTP' : 'Fresh dairy delivered daily'}
-          </Text>
-
-          <Text style={styles.subtitle}>
-            {secretShown
-              ? `SuperAdmin verification`
-              : otpShown
-              ? `Sent to +91 ${mobile}`
-              : 'Sign in with your mobile number'}
-          </Text>
+          <Text style={styles.title}>{getStepTitle()}</Text>
+          <Text style={styles.subtitle}>{getStepSubtitle()}</Text>
 
           {/* Step 1: Mobile Input */}
-          {!otpShown && !secretShown && (
+          {currentStep === 'mobile' && (
             <View style={styles.inputContainer}>
               <View style={styles.flagContainer}>
-                <Text style={styles.flag}>India</Text>
+                <Text style={styles.flag}>🇮🇳</Text>
                 <Text style={styles.countryCode}>+91</Text>
               </View>
               <TextInput
                 style={styles.input}
                 placeholder="Enter mobile number"
+                placeholderTextColor="#94a3b8"
                 keyboardType="phone-pad"
                 maxLength={10}
                 value={mobile}
                 onChangeText={setMobile}
+                editable={!sendingOtp}
               />
             </View>
           )}
 
           {/* Step 2: OTP Input */}
-          {otpShown && (
+          {currentStep === 'otp' && (
             <View style={styles.otpSection}>
               <View style={styles.otpContainer}>
                 {otp.map((digit, index) => (
                   <TextInput
                     key={index}
                     ref={(ref) => (otpRefs.current[index] = ref)}
-                    style={[styles.otpInput, digit ? styles.otpInputActive : null]}
+                    style={[
+                      styles.otpInput, 
+                      digit ? styles.otpInputActive : null
+                    ]}
                     keyboardType="number-pad"
                     maxLength={1}
                     value={digit}
                     onChangeText={(text) => handleOtpChange(text, index)}
                     onKeyPress={(e) => handleOtpKeyPress(e, index)}
                     textAlign="center"
+                    editable={!loading}
+                    selectTextOnFocus
                   />
                 ))}
               </View>
+
+              <TouchableOpacity
+                style={styles.resendContainer}
+                onPress={handleResendOTP}
+                disabled={sendingOtp}
+              >
+                {sendingOtp ? (
+                  <ActivityIndicator color="#3b82f6" size="small" />
+                ) : (
+                  <Text style={styles.resendText}>
+                    Didn't receive OTP?{' '}
+                    <Text style={styles.resendTextBold}>Resend</Text>
+                  </Text>
+                )}
+              </TouchableOpacity>
             </View>
           )}
 
           {/* Step 3: Secret Input */}
-          {secretShown && (
+          {currentStep === 'secret' && (
             <View style={styles.otpSection}>
+              <Text style={styles.superadminHint}>
+                SuperAdmin access requires additional verification
+              </Text>
+              
               <View style={styles.otpContainer}>
                 {secret.map((digit, index) => (
                   <TextInput
                     key={index}
                     ref={(ref) => (secretRefs.current[index] = ref)}
-                    style={[styles.otpInput, digit ? styles.otpInputActive : null]}
+                    style={[
+                      styles.otpInput, 
+                      styles.secretCodeInputActive,
+                      digit ? styles.otpInputActive : null
+                    ]}
                     keyboardType="number-pad"
                     maxLength={1}
                     value={digit}
                     onChangeText={(text) => handleSecretChange(text, index)}
                     onKeyPress={(e) => handleSecretKeyPress(e, index)}
                     textAlign="center"
+                    editable={!loading}
+                    selectTextOnFocus
+                    secureTextEntry
                   />
                 ))}
               </View>
+              
+              <Text style={styles.secretCodeHint}>
+                Enter your 6-digit secret key
+              </Text>
             </View>
           )}
 
-          {/* Buttons */}
-          {!otpShown && !secretShown && (
+          {/* Action Buttons */}
+          {currentStep === 'mobile' && (
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.continueButton, 
+                  (sendingOtp || !mobile) && styles.buttonDisabled
+                ]}
+                onPress={handleSendOTP}
+                disabled={sendingOtp || !mobile}
+              >
+                {sendingOtp ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Send OTP</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => router.push('/Signup')}>
+                <Text style={styles.createAccountText}>
+                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {currentStep === 'otp' && (
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.continueButton, 
+                  (loading || otp.join('').length !== 6) && styles.buttonDisabled
+                ]}
+                onPress={handleManualVerifyOTP}
+                disabled={loading || otp.join('').length !== 6}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Verify & Sign In</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => router.push('/Signup')} disabled={loading}>
+                <Text style={styles.createAccountText}>
+                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {currentStep === 'secret' && (
             <TouchableOpacity
-              style={[styles.continueButton, sendingOtp && styles.buttonDisabled]}
-              onPress={handleSendOTP}
-              disabled={sendingOtp}
+              style={[
+                styles.continueButton, 
+                (loading || secret.join('').length !== 6) && styles.buttonDisabled
+              ]}
+              onPress={handleManualVerifySecret}
+              disabled={loading || secret.join('').length !== 6}
             >
-              {sendingOtp ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send OTP</Text>}
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Verify Secret Key</Text>
+              )}
             </TouchableOpacity>
           )}
 
-          {otpShown && !secretShown && (
-            <TouchableOpacity style={[styles.continueButton, loading && styles.buttonDisabled]} onPress={() => handleVerifyOTP(otp.join(''))}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify & Sign In</Text>}
-            </TouchableOpacity>
-          )}
-
-          {secretShown && (
-            <TouchableOpacity
-              style={[styles.continueButton, loading && styles.buttonDisabled]}
-              onPress={() => handleVerifySuperAdmin(secret.join(''))}
-            >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify Secret</Text>}
-            </TouchableOpacity>
-          )}
+          {/* Footer */}
+          <Text style={styles.footerText}>
+            By continuing, you agree to our Terms & Privacy Policy
+          </Text>
         </View>
       </KeyboardAwareScrollView>
     </View>
   );
 }
 
-// ✅ Styles remain exactly same
-const styles = StyleSheet.create({ 
-
+// Styles remain the same as your second version
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f9ff',
@@ -544,8 +694,6 @@ const styles = StyleSheet.create({
   secretCodeInputActive: {
     borderColor: '#10b981',
     backgroundColor: '#f0fdf4',
-    shadowColor: '#10b981',
-    shadowOpacity: 0.2,
   },
   continueButton: {
     backgroundColor: '#3b82f6',
@@ -611,12 +759,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     marginBottom: 8,
-  },
-  superadminMessage: {
-    fontSize: 12,
-    color: '#dc2626',
-    textAlign: 'center',
-    fontWeight: '600',
-    marginBottom: 12,
   },
 });
