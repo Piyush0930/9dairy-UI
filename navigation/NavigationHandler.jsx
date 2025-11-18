@@ -1,29 +1,53 @@
 // navigation/NavigationHandler.jsx
-import { useEffect, useRef } from "react";
-import { useAuth } from "../contexts/AuthContext";
+import { useEffect, useRef, useCallback } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useSegments } from "expo-router";
 import { View, Text, ActivityIndicator } from "react-native";
 
 export default function NavigationHandler() {
-  const { isAuthenticated, isLoading, user } = useAuth(); // Changed from 'loading' to 'isLoading'
+  const { isAuthenticated, isLoading, user, hasRedirected } = useAuth(); // ✅ Use hasRedirected from AuthContext
   const segments = useSegments();
   const router = useRouter();
+  const isMounted = useRef(false);
 
-  // Avoid duplicate redirects
-  const redirected = useRef(false);
-
-  const getCurrentRoute = () => {
+  const getCurrentRoute = useCallback(() => {
     if (!segments || segments.length === 0) return "/";
     return `/${segments.join("/")}`;
-  };
+  }, [segments]);
+
+  // Define isOnCorrectRoute outside useEffect to avoid scope issues
+  const isOnCorrectRoute = useCallback((route) => {
+    if (!isAuthenticated) return route === '/Login';
+    
+    const role = user?.role?.toLowerCase();
+    const expectedRoutes = {
+      'superadmin': ['/(superadmin)', '/(superadmin)/'],
+      'admin': ['/(admin)', '/(admin)/'],
+      'customer': ['/(tabs)', '/(tabs)/']
+    };
+    
+    const userExpectedRoutes = expectedRoutes[role] || expectedRoutes.customer;
+    return userExpectedRoutes.some(expected => route.startsWith(expected));
+  }, [isAuthenticated, user]);
 
   useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Don't run until component is mounted
+    if (!isMounted.current) return;
+
     console.log("🧭 NavigationHandler State:", {
       isLoading,
       isAuthenticated,
       userRole: user?.role,
       segments,
-      redirected: redirected.current
+      hasRedirected: hasRedirected.current,
+      currentRoute: getCurrentRoute()
     });
 
     if (isLoading) {
@@ -31,32 +55,44 @@ export default function NavigationHandler() {
       return;
     }
 
-    if (redirected.current) {
+    const currentRoute = getCurrentRoute();
+    
+    // Reset redirected flag if we're on the correct route for our auth state
+    if (isAuthenticated && isOnCorrectRoute(currentRoute)) {
+      console.log(`✅ ${user?.role} on correct route, resetting redirect flag`);
+      hasRedirected.current = false;
+      return;
+    } else if (!isAuthenticated && currentRoute === '/Login') {
+      console.log("✅ On login page, resetting redirect flag");
+      hasRedirected.current = false;
+      return;
+    }
+
+    // If we've already redirected but we're not where we should be, allow redirect again
+    if (hasRedirected.current && !isOnCorrectRoute(currentRoute)) {
+      console.log("🔄 Already redirected but not on target route, allowing redirect");
+      hasRedirected.current = false;
+    }
+
+    if (hasRedirected.current) {
       console.log("↪️ Already redirected, skipping...");
       return;
     }
 
-    const currentRoute = getCurrentRoute();
     console.log("📍 Current route:", currentRoute);
 
-    // More comprehensive route checking
+    // Route analysis
     const isProtected = 
       segments[0] === "(tabs)" ||
       segments[0] === "(admin)" ||
       segments[0] === "(superadmin)" ||
       segments[0] === "checkout" ||
-      segments[0] === "order-success" ||
-      currentRoute.includes("(tabs)") ||
-      currentRoute.includes("(admin)") ||
-      currentRoute.includes("(superadmin)");
+      segments[0] === "order-success";
 
     const isAuthRoute =
       segments[0] === "Login" ||
       segments[0] === "Signup" ||
-      segments[0] === "GetStarted" ||
-      currentRoute === "/Login" ||
-      currentRoute === "/Signup" ||
-      currentRoute === "/GetStarted";
+      segments[0] === "GetStarted";
 
     const isRootRoute = currentRoute === "/";
 
@@ -64,59 +100,71 @@ export default function NavigationHandler() {
       isProtected,
       isAuthRoute,
       isRootRoute,
-      currentRoute
+      currentRoute,
+      isOnCorrectRoute: isOnCorrectRoute(currentRoute)
     });
 
-    // -----------------------------
-    // RULE 1: User NOT logged in → redirect from PROTECTED routes to Login
-    // -----------------------------
+    // Safe navigation function
+    const safeNavigate = (targetRoute) => {
+      if (!isMounted.current) {
+        console.log("🚫 Navigation skipped - component unmounted");
+        return;
+      }
+      
+      console.log(`🔄 Safe navigating to: ${targetRoute}`);
+      hasRedirected.current = true;
+      
+      // Use requestAnimationFrame to ensure React is ready
+      requestAnimationFrame(() => {
+        if (isMounted.current) {
+          router.replace(targetRoute);
+        }
+      });
+    };
+
+    // RULE 1: Not authenticated on protected route → Login
     if (!isAuthenticated && (isProtected || isRootRoute)) {
       if (currentRoute !== "/Login") {
         console.log("🚫 Not authenticated - redirecting to /Login");
-        redirected.current = true;
-        // Use setTimeout to avoid navigation during render
-        setTimeout(() => {
-          router.replace("/Login");
-        }, 100);
+        safeNavigate("/Login");
       }
       return;
     }
 
-    // -----------------------------
-    // RULE 2: Logged in user visiting auth screens → redirect to appropriate home
-    // -----------------------------
-    if (isAuthenticated && (isAuthRoute || isRootRoute)) {
+    // RULE 2: Authenticated on auth route or root → redirect to appropriate home
+    if (isAuthenticated && (isAuthRoute || isRootRoute || !isOnCorrectRoute(currentRoute))) {
       const role = user?.role?.toLowerCase();
       let targetRoute = "/(tabs)";
       
-      if (role === "superadmin") targetRoute = "/(superadmin)/dashboard";
-      else if (role === "admin") targetRoute = "/(admin)/dashboard";
+      if (role === "superadmin") targetRoute = "/(superadmin)";
+      else if (role === "admin") targetRoute = "/(admin)";
       
       if (currentRoute !== targetRoute) {
         console.log(`✅ Authenticated ${role} - redirecting to ${targetRoute}`);
-        redirected.current = true;
-        setTimeout(() => {
-          router.replace(targetRoute);
-        }, 100);
+        safeNavigate(targetRoute);
       }
       return;
     }
 
-    // -----------------------------
-    // RULE 3: Authenticated but no specific route match
-    // -----------------------------
-    if (isAuthenticated && !isProtected && !isAuthRoute && !isRootRoute) {
-      console.log("✅ Authenticated user accessing allowed route:", currentRoute);
-      redirected.current = false;
+    // RULE 3: Authenticated but on wrong protected route
+    if (isAuthenticated && isProtected && !isOnCorrectRoute(currentRoute)) {
+      const role = user?.role?.toLowerCase();
+      let targetRoute = "/(tabs)";
+      
+      if (role === "superadmin") targetRoute = "/(superadmin)";
+      else if (role === "admin") targetRoute = "/(admin)";
+      
+      console.log(`🔄 Wrong route for ${role} - redirecting to ${targetRoute}`);
+      safeNavigate(targetRoute);
       return;
     }
 
-    // Reset redirect flag for next navigation
-    redirected.current = false;
+    // All good - reset redirect flag
+    console.log("✅ Navigation state is correct");
+    hasRedirected.current = false;
 
-  }, [isAuthenticated, isLoading, user, segments, router]);
+  }, [isAuthenticated, isLoading, user, segments, router, isOnCorrectRoute, getCurrentRoute, hasRedirected]);
 
-  // Show loading while checking auth
   if (isLoading) {
     return (
       <View style={{ 

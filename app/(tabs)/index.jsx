@@ -1,4 +1,6 @@
 // app/(tabs)/index.jsx
+
+// /home/shubh/Ak/9dairy-UI/app/(tabs)/index.jsx
 import React, { useEffect, useState, useRef } from "react";
 import {
   View,
