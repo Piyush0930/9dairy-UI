@@ -1,15 +1,15 @@
 // navigation/NavigationHandler.jsx
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useSegments } from "expo-router";
 import { View, Text, ActivityIndicator } from "react-native";
 
 export default function NavigationHandler() {
-  const { isAuthenticated, isLoading, user } = useAuth(); // ✅ Use isLoading instead of loading
+  const { isAuthenticated, isLoading, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-
-  // Avoid duplicate redirects
+  
+  const [navigationReady, setNavigationReady] = useState(false);
   const redirected = useRef(false);
 
   const getCurrentRoute = () => {
@@ -18,13 +18,14 @@ export default function NavigationHandler() {
   };
 
   useEffect(() => {
-    if (isLoading) return; // wait for auth to finish
-    if (redirected.current) return; // prevent loop
+    if (isLoading) return;
 
     const currentRoute = getCurrentRoute();
-    console.log("🔍 NavigationHandler → Current route:", currentRoute);
+    console.log("🔍 NavigationHandler → Current route:", currentRoute, "User role:", user?.role);
 
-    // ✅ FIXED: Include all protected routes
+    // ✅ FIXED: Add this check for initial route
+    const isInitialRoute = currentRoute === "/" || segments.length === 0;
+
     const isProtected =
       segments[0] === "(tabs)" ||
       segments[0] === "(admin)" ||
@@ -39,6 +40,31 @@ export default function NavigationHandler() {
       segments[0] === "Signup" ||
       segments[0] === "GetStarted";
 
+    // 🚨 CRITICAL FIX: Handle initial route ("/") for authenticated users
+    if (isAuthenticated && (isInitialRoute || !isProtected)) {
+      const role = user?.role?.toLowerCase();
+      
+      if (role === "superadmin" && currentRoute !== "/(superadmin)") {
+        console.log("👑 SuperAdmin on initial route → redirect → /(superadmin)");
+        redirected.current = true;
+        router.replace("/(superadmin)");
+        setNavigationReady(true);
+        return;
+      } else if ((role === "admin" || role === "retailer") && currentRoute !== "/(admin)") {
+        console.log("🔧 Admin/Retailer on initial route → redirect → /(admin)");
+        redirected.current = true;
+        router.replace("/(admin)");
+        setNavigationReady(true);
+        return;
+      } else if (role === "customer" && currentRoute !== "/(tabs)") {
+        console.log("🛒 Customer on initial route → redirect → /(tabs)");
+        redirected.current = true;
+        router.replace("/(tabs)");
+        setNavigationReady(true);
+        return;
+      }
+    }
+
     // -----------------------------
     // RULE 1: User NOT logged in → redirect from PROTECTED routes
     // -----------------------------
@@ -47,6 +73,7 @@ export default function NavigationHandler() {
         console.log("🔐 Not logged in → redirect → /Login");
         redirected.current = true;
         router.replace("/Login");
+        setNavigationReady(true);
       }
       return;
     }
@@ -57,25 +84,21 @@ export default function NavigationHandler() {
     if (isAuthenticated && isAuthRoute) {
       const role = user?.role?.toLowerCase();
       
-      if (role === "superadmin") {
-        if (currentRoute !== "/(superadmin)") {
-          console.log("👑 SuperAdmin logged in → redirect → /(superadmin)");
-          redirected.current = true;
-          router.replace("/(superadmin)");
-        }
-      } else if (role === "admin" || role === "retailer") {
-        if (currentRoute !== "/(admin)") {
-          console.log("🔧 Admin/Retailer logged in → redirect → /(admin)");
-          redirected.current = true;
-          router.replace("/(admin)");
-        }
-      } else {
-        // Customer or any other role
-        if (currentRoute !== "/(tabs)") {
-          console.log("🛒 Customer logged in → redirect → /(tabs)");
-          redirected.current = true;
-          router.replace("/(tabs)");
-        }
+      if (role === "superadmin" && currentRoute !== "/(superadmin)") {
+        console.log("👑 SuperAdmin on auth route → redirect → /(superadmin)");
+        redirected.current = true;
+        router.replace("/(superadmin)");
+        setNavigationReady(true);
+      } else if ((role === "admin" || role === "retailer") && currentRoute !== "/(admin)") {
+        console.log("🔧 Admin/Retailer on auth route → redirect → /(admin)");
+        redirected.current = true;
+        router.replace("/(admin)");
+        setNavigationReady(true);
+      } else if (currentRoute !== "/(tabs)") {
+        console.log("🛒 Customer on auth route → redirect → /(tabs)");
+        redirected.current = true;
+        router.replace("/(tabs)");
+        setNavigationReady(true);
       }
       return;
     }
@@ -87,11 +110,11 @@ export default function NavigationHandler() {
       const role = user?.role?.toLowerCase();
       const currentPath = getCurrentRoute();
       
-      // Check if user is on wrong route for their role
       if (role === "superadmin" && !currentPath.startsWith("/(superadmin)")) {
         console.log("👑 SuperAdmin on wrong route → redirect → /(superadmin)");
         redirected.current = true;
         router.replace("/(superadmin)");
+        setNavigationReady(true);
         return;
       }
       
@@ -99,6 +122,7 @@ export default function NavigationHandler() {
         console.log("🔧 Admin/Retailer on wrong route → redirect → /(admin)");
         redirected.current = true;
         router.replace("/(admin)");
+        setNavigationReady(true);
         return;
       }
       
@@ -108,19 +132,28 @@ export default function NavigationHandler() {
         console.log("🛒 Customer on wrong route → redirect → /(tabs)");
         redirected.current = true;
         router.replace("/(tabs)");
+        setNavigationReady(true);
         return;
       }
     }
 
-    // If no redirect is needed → allow navigation normally
+    // If we reach here, navigation is ready and no redirect is needed
+    console.log("✅ Navigation ready, no redirect needed");
+    setNavigationReady(true);
     redirected.current = false;
   }, [isAuthenticated, isLoading, user, segments]);
 
-  if (isLoading) {
+  // 🚨 CRITICAL: Show loading until navigation is decided
+  if (isLoading || !navigationReady) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <View style={{ 
+        flex: 1, 
+        justifyContent: "center", 
+        alignItems: "center",
+        backgroundColor: '#fff'
+      }}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={{ marginTop: 10 }}>Checking authentication...</Text>
+        <Text style={{ marginTop: 10 }}>Setting up your dashboard...</Text>
       </View>
     );
   }

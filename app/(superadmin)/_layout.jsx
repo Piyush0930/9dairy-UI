@@ -1,25 +1,14 @@
-// app/(tabs)/supadmin/_layout.jsx
+// C:\Users\Krishna\OneDrive\Desktop\dairy9-frontend\9dairy-UI\app\(superadmin)\_layout.jsx
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  Feather,
-  FontAwesome5,
-  Ionicons,
-  MaterialIcons,
-} from "@expo/vector-icons";
+import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
 import { Alert, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSegments } from "expo-router";
 
 export default function SupadminLayout() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  // 🔥 Detect active tab from URL segments
-  const segments = useSegments();
-  const current = segments[segments.length - 1]; // "dashboard", "retailers", "system", etc.
-  console.log("CURRENT TAB ==>", current);
 
   const handleLogout = () => {
     Alert.alert(
@@ -46,8 +35,8 @@ export default function SupadminLayout() {
   return (
     <Tabs
       screenOptions={{
-        // 🔷 HEADER STYLE
-        headerStyle: {
+        // HEADER STYLING - Consistent with Admin
+        headerStyle: { 
           backgroundColor: "#FFFFFF",
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 2 },
@@ -56,68 +45,55 @@ export default function SupadminLayout() {
           elevation: 5,
         },
         headerTintColor: "#000000",
-        headerTitleStyle: {
+        headerTitleStyle: { 
           fontWeight: "bold",
           fontSize: 18,
         },
-
-        // 🔥 Conditional headerRight (NO route.name!)
         headerRight: () => (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginRight: 15,
-              gap: 16,
-            }}
-          >
-            {/* SUPER ADMIN BADGE */}
-            <View
-              style={{
-                backgroundColor: "#FF6B35",
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 16,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <MaterialIcons
-                name="admin-panel-settings"
-                size={16}
-                color="#FFFFFF"
-              />
-              <Text
-                style={{
-                  color: "#FFFFFF",
-                  fontSize: 12,
-                  fontWeight: "700",
-                }}
-              >
+          <View style={{ flexDirection: "row", alignItems: "center", marginRight: 15, gap: 16 }}>
+            {/* SuperAdmin Badge - Enhanced */}
+            <View style={{ 
+              backgroundColor: "#FF6B35",
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 3,
+            }}>
+              <MaterialIcons name="admin-panel-settings" size={16} color="#FFFFFF" />
+              <Text style={{ 
+                color: '#FFFFFF', 
+                fontSize: 12, 
+                fontWeight: '700',
+                letterSpacing: 0.5,
+              }}>
                 SUPER ADMIN
               </Text>
             </View>
 
-            {/* 🔥 LOGOUT BUTTON ONLY ON SYSTEM TAB */}
-            {current === "system" && (
-              <TouchableOpacity
-                onPress={handleLogout}
-                style={{
-                  padding: 8,
-                  borderRadius: 8,
-                  backgroundColor: "#F8F9FA",
-                  borderWidth: 1,
-                  borderColor: "#E9ECEF",
-                }}
-              >
-                <MaterialIcons name="logout" size={20} color="#DC3545" />
-              </TouchableOpacity>
-            )}
+            {/* Logout Button - Consistent with Admin */}
+            <TouchableOpacity 
+              onPress={handleLogout}
+              style={{
+                padding: 8,
+                borderRadius: 8,
+                backgroundColor: '#F8F9FA',
+                borderWidth: 1,
+                borderColor: '#E9ECEF',
+              }}
+            >
+              <MaterialIcons name="logout" size={20} color="#DC3545" />
+            </TouchableOpacity>
           </View>
         ),
-
-        // 🔷 TAB BAR STYLING
+        
+        // TAB BAR STYLING - Enhanced and Consistent
         tabBarStyle: {
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1,
@@ -133,8 +109,8 @@ export default function SupadminLayout() {
         },
         tabBarActiveTintColor: "#2196F3",
         tabBarInactiveTintColor: "#9E9E9E",
-        tabBarLabelStyle: {
-          fontSize: 11,
+        tabBarLabelStyle: { 
+          fontSize: 11, 
           fontWeight: "700",
           marginTop: 2,
           letterSpacing: 0.3,
@@ -144,29 +120,23 @@ export default function SupadminLayout() {
         },
       }}
     >
+      {/* ✅ ONLY SCREENS THAT ACTUALLY EXIST - NO HIDDEN/EXTRA SCREENS */}
+
       {/* DASHBOARD TAB */}
       <Tabs.Screen
         name="dashboard"
         options={{
           title: "Dashboard",
-          tabBarIcon: ({ color, focused }) => (
-            <View
-              style={{
-                padding: 4,
-                borderRadius: 8,
-                backgroundColor: focused
-                  ? "rgba(33, 150, 243, 0.1)"
-                  : "transparent",
-              }}
-            >
-              <MaterialIcons
-                name="dashboard"
-                size={focused ? 26 : 24}
-                color={color}
-              />
+          tabBarIcon: ({ color, size, focused }) => (
+            <View style={{
+              padding: 4,
+              borderRadius: 8,
+              backgroundColor: focused ? 'rgba(33, 150, 243, 0.1)' : 'transparent'
+            }}>
+              <MaterialIcons name="dashboard" size={focused ? 26 : 24} color={color} />
             </View>
           ),
-          headerTitle: "SuperAdmin",
+          headerTitle: "SuperAdmin Dashboard",
         }}
       />
 
@@ -175,46 +145,16 @@ export default function SupadminLayout() {
         name="retailers"
         options={{
           title: "Retailers",
-          tabBarIcon: ({ color, focused }) => (
-            <View
-              style={{
-                padding: 4,
-                borderRadius: 8,
-                backgroundColor: focused
-                  ? "rgba(33, 150, 243, 0.1)"
-                  : "transparent",
-              }}
-            >
+          tabBarIcon: ({ color, size, focused }) => (
+            <View style={{
+              padding: 4,
+              borderRadius: 8,
+              backgroundColor: focused ? 'rgba(33, 150, 243, 0.1)' : 'transparent'
+            }}>
               <FontAwesome5 name="store" size={focused ? 20 : 18} color={color} />
             </View>
           ),
           headerTitle: "Manage Retailers",
-        }}
-      />
-
-      {/* CUSTOMERS TAB */}
-      <Tabs.Screen
-        name="customers"
-        options={{
-          title: "Customers",
-          tabBarIcon: ({ color, focused }) => (
-            <View
-              style={{
-                padding: 4,
-                borderRadius: 8,
-                backgroundColor: focused
-                  ? "rgba(33, 150, 243, 0.1)"
-                  : "transparent",
-              }}
-            >
-              <MaterialIcons
-                name="people-alt"
-                size={focused ? 26 : 24}
-                color={color}
-              />
-            </View>
-          ),
-          headerTitle: "Customer Management",
         }}
       />
 
@@ -223,21 +163,13 @@ export default function SupadminLayout() {
         name="orders"
         options={{
           title: "Orders",
-          tabBarIcon: ({ color, focused }) => (
-            <View
-              style={{
-                padding: 4,
-                borderRadius: 8,
-                backgroundColor: focused
-                  ? "rgba(33, 150, 243, 0.1)"
-                  : "transparent",
-              }}
-            >
-              <Feather
-                name="shopping-bag"
-                size={focused ? 22 : 20}
-                color={color}
-              />
+          tabBarIcon: ({ color, size, focused }) => (
+            <View style={{
+              padding: 4,
+              borderRadius: 8,
+              backgroundColor: focused ? 'rgba(33, 150, 243, 0.1)' : 'transparent'
+            }}>
+              <Feather name="shopping-bag" size={focused ? 22 : 20} color={color} />
             </View>
           ),
           headerTitle: "All Orders",
@@ -249,24 +181,16 @@ export default function SupadminLayout() {
         name="analytics"
         options={{
           title: "Analytics",
-          tabBarIcon: ({ color, focused }) => (
-            <View
-              style={{
-                padding: 4,
-                borderRadius: 8,
-                backgroundColor: focused
-                  ? "rgba(33, 150, 243, 0.1)"
-                  : "transparent",
-              }}
-            >
-              <MaterialIcons
-                name="bar-chart"
-                size={focused ? 26 : 24}
-                color={color}
-              />
+          tabBarIcon: ({ color, size, focused }) => (
+            <View style={{
+              padding: 4,
+              borderRadius: 8,
+              backgroundColor: focused ? 'rgba(33, 150, 243, 0.1)' : 'transparent'
+            }}>
+              <MaterialIcons name="bar-chart" size={focused ? 26 : 24} color={color} />
             </View>
           ),
-          headerTitle: "Product Catlog",
+          headerTitle: "Product Catalog",
         }}
       />
 
@@ -275,32 +199,26 @@ export default function SupadminLayout() {
         name="system"
         options={{
           title: "System",
-          tabBarIcon: ({ color, focused }) => (
-            <View
-              style={{
-                padding: 4,
-                borderRadius: 8,
-                backgroundColor: focused
-                  ? "rgba(33, 150, 243, 0.1)"
-                  : "transparent",
-              }}
-            >
-              <Ionicons
-                name="settings-sharp"
-                size={focused ? 24 : 22}
-                color={color}
-              />
+          tabBarIcon: ({ color, size, focused }) => (
+            <View style={{
+              padding: 4,
+              borderRadius: 8,
+              backgroundColor: focused ? 'rgba(33, 150, 243, 0.1)' : 'transparent'
+            }}>
+              <Ionicons name="settings-sharp" size={focused ? 24 : 22} color={color} />
             </View>
           ),
           headerTitle: "System Settings",
         }}
       />
 
-      {/* HIDDEN SCREENS */}
-      <Tabs.Screen name="index" options={{ href: null }} />
-      <Tabs.Screen name="retailer-details" options={{ href: null }} />
-      <Tabs.Screen name="customer-details" options={{ href: null }} />
-      <Tabs.Screen name="order-details" options={{ href: null }} />
+      {/* INDEX (REDIRECT) - HIDDEN */}
+      <Tabs.Screen 
+        name="index" 
+        options={{ 
+          href: null 
+        }} 
+      />
     </Tabs>
   );
 }
