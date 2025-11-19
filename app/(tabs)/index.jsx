@@ -1,6 +1,5 @@
 // app/(tabs)/index.jsx
 
-// /home/shubh/Ak/9dairy-UI/app/(tabs)/index.jsx
 import React, { useEffect, useState, useRef } from "react";
 import {
   View,
@@ -14,7 +13,8 @@ import {
   TextInput,
   StyleSheet,
   Image,
-  Dimensions
+  Dimensions,
+  AppState
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,6 +26,7 @@ import CategoryTile from "@/components/CategoryTile";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Location from "expo-location";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 64;
@@ -34,6 +35,10 @@ const POPULAR_CARD_WIDTH = 165;
 const POPULAR_CARD_SPACING = 12;
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+
+// ⭐ LOCAL CACHE KEYS
+const RETAILER_CACHE_KEY = 'current_retailer_cache';
+const LOCATION_CACHE_KEY = 'current_location_cache';
 
 // Store banners (unchanged)
 const storeCards = [
@@ -44,12 +49,73 @@ const storeCards = [
   { id: 5, image: require('../../assets/images/banner5.jpg') },
 ];
 
+// ⭐ LOCAL CACHE FUNCTIONS
+const saveRetailerToCache = async (retailerData) => {
+  try {
+    const cacheData = {
+      retailer: retailerData,
+      timestamp: Date.now(),
+      sessionId: Math.random().toString(36).substr(2, 9)
+    };
+    await AsyncStorage.setItem(RETAILER_CACHE_KEY, JSON.stringify(cacheData));
+    console.log("✅ Retailer saved to cache");
+  } catch (error) {
+    console.log('❌ Cache save error:', error);
+  }
+};
+
+const getRetailerFromCache = async () => {
+  try {
+    const cached = await AsyncStorage.getItem(RETAILER_CACHE_KEY);
+    if (!cached) {
+      console.log("❌ No retailer cache found");
+      return null;
+    }
+    
+    const cacheData = JSON.parse(cached);
+    console.log("✅ Retailer cache found");
+    return cacheData.retailer;
+  } catch (error) {
+    console.log('❌ Cache read error:', error);
+    return null;
+  }
+};
+
+// ⭐ CLEAR CACHE FUNCTION - Called on app close
+const clearRetailerCache = async () => {
+  try {
+    await AsyncStorage.removeItem(RETAILER_CACHE_KEY);
+    await AsyncStorage.removeItem(LOCATION_CACHE_KEY);
+    console.log("✅ Retailer cache cleared on app close");
+  } catch (error) {
+    console.log('❌ Cache clear error:', error);
+  }
+};
+
+const saveLocationToCache = async (locationData) => {
+  try {
+    await AsyncStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(locationData));
+  } catch (error) {
+    console.log('Location cache save error:', error);
+  }
+};
+
+const getLocationFromCache = async () => {
+  try {
+    const cached = await AsyncStorage.getItem(LOCATION_CACHE_KEY);
+    return cached ? JSON.parse(cached) : null;
+  } catch (error) {
+    console.log('Location cache read error:', error);
+    return null;
+  }
+};
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { authToken } = useAuth();
   const token = authToken;
   const { assignedRetailer, updateLocationAndRetailer, usedLocationType } = useProfile();
-  const { getTotalItems, items } = useCart(); // ⭐ ADDED items to check cart count
+  const { getTotalItems, items } = useCart();
   const cartCount = getTotalItems();
 
   const [categories, setCategories] = useState([]);
@@ -62,6 +128,7 @@ export default function HomeScreen() {
   const [manualAddress, setManualAddress] = useState("");
 
   const popularScrollRef = useRef(null);
+  const appState = useRef(AppState.currentState);
 
   // ------------- Inventory Attachment Logic -------------
   const normalize = (s) => {
@@ -158,6 +225,29 @@ export default function HomeScreen() {
     }
   };
 
+  // ⭐ UPDATED: Assign Retailer - REMOVED useCached parameter since we're not using cache
+  const postAssignRetailer = async (lat, lng, address = "") => {
+    if (!token) return null;
+    try {
+      const res = await fetch(`${API_BASE}/api/customer/assign-retailer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          lat, 
+          lng, 
+          address
+          // ⭐ REMOVED: useCached parameter since we clear cache on app close
+        })
+      });
+      return await res.json();
+    } catch {
+      return null;
+    }
+  };
+
   // ------------- Location Functions -------------
   const getDeviceLocation = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -175,23 +265,6 @@ export default function HomeScreen() {
     };
   };
 
-  const postAssignRetailer = async (lat, lng, address = "") => {
-    if (!token) return null;
-    try {
-      const res = await fetch(`${API_BASE}/api/customer/assign-retailer`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ lat, lng, address })
-      });
-      return await res.json();
-    } catch {
-      return null;
-    }
-  };
-
   // Helper function for address formatting
   const formatAddress = (addr) => {
     if (!addr) return "";
@@ -205,38 +278,17 @@ export default function HomeScreen() {
       .join(", ");
   };
 
-  // ------------- Location Handlers -------------
-  const handleUseCurrentAddress = async () => {
+  // ⭐ UPDATED: Load products WITHOUT cache support
+  const loadProductsWithRetailer = async (retailer, inventoryData, locationData = null) => {
     try {
-      setShowLocationPrompt(false);
-      setLoading(true);
+      const [cats, prods] = await Promise.all([
+        fetchCategories(),
+        fetchFeaturedProducts()
+      ]);
 
-      const loc = await getDeviceLocation();
-      const resp = await postAssignRetailer(loc.lat, loc.lng, "Current Location");
+      setCategories(cats);
 
-      if (!resp) {
-        Alert.alert("Error", "Could not assign nearest retailer.");
-        return;
-      }
-
-      // ⭐ UPDATE PROFILE CONTEXT WITH NEW LOCATION
-      if (updateLocationAndRetailer) {
-        updateLocationAndRetailer(
-          { 
-            coordinates: { latitude: loc.lat, longitude: loc.lng },
-            formattedAddress: "Current Location" 
-          },
-          resp.retailer,
-          "current"
-        );
-      }
-
-      const inv = resp.inventory ?? [];
-      setInventory(inv);
-
-      const products = await fetchFeaturedProducts();
-      const mapped = attachInventoryToProducts(products, inv);
-
+      const mapped = attachInventoryToProducts(prods, inventoryData);
       setFeaturedProducts(mapped);
       
       // Popular products - ONLY in-stock items
@@ -244,6 +296,49 @@ export default function HomeScreen() {
         mapped.filter(p => p.soldByRetailer && !p.outOfStock).slice(0, 8)
       );
 
+      // Update profile context if location data provided
+      if (locationData && updateLocationAndRetailer) {
+        updateLocationAndRetailer(
+          locationData,
+          retailer,
+          locationData.type || "current"
+        );
+      }
+
+      console.log(`✅ Products loaded for retailer: ${retailer.shopName}`);
+    } catch (error) {
+      console.error("❌ Error loading products:", error);
+      throw error;
+    }
+  };
+
+  // ------------- Location Handlers -------------
+  const handleUseCurrentAddress = async () => {
+    try {
+      setShowLocationPrompt(false);
+      setLoading(true);
+
+      const loc = await getDeviceLocation();
+      const locationData = { 
+        coordinates: { latitude: loc.lat, longitude: loc.lng },
+        formattedAddress: "Current Location",
+        type: "current"
+      };
+
+      const resp = await postAssignRetailer(loc.lat, loc.lng, "Current Location");
+
+      if (!resp || !resp.success) {
+        Alert.alert("Error", "Could not assign nearest retailer.");
+        return;
+      }
+
+      // ⭐ SAVE TO CACHE ONLY FOR CURRENT SESSION
+      // Cache will be cleared when app closes
+      await saveRetailerToCache(resp.retailer);
+      await saveLocationToCache(locationData);
+
+      await loadProductsWithRetailer(resp.retailer, resp.inventory ?? [], locationData);
+      
       // ⭐ SHOW ALERT IF CART ITEMS AFFECTED
       if (items.length > 0) {
         Alert.alert(
@@ -294,45 +389,29 @@ export default function HomeScreen() {
         return;
       }
 
+      const locationData = { 
+        coordinates: { latitude: lat, longitude: lng },
+        formattedAddress: formatAddress(savedAddress),
+        type: "signup"
+      };
+
       // 2. Assign retailer using saved address coordinates
       console.log("📍 Assigning retailer using saved address...");
       const assignResp = await postAssignRetailer(lat, lng, "Saved Address");
 
-      if (!assignResp) {
+      if (!assignResp || !assignResp.success) {
         Alert.alert("Error", "Failed to assign retailer for your saved address.");
         return;
       }
 
-      // ⭐ UPDATE PROFILE CONTEXT WITH SAVED ADDRESS
-      if (updateLocationAndRetailer) {
-        updateLocationAndRetailer(
-          { 
-            coordinates: { latitude: lat, longitude: lng },
-            formattedAddress: formatAddress(savedAddress) 
-          },
-          assignResp.retailer,
-          "signup"
-        );
-      }
+      // ⭐ SAVE TO CACHE ONLY FOR CURRENT SESSION
+      await saveRetailerToCache(assignResp.retailer);
+      await saveLocationToCache(locationData);
 
-      const assignedInventory = assignResp?.inventory ?? [];
-
-      // 3. Fetch categories and products
-      const [cats, prods] = await Promise.all([
-        fetchCategories(),
-        fetchFeaturedProducts()
-      ]);
-
-      setCategories(cats);
-
-      // 4. Attach inventory to products
-      const mapped = attachInventoryToProducts(prods, assignedInventory);
-
-      setFeaturedProducts(mapped);
-      
-      // 5. Popular products - ONLY in-stock items
-      setPopularProducts(
-        mapped.filter(p => p.soldByRetailer && !p.outOfStock).slice(0, 8)
+      await loadProductsWithRetailer(
+        assignResp.retailer, 
+        assignResp.inventory ?? [], 
+        locationData
       );
 
       // ⭐ SHOW ALERT IF CART ITEMS AFFECTED
@@ -354,7 +433,7 @@ export default function HomeScreen() {
     }
   };
 
-  // ------------- Initial Load -------------
+  // ⭐ UPDATED: Initial Load - ALWAYS SHOW LOCATION PROMPT
   useEffect(() => {
     const initialLoad = async () => {
       if (!token) return;
@@ -362,43 +441,45 @@ export default function HomeScreen() {
       setLoading(true);
       
       try {
-        // Check if we already have a retailer assigned
-        const hasExistingRetailer = assignedRetailer && assignedRetailer._id;
+        // ⭐ STEP 1: Clear any existing cache first (fresh start)
+        await clearRetailerCache();
         
-        if (!hasExistingRetailer) {
-          // Show location prompt if no retailer assigned
-          setShowLocationPrompt(true);
-        }
+        // ⭐ STEP 2: Always show location prompt on app open
+        setShowLocationPrompt(true);
 
-        // Always load categories and featured products
-        const [cats, prods] = await Promise.all([
-          fetchCategories(),
-          fetchFeaturedProducts()
-        ]);
-
+        // ⭐ STEP 3: Load categories (can load without retailer)
+        const cats = await fetchCategories();
         setCategories(cats);
-
-        // Load inventory based on current retailer assignment
-        const inv = await fetchInventory();
-        setInventory(inv);
-
-        const mapped = attachInventoryToProducts(prods, inv);
-        setFeaturedProducts(mapped);
-        
-        // Popular products - ONLY in-stock items
-        setPopularProducts(
-          mapped.filter(p => p.soldByRetailer && !p.outOfStock).slice(0, 8)
-        );
 
       } catch (error) {
         console.error("Initial load error:", error);
+        // Still show location prompt on error
+        setShowLocationPrompt(true);
       } finally {
         setLoading(false);
       }
     };
 
     initialLoad();
-  }, [token, assignedRetailer]);
+  }, [token]);
+
+  // ⭐ NEW: App State Listener to Clear Cache on App Close
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      // When app goes from active to background/inactive (app closing)
+      if (appState.current === 'active' && 
+          (nextAppState === 'background' || nextAppState === 'inactive')) {
+        console.log('🔄 App closing - Clearing retailer cache');
+        clearRetailerCache();
+      }
+      
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   // ------------- Refresh -------------
   const onRefresh = async () => {
@@ -461,212 +542,226 @@ export default function HomeScreen() {
         }
       >
 
-        {/* SEARCH BAR */}
-        <View style={styles.searchSection}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={20} color="#EF4444" />
-            <TextInput
-              placeholder="Search 'Salted Butter'"
-              style={styles.searchInput}
-              placeholderTextColor="#BDBDBD"
-            />
-          </View>
-
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => router.push("/cart")}
-          >
-            <Ionicons name="cart-outline" size={22} color="#1A1A1A" />
-            {cartCount > 0 && (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>
-                  {cartCount > 99 ? "99+" : cartCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* FEATURED STORES */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Featured Stores</Text>
-            <View style={styles.newBadge}>
-              <Text style={styles.newBadgeText}>NEW</Text>
+        {/* SEARCH BAR - Only show if location is selected */}
+        {!showLocationPrompt && (
+          <View style={styles.searchSection}>
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={20} color="#EF4444" />
+              <TextInput
+                placeholder="Search 'Salted Butter'"
+                style={styles.searchInput}
+                placeholderTextColor="#BDBDBD"
+              />
             </View>
-          </View>
 
-          <View style={styles.storesContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={CARD_WIDTH + CARD_SPACING}
-              decelerationRate="fast"
-              contentContainerStyle={styles.storesScroll}
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => router.push("/cart")}
             >
-              {infiniteStoreCards.map((store, index) => (
-                <TouchableOpacity
-                  key={`${store.id}-${index}`}
-                  style={styles.storeCard}
-                  onPress={() => router.push("/categories")}
-                  activeOpacity={0.9}
+              <Ionicons name="cart-outline" size={22} color="#1A1A1A" />
+              {cartCount > 0 && (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>
+                    {cartCount > 99 ? "99+" : cartCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Show loading only when location prompt is not visible */}
+        {loading && !showLocationPrompt && (
+          <View style={styles.fullScreenLoading}>
+            <ActivityIndicator size="large" color={Colors.light.tint} />
+            <Text style={styles.loadingText}>Loading products...</Text>
+          </View>
+        )}
+
+        {/* CONTENT - Only show if location is selected and not loading */}
+        {!showLocationPrompt && !loading && (
+          <>
+            {/* FEATURED STORES */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Featured Stores</Text>
+                <View style={styles.newBadge}>
+                  <Text style={styles.newBadgeText}>NEW</Text>
+                </View>
+              </View>
+
+              <View style={styles.storesContainer}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={CARD_WIDTH + CARD_SPACING}
+                  decelerationRate="fast"
+                  contentContainerStyle={styles.storesScroll}
                 >
-                  <Image source={store.image} style={styles.storeImageFull} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-
-        {/* CATEGORIES */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Shop by category</Text>
-
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={Colors.light.tint} />
-              <Text style={styles.loadingText}>Loading categories...</Text>
-            </View>
-          ) : categories.length > 0 ? (
-            <View style={styles.categoriesGrid}>
-              {categories.map((cat) => (
-                <CategoryTile
-                  key={cat._id || cat.id}
-                  name={cat.name}
-                  image={cat.image}
-                  color={cat.color || "#E3F2FD"}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/categories",
-                      params: { categoryId: cat._id },
-                    })
-                  }
-                />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>No categories found</Text>
-            </View>
-          )}
-        </View>
-
-        {/* POPULAR PRODUCTS - ONLY AVAILABLE */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Popular</Text>
-            <View style={styles.fireIcon}>
-              <Text style={styles.fireEmoji}>🔥</Text>
-            </View>
-          </View>
-
-          <Text style={styles.popularSubtext}>Most frequently bought</Text>
-
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={Colors.light.tint} />
-              <Text style={styles.loadingText}>Loading popular products...</Text>
-            </View>
-          ) : popularProducts.length > 0 ? (
-            <View style={styles.popularContainer}>
-              <ScrollView
-                ref={popularScrollRef}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.popularScroll}
-                snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
-                decelerationRate="fast"
-                onScroll={handlePopularScroll}
-                scrollEventThrottle={16}
-              >
-                {infinitePopularProducts
-                  .filter((p) => p && p.soldByRetailer && !p.outOfStock)
-                  .map((product, index) => (
-                    <View
-                      key={`${product._id || product.id}-${index}`}
-                      style={styles.productCardWrapper}
+                  {infiniteStoreCards.map((store, index) => (
+                    <TouchableOpacity
+                      key={`${store.id}-${index}`}
+                      style={styles.storeCard}
+                      onPress={() => router.push("/categories")}
+                      activeOpacity={0.9}
                     >
-                      <ProductCard product={product} />
-                    </View>
+                      <Image source={store.image} style={styles.storeImageFull} />
+                    </TouchableOpacity>
                   ))}
-              </ScrollView>
+                </ScrollView>
+              </View>
             </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>No popular products available</Text>
+
+            {/* CATEGORIES */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Shop by category</Text>
+
+              {categories.length > 0 ? (
+                <View style={styles.categoriesGrid}>
+                  {categories.map((cat) => (
+                    <CategoryTile
+                      key={cat._id || cat.id}
+                      name={cat.name}
+                      image={cat.image}
+                      color={cat.color || "#E3F2FD"}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/categories",
+                          params: { categoryId: cat._id },
+                        })
+                      }
+                    />
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>No categories found</Text>
+                </View>
+              )}
             </View>
-          )}
-        </View>
 
-        {/* QUICK LINKS */}
-        <View style={[styles.section, { marginBottom: 120 }]}>
-          <Text style={styles.sectionTitle}>Quick links</Text>
-
-          <View style={styles.quickLinksRow}>
-            <TouchableOpacity
-              style={styles.quickLinkCard}
-              onPress={() => router.push("/wallet")}
-            >
-              <View
-                style={[
-                  styles.quickLinkIconContainer,
-                  { backgroundColor: "#06B6D4" },
-                ]}
-              >
-                <Text style={styles.quickLinkEmoji}>💳</Text>
+            {/* POPULAR PRODUCTS - ONLY AVAILABLE */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Popular</Text>
+                <View style={styles.fireIcon}>
+                  <Text style={styles.fireEmoji}>🔥</Text>
+                </View>
               </View>
-              <Text style={styles.quickLinkTitle}>Wallet</Text>
-              <Text style={styles.quickLinkSubtext}>₹0.0</Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.quickLinkCard}
-              onPress={() => router.push("/orders")}
-            >
-              <View
-                style={[
-                  styles.quickLinkIconContainer,
-                  { backgroundColor: "#F59E0B" },
-                ]}
-              >
-                <Text style={styles.quickLinkEmoji}>📋</Text>
-              </View>
-              <Text style={styles.quickLinkTitle}>Orders</Text>
-              <Text style={styles.quickLinkSubtext}>Track orders</Text>
-            </TouchableOpacity>
+              <Text style={styles.popularSubtext}>Most frequently bought</Text>
 
-            <TouchableOpacity
-              style={styles.quickLinkCard}
-              onPress={() => router.push("/categories")}
-            >
-              <View
-                style={[
-                  styles.quickLinkIconContainer,
-                  { backgroundColor: "#EF4444" },
-                ]}
-              >
-                <Text style={styles.quickLinkEmoji}>❤️</Text>
+              {popularProducts.length > 0 ? (
+                <View style={styles.popularContainer}>
+                  <ScrollView
+                    ref={popularScrollRef}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.popularScroll}
+                    snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
+                    decelerationRate="fast"
+                    onScroll={handlePopularScroll}
+                    scrollEventThrottle={16}
+                  >
+                    {infinitePopularProducts
+                      .filter((p) => p && p.soldByRetailer && !p.outOfStock)
+                      .map((product, index) => (
+                        <View
+                          key={`${product._id || product.id}-${index}`}
+                          style={styles.productCardWrapper}
+                        >
+                          <ProductCard product={product} />
+                        </View>
+                      ))}
+                  </ScrollView>
+                </View>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>No popular products available</Text>
+                </View>
+              )}
+            </View>
+
+            {/* QUICK LINKS */}
+            <View style={[styles.section, { marginBottom: 120 }]}>
+              <Text style={styles.sectionTitle}>Quick links</Text>
+
+              <View style={styles.quickLinksRow}>
+                <TouchableOpacity
+                  style={styles.quickLinkCard}
+                  onPress={() => router.push("/wallet")}
+                >
+                  <View
+                    style={[
+                      styles.quickLinkIconContainer,
+                      { backgroundColor: "#06B6D4" },
+                    ]}
+                  >
+                    <Text style={styles.quickLinkEmoji}>💳</Text>
+                  </View>
+                  <Text style={styles.quickLinkTitle}>Wallet</Text>
+                  <Text style={styles.quickLinkSubtext}>₹0.0</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.quickLinkCard}
+                  onPress={() => router.push("/orders")}
+                >
+                  <View
+                    style={[
+                      styles.quickLinkIconContainer,
+                      { backgroundColor: "#F59E0B" },
+                    ]}
+                  >
+                    <Text style={styles.quickLinkEmoji}>📋</Text>
+                  </View>
+                  <Text style={styles.quickLinkTitle}>Orders</Text>
+                  <Text style={styles.quickLinkSubtext}>Track orders</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.quickLinkCard}
+                  onPress={() => router.push("/categories")}
+                >
+                  <View
+                    style={[
+                      styles.quickLinkIconContainer,
+                      { backgroundColor: "#EF4444" },
+                    ]}
+                  >
+                    <Text style={styles.quickLinkEmoji}>❤️</Text>
+                  </View>
+                  <Text style={styles.quickLinkTitle}>My list</Text>
+                  <Text style={styles.quickLinkSubtext}>Shop</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.quickLinkTitle}>My list</Text>
-              <Text style={styles.quickLinkSubtext}>Shop</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+            </View>
+          </>
+        )}
       </ScrollView>
 
-      {/* LOCATION PROMPT MODAL */}
-      <Modal visible={showLocationPrompt} animationType="slide" transparent>
+      {/* LOCATION PROMPT MODAL - Show every time app opens */}
+      <Modal 
+        visible={showLocationPrompt} 
+        animationType="slide" 
+        transparent
+        onRequestClose={() => {
+          // Prevent closing modal by back button - user must choose location
+          return true;
+        }}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Use your location?</Text>
+            <Text style={styles.modalTitle}>Welcome Back! 👋</Text>
             <Text style={styles.modalSubtitle}>
-              We will assign your nearest retailer for better product availability.
+              Please choose your location to see available products from nearest retailer.
             </Text>
 
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={handleUseCurrentAddress}
             >
+              <Ionicons name="location" size={18} color="#fff" style={styles.btnIcon} />
               <Text style={styles.primaryBtnText}>Use Current Location</Text>
             </TouchableOpacity>
 
@@ -674,7 +769,8 @@ export default function HomeScreen() {
               style={styles.ghostBtn}
               onPress={handleSkip}
             >
-              <Text style={styles.ghostBtnText}>Skip - Use Saved Address</Text>
+              <Ionicons name="home" size={18} color="#333" style={styles.btnIcon} />
+              <Text style={styles.ghostBtnText}>Use Saved Address</Text>
             </TouchableOpacity>
 
             <TextInput
@@ -685,12 +781,9 @@ export default function HomeScreen() {
               placeholderTextColor="#666"
             />
 
-            <TouchableOpacity 
-              onPress={() => setShowLocationPrompt(false)} 
-              style={{ marginTop: 10, alignSelf: "center" }}
-            >
-              <Text style={{ color: "#666", fontSize: 14 }}>Cancel</Text>
-            </TouchableOpacity>
+            <Text style={styles.noteText}>
+              🔄 Your location choice will be remembered until you close the app
+            </Text>
           </View>
         </View>
       </Modal>
@@ -702,6 +795,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   scrollView: { flex: 1 },
   scrollContent: { paddingBottom: 20 },
+
+  // ⭐ NEW: Full screen loading
+  fullScreenLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 100,
+  },
 
   searchSection: {
     flexDirection: "row",
@@ -819,20 +920,76 @@ const styles = StyleSheet.create({
   quickLinkTitle: { fontSize: 15, fontWeight: "700", color: Colors.light.text },
   quickLinkSubtext: { fontSize: 13, color: "#9E9E9E" },
 
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: "#fff", padding: 20, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 6 },
-  modalSubtitle: { fontSize: 13, color: "#666", marginBottom: 16 },
-  primaryBtn: { backgroundColor: Colors.light.tint, paddingVertical: 12, borderRadius: 10, alignItems: "center", marginBottom: 8 },
-  primaryBtnText: { color: "#fff", fontWeight: "700" },
-  ghostBtn: { borderWidth: 1, borderColor: "#E8E8E8", paddingVertical: 12, borderRadius: 10, alignItems: "center" },
-  ghostBtnText: { color: "#333", fontWeight: "700" },
-  addressInput: { 
-    marginTop: 12, 
-    borderWidth: 1, 
-    borderColor: "#EEE", 
-    borderRadius: 8, 
-    padding: 12,
-    fontSize: 14
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: "rgba(0,0,0,0.45)", 
+    justifyContent: "flex-end" 
   },
+  modalCard: { 
+    backgroundColor: "#fff", 
+    padding: 24, 
+    borderTopLeftRadius: 20, 
+    borderTopRightRadius: 20,
+    paddingBottom: 30 
+  },
+  modalTitle: { 
+    fontSize: 22, 
+    fontWeight: "700", 
+    marginBottom: 8,
+    textAlign: "center"
+  },
+  modalSubtitle: { 
+    fontSize: 15, 
+    color: "#666", 
+    marginBottom: 24,
+    textAlign: "center",
+    lineHeight: 20
+  },
+  primaryBtn: { 
+    backgroundColor: Colors.light.tint, 
+    paddingVertical: 16, 
+    borderRadius: 12, 
+    alignItems: "center", 
+    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "center"
+  },
+  primaryBtnText: { 
+    color: "#fff", 
+    fontWeight: "700",
+    fontSize: 16
+  },
+  ghostBtn: { 
+    borderWidth: 1.5, 
+    borderColor: "#E8E8E8", 
+    paddingVertical: 16, 
+    borderRadius: 12, 
+    alignItems: "center",
+    marginBottom: 16,
+    flexDirection: "row",
+    justifyContent: "center"
+  },
+  ghostBtnText: { 
+    color: "#333", 
+    fontWeight: "700",
+    fontSize: 16
+  },
+  btnIcon: {
+    marginRight: 8
+  },
+  addressInput: { 
+    marginTop: 8, 
+    borderWidth: 1.5, 
+    borderColor: "#EEE", 
+    borderRadius: 10, 
+    padding: 14,
+    fontSize: 15,
+    marginBottom: 12
+  },
+  noteText: {
+    fontSize: 12,
+    color: "#666",
+    textAlign: "center",
+    fontStyle: "italic"
+  }
 });

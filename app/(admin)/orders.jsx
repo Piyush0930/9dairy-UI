@@ -2,7 +2,7 @@
 
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { File } from 'expo-file-system';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import { useEffect, useState } from "react";

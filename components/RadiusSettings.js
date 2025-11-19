@@ -41,7 +41,7 @@ export default function RadiusSettings() {
 
   useEffect(() => {
     fetchRetailerProfile();
-  }, []);
+  }, [authToken]);
 
   // In components/RadiusSettings.js, update the fetchRetailerProfile function:
 const fetchRetailerProfile = async () => {
@@ -55,29 +55,17 @@ const fetchRetailerProfile = async () => {
     });
     
     const data = await response.json();
-    console.log('📊 RadiusSettings Profile Response:', data);
     
     if (data.success) {
       const profileData = data.data || data.profile;
       if (profileData) {
         setRetailerProfile(profileData);
         const serviceRadius = profileData.serviceRadius || 50;
-        setCurrentRadius(serviceRadius);
-        setRadius(serviceRadius);
-        console.log('✅ RadiusSettings: Profile loaded, radius:', serviceRadius);
-      } else {
-        console.log('⚠️ RadiusSettings: No profile data in response');
-        setCurrentRadius(50);
-        setRadius(50);
+        setRadius(serviceRadius); // Only set one state
       }
-    } else {
-      console.log('❌ RadiusSettings: Profile API error');
-      setCurrentRadius(50);
-      setRadius(50);
     }
   } catch (error) {
-    console.error('❌ Error fetching retailer profile:', error);
-    setCurrentRadius(50);
+    console.error('Error fetching profile:', error);
     setRadius(50);
   } finally {
     setProfileLoading(false);
@@ -86,87 +74,54 @@ const fetchRetailerProfile = async () => {
 
   // Enhanced update function with better debugging
   const updateRadius = async () => {
-    if (radius < 1 || radius > 100) {
-      Alert.alert('Error', 'Radius must be between 1 and 100 km');
-      return;
-    }
+  if (radius < 1 || radius > 100) {
+    Alert.alert('Error', 'Radius must be between 1 and 100 km');
+    return;
+  }
 
-    setLoading(true);
-    try {
-      console.log('🔄 Sending radius update:', radius, 'Type:', typeof radius);
+  setLoading(true);
+  try {
+    console.log('🔄 Sending radius update:', radius);
+    
+    // ✅ Use only the working payload format
+    const payload = { serviceRadius: radius };
+    console.log('📤 Trying payload:', payload);
+
+    const response = await fetch(`${API_BASE_URL}/admin/retailer/radius`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    console.log('📡 API response:', data);
+    
+    if (data.success) {
+      console.log('✅ Radius updated successfully');
+      // ✅ Update retailer profile state
+      setRetailerProfile(prev => prev ? { ...prev, serviceRadius: radius } : null);
+      setModalVisible(false);
       
-      // Try different payload formats
-      const payloads = [
-        { serviceRadius: radius }, // Original format
-        { serviceRadius: parseInt(radius) }, // Ensure integer
-        { serviceRadius: Number(radius) }, // Ensure number
-        { serviceRadius: radius.toString() }, // Try as string
-        { radius: radius }, // Alternative key name
-        { radius: parseInt(radius) }, // Alternative key with integer
-        { deliveryRadius: radius }, // Another alternative
-        { delivery_radius: radius }, // Snake case alternative
-      ];
-
-      let success = false;
-      let lastError = '';
-
-      // Try different payload formats
-      for (const payload of payloads) {
-        try {
-          console.log('📤 Trying payload:', payload);
-          
-          const response = await fetch(`${API_BASE_URL}/admin/retailer/radius`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-          });
-
-          const data = await response.json();
-          console.log('📡 API response for payload', payload, ':', data);
-          
-          if (data.success) {
-            console.log('✅ Radius updated successfully with payload:', payload);
-            setCurrentRadius(radius);
-            setCurrentRadius(radius);
-            setRetailerProfile(prev => ({
-              ...prev,
-              serviceRadius: radius
-            }));
-            setModalVisible(false);
-            Alert.alert('Success', `Service radius updated to ${radius} km`);
-            await fetchRetailerProfile();
-            refreshProfile(); // Trigger profile refresh in other components
-            success = true;
-            break;
-          } else {
-            lastError = data.message || 'Unknown error';
-            console.log('❌ Failed with payload:', payload, 'Error:', lastError);
-          }
-        } catch (error) {
-          console.error('🚨 Network error with payload:', payload, error);
-          lastError = error.message;
-        }
+      // ✅ Refresh data
+      await fetchRetailerProfile();
+      if (refreshProfile) {
+        refreshProfile();
       }
-
-      if (!success) {
-        // If all payloads fail, try the profile endpoint as fallback
-        console.log('🔄 Trying fallback: updating via profile endpoint');
-        const fallbackSuccess = await updateRadiusViaProfile();
-        if (!fallbackSuccess) {
-          Alert.alert('Error', `Failed to update radius. Last error: ${lastError}`);
-        }
-      }
-
-    } catch (error) {
-      console.error('🚨 Final error updating radius:', error);
-      Alert.alert('Error', 'Failed to update service radius. Please try again.');
-    } finally {
-      setLoading(false);
+      
+      Alert.alert('Success', `Service radius updated to ${radius} km`);
+    } else {
+      throw new Error(data.message || 'Failed to update radius');
     }
-  };
+  } catch (error) {
+    console.error('🚨 Error updating radius:', error);
+    Alert.alert('Error', error.message || 'Failed to update service radius');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Fallback method: Update via profile endpoint
   const updateRadiusViaProfile = async () => {
@@ -285,7 +240,7 @@ const fetchRetailerProfile = async () => {
           <MaterialIcons name="location-on" size={20} color={Colors.light.accent} />
           <View style={styles.radiusInfo}>
             <Text style={styles.radiusLabel}>Service Radius</Text>
-            <Text style={styles.radiusValue}>{currentRadius} km</Text>
+            <Text style={styles.radiusValue}>{radius} km</Text>
           </View>
           <MaterialIcons name="edit" size={16} color={Colors.light.textSecondary} />
         </View>
