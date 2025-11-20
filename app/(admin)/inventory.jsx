@@ -77,7 +77,7 @@ export default function InventoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timeFilter, setTimeFilter] = useState('all');
-  const [activeFilter, setActiveFilter] = useState(FILTER_TYPES.ALL); // NEW: Active filter state
+  const [activeFilter, setActiveFilter] = useState(FILTER_TYPES.ALL);
 
   // Scanner states
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -515,10 +515,7 @@ export default function InventoryScreen() {
     );
   };
 
-  /* ------------------------------------------------------------------ */
-  /* ALL REMAINING FUNCTIONS (Scanner, Modals, etc.) - KEEP EXACTLY AS THEY WERE */
-  /* ------------------------------------------------------------------ */
-
+  // Scanner Functions
   const requestCameraPermission = async () => {
     if (requestPermission) {
       const result = await requestPermission();
@@ -1123,6 +1120,366 @@ export default function InventoryScreen() {
     setPricingModal(true);
   };
 
+  // Render Product Detail Modal
+  const renderDetailModal = () => {
+    if (!selectedItem) return null;
+
+    const availableStock = getAvailableStock(selectedItem);
+    const productName = getProductName(selectedItem);
+    const productImage = getProductImage(selectedItem);
+    const stockStatus = getStockStatus(availableStock, selectedItem.minStockLevel || 0);
+    const itemSalesValue = getItemSalesValue(selectedItem);
+    const itemInventoryValue = getItemInventoryValue(selectedItem);
+    const defaultPrice = getDefaultPrice(selectedItem);
+    const sellingPrice = selectedItem.sellingPrice || 0;
+    const hasQPricing = hasQuantityPricing(selectedItem);
+    const isOverridden = isPriceOverridden(selectedItem);
+
+    return (
+      <Modal
+        visible={detailModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setDetailModal(false)}
+      >
+        <View style={[styles.modalContent, styles.detailModal]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Product Details</Text>
+            <TouchableOpacity onPress={() => setDetailModal(false)}>
+              <Ionicons name="close" size={24} color={Colors.light.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            {/* Product Header */}
+            <View style={styles.detailHeader}>
+              <Image
+                source={{ uri: productImage }}
+                style={styles.detailImage}
+                defaultSource={{ uri: "https://via.placeholder.com/80x80?text=No+Img" }}
+              />
+              <View style={styles.detailTitle}>
+                <Text style={styles.detailName}>{productName}</Text>
+                <Text style={styles.detailSKU}>
+                  SKU: {selectedItem.product?.sku || 'N/A'}
+                </Text>
+                <View style={styles.stockStatusRow}>
+                  <MaterialIcons 
+                    name={stockStatus.icon} 
+                    size={16} 
+                    color={stockStatus.color} 
+                  />
+                  <Text style={[styles.stockStatusText, { color: stockStatus.color }]}>
+                    {stockStatus.text}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.detailActions}>
+              <TouchableOpacity 
+                style={[styles.detailActionButton, styles.stockInAction]}
+                onPress={() => {
+                  setDetailModal(false);
+                  setTimeout(() => {
+                    setTransactionType("STOCK_IN");
+                    setReason("PURCHASE");
+                    setQty("");
+                    setStockModal(true);
+                  }, 300);
+                }}
+              >
+                <Ionicons name="arrow-down" size={20} color="#FFF" />
+                <Text style={styles.detailActionText}>Stock In</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.detailActionButton, styles.stockOutAction]}
+                onPress={() => {
+                  setDetailModal(false);
+                  setTimeout(() => {
+                    setTransactionType("STOCK_OUT");
+                    setReason("SALE");
+                    setQty("");
+                    setStockModal(true);
+                  }, 300);
+                }}
+              >
+                <Ionicons name="arrow-up" size={20} color="#FFF" />
+                <Text style={styles.detailActionText}>Stock Out</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.detailActionButton, styles.deleteAction]}
+                onPress={() => {
+                  setDetailModal(false);
+                  setTimeout(() => handleDeleteItem(selectedItem), 300);
+                }}
+              >
+                <Ionicons name="trash-outline" size={20} color="#FFF" />
+                <Text style={styles.detailActionText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Stock Information */}
+            <View style={styles.detailSection}>
+              <Text style={styles.detailSectionTitle}>Stock Information</Text>
+              <View style={styles.detailGrid}>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Available Stock</Text>
+                  <Text style={styles.detailValueLarge}>{availableStock}</Text>
+                </View>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Reserved</Text>
+                  <Text style={styles.detailValueLarge}>{selectedItem.committedStock || 0}</Text>
+                </View>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Total Sold</Text>
+                  <Text style={styles.detailValueLarge}>{selectedItem.totalSold || 0}</Text>
+                </View>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Min Stock Level</Text>
+                  <Text style={styles.detailValueLarge}>{selectedItem.minStockLevel || 0}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Pricing Information */}
+            <View style={styles.detailSection}>
+              <Text style={styles.detailSectionTitle}>Pricing</Text>
+              <View style={styles.detailGrid}>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Selling Price</Text>
+                  <Text style={styles.detailValueLarge}>₹{sellingPrice}</Text>
+                  {isOverridden && (
+                    <Text style={styles.overrideNote}>(Custom Price)</Text>
+                  )}
+                </View>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Default Price</Text>
+                  <Text style={styles.detailValueLarge}>₹{defaultPrice}</Text>
+                </View>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Cost Price</Text>
+                  <Text style={styles.detailValueLarge}>₹{selectedItem.costPrice || 'N/A'}</Text>
+                </View>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Stock Value</Text>
+                  <Text style={styles.detailValueLarge}>₹{itemInventoryValue.toLocaleString()}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Sales Information */}
+            <View style={styles.detailSection}>
+              <Text style={styles.detailSectionTitle}>Sales Performance</Text>
+              <View style={styles.detailGrid}>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Total Sales Value</Text>
+                  <Text style={styles.detailValueLarge}>₹{itemSalesValue.toLocaleString()}</Text>
+                </View>
+                <View style={styles.detailItemLarge}>
+                  <Text style={styles.detailLabelLarge}>Items Sold</Text>
+                  <Text style={styles.detailValueLarge}>{selectedItem.totalSold || 0}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Quantity Pricing */}
+            {hasQPricing && (
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Quantity Pricing</Text>
+                <View style={styles.pricingSlabsPreview}>
+                  {selectedItem.pricingSlabs?.map((slab, index) => (
+                    <View key={index} style={styles.slabPreviewItem}>
+                      <View style={styles.slabRange}>
+                        <Text style={styles.slabRangeText}>
+                          {slab.minQuantity}+ units
+                        </Text>
+                      </View>
+                      <View style={styles.slabDiscount}>
+                        <Text style={styles.slabDiscountText}>
+                          ₹{slab.price} per unit
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
+    );
+  };
+
+  // Render Stock Management Modal
+  const renderStockModal = () => {
+    if (!selectedItem) return null;
+
+    const availableStock = getAvailableStock(selectedItem);
+    const productName = getProductName(selectedItem);
+    const productImage = getProductImage(selectedItem);
+
+    return (
+      <Modal
+        visible={stockModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setStockModal(false)}
+      >
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Manage Stock</Text>
+            <TouchableOpacity onPress={() => setStockModal(false)}>
+              <Ionicons name="close" size={24} color={Colors.light.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            {/* Product Header */}
+            <View style={styles.productHeader}>
+              <Image
+                source={{ uri: productImage }}
+                style={styles.productHeaderImage}
+                defaultSource={{ uri: "https://via.placeholder.com/80x80?text=No+Img" }}
+              />
+              <View style={styles.productHeaderInfo}>
+                <Text style={styles.productHeaderName}>{productName}</Text>
+                <Text style={styles.productHeaderSku}>
+                  SKU: {selectedItem.product?.sku || 'N/A'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Current Stock Info */}
+            <View style={styles.currentStockInfo}>
+              <Text style={styles.currentStockLabel}>Current Available Stock</Text>
+              <Text style={styles.currentStockValue}>{availableStock}</Text>
+            </View>
+
+            {/* Transaction Type */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Transaction Type</Text>
+              <View style={styles.transactionTypeButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.transactionButton,
+                    transactionType === "STOCK_IN" ? styles.transactionButtonInActive : {}
+                  ]}
+                  onPress={() => setTransactionType("STOCK_IN")}
+                >
+                  <Ionicons 
+                    name="arrow-down" 
+                    size={20} 
+                    color={transactionType === "STOCK_IN" ? "#FFF" : "#4CAF50"} 
+                  />
+                  <Text style={[
+                    styles.transactionButtonText,
+                    transactionType === "STOCK_IN" ? styles.transactionButtonTextActive : { color: "#4CAF50" }
+                  ]}>
+                    Stock In
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.transactionButton,
+                    transactionType === "STOCK_OUT" ? styles.transactionButtonOutActive : {}
+                  ]}
+                  onPress={() => setTransactionType("STOCK_OUT")}
+                >
+                  <Ionicons 
+                    name="arrow-up" 
+                    size={20} 
+                    color={transactionType === "STOCK_OUT" ? "#FFF" : "#F44336"} 
+                  />
+                  <Text style={[
+                    styles.transactionButtonText,
+                    transactionType === "STOCK_OUT" ? styles.transactionButtonTextActive : { color: "#F44336" }
+                  ]}>
+                    Stock Out
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Quantity Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Quantity</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Enter quantity"
+                keyboardType="numeric"
+                value={qty}
+                onChangeText={setQty}
+              />
+            </View>
+
+            {/* Reason Selection */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Reason</Text>
+              <ScrollView 
+                style={styles.reasonScroll}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.reasonGrid}>
+                  {REASONS.map((reasonItem) => (
+                    <TouchableOpacity
+                      key={reasonItem}
+                      style={[
+                        styles.reasonBtn,
+                        reason === reasonItem && styles.reasonBtnActive
+                      ]}
+                      onPress={() => setReason(reasonItem)}
+                    >
+                      <Text style={[
+                        styles.reasonText,
+                        reason === reasonItem && styles.reasonTextActive
+                      ]}>
+                        {reasonItem.replace(/_/g, ' ')}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity 
+              style={styles.cancelButton}
+              onPress={() => setStockModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.submitButton,
+                transactionType === "STOCK_IN" ? styles.submitButtonIn : styles.submitButtonOut,
+                !qty && styles.submitButtonDisabled
+              ]}
+              onPress={handleStockUpdate}
+              disabled={!qty}
+            >
+              <View style={styles.submitButtonContent}>
+                <Ionicons 
+                  name={transactionType === "STOCK_IN" ? "arrow-down" : "arrow-up"} 
+                  size={20} 
+                  color="#FFF" 
+                />
+                <Text style={styles.submitButtonText}>
+                  {transactionType === "STOCK_IN" ? "Add Stock" : "Remove Stock"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   if (authLoading || loading) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
@@ -1298,34 +1655,23 @@ export default function InventoryScreen() {
                   </Text>
                 </View>
 
-                <View style={styles.stockInfo}>
-                  <Text style={styles.availableStock}>
-                    Available: <Text style={styles.stockNumber}>{availableStock}</Text>
-                  </Text>
-                  {activeFilter === FILTER_TYPES.TOP_SELLING && (
-                    <Text style={styles.soldCount}>
-                      Sold: <Text style={styles.soldNumber}>{item.totalSold || 0}</Text>
-                    </Text>
-                  )}
-                </View>
-
-                <View style={styles.detailsRow}>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Reserved</Text>
-                    <Text style={styles.detailValue}>{item.committedStock || 0}</Text>
+                <View style={styles.stockMetrics}>
+                  <View style={styles.metricItem}>
+                    <Text style={styles.metricLabel}>Available</Text>
+                    <Text style={styles.metricValue}>{availableStock}</Text>
                   </View>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Sold</Text>
-                    <Text style={styles.detailValue}>{item.totalSold || 0}</Text>
+                  <View style={styles.metricItem}>
+                    <Text style={styles.metricLabel}>Reserved</Text>
+                    <Text style={styles.metricValue}>{item.committedStock || 0}</Text>
                   </View>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Min Stock</Text>
-                    <Text style={styles.detailValue}>{item.minStockLevel || 0}</Text>
+                  <View style={styles.metricItem}>
+                    <Text style={styles.metricLabel}>Sold</Text>
+                    <Text style={styles.metricValue}>{item.totalSold || 0}</Text>
                   </View>
                 </View>
               </View>
 
-              {/* SIMPLIFIED ACTIONS: +, Pricing, Delete Only */}
+              {/* Action Buttons */}
               <View style={styles.categoryActions}>
                 <TouchableOpacity
                   style={[styles.actionButton, styles.stockButton]}
@@ -1386,6 +1732,12 @@ export default function InventoryScreen() {
       {/* Enhanced Scanner Modal with Visual Feedback */}
       {renderScannerModal()}
 
+      {/* Product Detail Modal */}
+      {renderDetailModal()}
+
+      {/* Stock Management Modal */}
+      {renderStockModal()}
+
       {/* Pricing Slabs Modal */}
       <PricingSlabsModal
         visible={pricingModal}
@@ -1405,11 +1757,6 @@ export default function InventoryScreen() {
       >
         <Ionicons name="add" size={24} color="#FFF" />
       </TouchableOpacity>
-
-      {/* ALL REMAINING MODALS - KEEP EXACTLY AS THEY WERE */}
-      {/* Stock Update Modal, Product Detail Modal, Add Product Modal */}
-      {/* ... (Keep all your existing modal code exactly as it was) */}
-
     </View>
   );
 }
@@ -1572,36 +1919,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Ranking Badge for Top Selling
-  rankingBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: '#4CAF50',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  rankingText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-
-  // Sold Count Style
-  soldCount: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    marginLeft: 12,
-  },
-  soldNumber: {
-    fontWeight: '700',
-    color: '#4CAF50',
-  },
-
   // Professional Header with Scanner
   professionalHeader: {
     paddingHorizontal: 16,
@@ -1626,9 +1943,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F8FF',
     borderRadius: 12,
   },
-
-  // All other existing styles remain exactly the same...
-  // ... (Keep all your existing scanner styles, modal styles, product card styles, etc.)
 
   // Enhanced Scanner Styles with Visual Feedback
   scannerContainer: {
@@ -1798,12 +2112,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
-  scanSubInstruction: {
-    fontSize: 12,
-    color: '#CCC',
-    textAlign: 'center',
-    marginTop: 4,
-  },
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1887,15 +2195,119 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  // Simplified Product Card Actions
+  // Product Card Styles
+  productCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    position: 'relative',
+  },
+  productImage: { 
+    width: 80, 
+    height: 80, 
+    borderRadius: 12, 
+    marginRight: 16 
+  },
+  productInfo: { 
+    flex: 1,
+  },
+  productName: { 
+    fontSize: 16, 
+    fontWeight: "600", 
+    color: Colors.light.text,
+    marginBottom: 8 
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  salesValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#4CAF50',
+  },
+  priceContainer: {
+    marginBottom: 8,
+  },
+  priceBackground: {
+    backgroundColor: '#F0F8FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  currentPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.accent,
+  },
+  defaultPrice: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    textDecorationLine: 'line-through',
+    marginLeft: 8,
+  },
+  stockStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  stockStatusText: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+  stockMetrics: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  metricItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  metricLabel: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  metricValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+
+  // Action Buttons
   categoryActions: {
     flexDirection: "column",
     gap: 8,
+    marginLeft: 12,
   },
   actionButton: {
     padding: 10,
     borderRadius: 12,
     backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stockButton: {
     backgroundColor: '#E3F2FD',
@@ -1905,6 +2317,25 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#FFEBEE',
+  },
+
+  // Ranking Badge for Top Selling
+  rankingBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#4CAF50',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  rankingText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 
   // Pricing Badge
@@ -1936,14 +2367,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Override Indicator
-  overrideIndicator: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-
   // Stock Modal Styles
   currentStockInfo: {
     backgroundColor: '#F8F9FA',
@@ -1965,6 +2388,7 @@ const styles = StyleSheet.create({
   transactionTypeButtons: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 16,
   },
   transactionButton: {
     flex: 1,
@@ -1998,7 +2422,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#F44336',
   },
 
-  // Detail Modal Action Buttons
+  // Detail Modal Styles
+  detailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+  detailImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    marginRight: 16,
+  },
+  detailTitle: {
+    flex: 1,
+  },
+  detailName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  detailSKU: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 8,
+  },
   detailActions: {
     flexDirection: 'row',
     gap: 12,
@@ -2019,13 +2471,52 @@ const styles = StyleSheet.create({
   stockOutAction: {
     backgroundColor: '#F44336',
   },
-  pricingAction: {
-    backgroundColor: '#FF9800',
+  deleteAction: {
+    backgroundColor: '#FF5722',
   },
   detailActionText: {
     color: '#FFF',
     fontWeight: '600',
     fontSize: 14,
+  },
+  detailSection: {
+    marginBottom: 24,
+  },
+  detailSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginBottom: 16,
+  },
+  detailGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  detailItemLarge: {
+    width: '48%',
+    backgroundColor: '#F8F9FA',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  detailLabelLarge: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  detailValueLarge: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+  overrideNote: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 
   // Pricing Slabs Preview
@@ -2060,6 +2551,124 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#2E7D32',
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  detailModal: {
+    maxHeight: '95%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+  modalBody: {
+    padding: 20,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.border,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+  },
+  submitButton: {
+    flex: 1,
+    backgroundColor: Colors.light.accent,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+
+  // Input Styles
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.light.text,
+    backgroundColor: '#FFF',
+  },
+
+  // Reason Selection
+  reasonScroll: {
+    maxHeight: 150,
+  },
+  reasonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  reasonBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    backgroundColor: '#FFF',
+    minWidth: '48%',
+  },
+  reasonBtnActive: {
+    backgroundColor: Colors.light.accent,
+    borderColor: Colors.light.accent,
+  },
+  reasonText: {
+    fontSize: 13,
+    color: Colors.light.text,
+    textAlign: 'center',
+  },
+  reasonTextActive: {
+    color: '#FFF',
+    fontWeight: '600',
   },
 
   // All other existing styles
@@ -2156,112 +2765,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.light.textSecondary,
   },
-  productCard: {
-    backgroundColor: "#FFF",
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    position: 'relative',
-  },
-  productImage: { 
-    width: 80, 
-    height: 80, 
-    borderRadius: 12, 
-    marginRight: 16 
-  },
-  productInfo: { 
-    flex: 1,
-  },
-  productName: { 
-    fontSize: 16, 
-    fontWeight: "600", 
-    color: Colors.light.text,
-    marginBottom: 4 
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  salesValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#4CAF50',
-  },
-  priceContainer: {
-    marginBottom: 6,
-  },
-  priceBackground: {
-    backgroundColor: '#F0F8FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-  },
-  currentPrice: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.accent,
-  },
-  defaultPrice: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    textDecorationLine: 'line-through',
-    marginLeft: 8,
-  },
-  stockStatusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  stockStatusText: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginLeft: 6,
-  },
-  stockInfo: {
-    marginBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  availableStock: {
-    fontSize: 14,
-    color: Colors.light.text,
-  },
-  stockNumber: {
-    fontWeight: '700',
-    color: Colors.light.accent,
-  },
-  detailsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  detailItem: {
-    alignItems: 'center',
-  },
-  detailLabel: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    marginBottom: 2,
-  },
-  detailValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -2306,323 +2809,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-  },
-  detailModal: {
-    maxHeight: '95%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  modalBody: {
-    padding: 20,
-  },
-  modalSubtitle: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  priceOverrideHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  defaultPriceNote: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-  },
-  helperText: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: Colors.light.text,
-    backgroundColor: '#FFF',
-    flex: 1,
-  },
-  searchResults: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderRadius: 8,
-    maxHeight: 200,
-  },
-  searchResultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  searchResultItemSelected: {
-    backgroundColor: '#F0F8FF',
-  },
-  searchResultImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  searchResultInfo: {
-    flex: 1,
-  },
-  searchResultName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 2,
-  },
-  searchResultSku: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    marginBottom: 2,
-  },
-  searchResultCategory: {
-    fontSize: 11,
-    color: Colors.light.accent,
-  },
-  searchResultPrice: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-  },
-  noResults: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  noResultsText: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
-  selectedProductPreview: {
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  previewTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  previewContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  previewImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  previewInfo: {
-    flex: 1,
-  },
-  previewName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  previewSku: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    marginBottom: 2,
-  },
-  previewCategory: {
-    fontSize: 12,
-    color: Colors.light.accent,
-  },
-  previewPrice: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-  },
-  chipScroll: {
-    marginBottom: 8,
-  },
-  chip: {
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  chipSelected: {
-    backgroundColor: Colors.light.accent,
-  },
-  chipText: {
-    fontSize: 14,
-    color: Colors.light.text,
-  },
-  chipTextSelected: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  reasonScroll: {
-    maxHeight: 150,
-  },
-  reasonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  reasonBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    backgroundColor: '#FFF',
-    minWidth: '48%',
-  },
-  reasonBtnActive: {
-    backgroundColor: Colors.light.accent,
-    borderColor: Colors.light.accent,
-  },
-  reasonText: {
-    fontSize: 13,
-    color: Colors.light.text,
-    textAlign: 'center',
-  },
-  reasonTextActive: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: Colors.light.accent,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  detailHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  detailImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    marginRight: 16,
-  },
-  detailTitle: {
-    flex: 1,
-  },
-  detailName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  detailSKU: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
-  detailSection: {
-    marginBottom: 24,
-  },
-  detailSectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 16,
-  },
-  detailGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  detailItemLarge: {
-    width: '48%',
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  detailLabelLarge: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  detailValueLarge: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
   },
 });

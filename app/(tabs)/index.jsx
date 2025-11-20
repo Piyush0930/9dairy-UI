@@ -39,6 +39,7 @@ const API_BASE = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "";
 // ⭐ LOCAL CACHE KEYS
 const RETAILER_CACHE_KEY = 'current_retailer_cache';
 const LOCATION_CACHE_KEY = 'current_location_cache';
+const LOCATION_SESSION_KEY = 'location_selected_in_session'; // NEW: Session tracking
 
 // Store banners (unchanged)
 const storeCards = [
@@ -86,7 +87,8 @@ const clearRetailerCache = async () => {
   try {
     await AsyncStorage.removeItem(RETAILER_CACHE_KEY);
     await AsyncStorage.removeItem(LOCATION_CACHE_KEY);
-    console.log("✅ Retailer cache cleared on app close");
+    await AsyncStorage.removeItem(LOCATION_SESSION_KEY); // NEW: Clear session too
+    console.log("✅ Retailer cache and session cleared on app close");
   } catch (error) {
     console.log('❌ Cache clear error:', error);
   }
@@ -126,6 +128,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [manualAddress, setManualAddress] = useState("");
+  const [locationSelected, setLocationSelected] = useState(false); // NEW: Session state
 
   const popularScrollRef = useRef(null);
   const appState = useRef(AppState.currentState);
@@ -239,7 +242,6 @@ export default function HomeScreen() {
           lat, 
           lng, 
           address
-          // ⭐ REMOVED: useCached parameter since we clear cache on app close
         })
       });
       return await res.json();
@@ -316,7 +318,11 @@ export default function HomeScreen() {
   const handleUseCurrentAddress = async () => {
     try {
       setShowLocationPrompt(false);
+      setLocationSelected(true);
       setLoading(true);
+
+      // ⭐ MARK: Location selected in this session
+      await AsyncStorage.setItem(LOCATION_SESSION_KEY, 'true');
 
       const loc = await getDeviceLocation();
       const locationData = { 
@@ -358,7 +364,11 @@ export default function HomeScreen() {
   const handleSkip = async () => {
     try {
       setShowLocationPrompt(false);
+      setLocationSelected(true);
       setLoading(true);
+
+      // ⭐ MARK: Location selected in this session
+      await AsyncStorage.setItem(LOCATION_SESSION_KEY, 'true');
 
       console.log("🔄 Skip clicked - using saved address from profile");
 
@@ -433,7 +443,7 @@ export default function HomeScreen() {
     }
   };
 
-  // ⭐ UPDATED: Initial Load - ALWAYS SHOW LOCATION PROMPT
+  // ⭐ UPDATED: Initial Load - SMART LOCATION PROMPT
   useEffect(() => {
     const initialLoad = async () => {
       if (!token) return;
@@ -441,19 +451,40 @@ export default function HomeScreen() {
       setLoading(true);
       
       try {
-        // ⭐ STEP 1: Clear any existing cache first (fresh start)
-        await clearRetailerCache();
+        // ⭐ STEP 1: Check if location was already selected in this session
+        const locationSelectedInSession = await AsyncStorage.getItem(LOCATION_SESSION_KEY);
         
-        // ⭐ STEP 2: Always show location prompt on app open
-        setShowLocationPrompt(true);
+        if (locationSelectedInSession === 'true') {
+          // Location already selected - try to use cached retailer
+          console.log("🔄 Location already selected this session - using cached data");
+          setShowLocationPrompt(false);
+          setLocationSelected(true);
+          
+          const cachedRetailer = await getRetailerFromCache();
+          const cachedLocation = await getLocationFromCache();
+          
+          if (cachedRetailer) {
+            // Load products with cached retailer
+            const inventory = await fetchInventory();
+            await loadProductsWithRetailer(cachedRetailer, inventory, cachedLocation);
+          } else {
+            // No cache found, show prompt
+            console.log("🔄 No cached retailer found - showing location prompt");
+            setShowLocationPrompt(true);
+          }
+        } else {
+          // ⭐ STEP 2: First time in session - show location prompt
+          console.log("🔄 First app open - showing location prompt");
+          setShowLocationPrompt(true);
+        }
 
-        // ⭐ STEP 3: Load categories (can load without retailer)
+        // ⭐ STEP 3: Always load categories (even if location not selected yet)
         const cats = await fetchCategories();
         setCategories(cats);
 
       } catch (error) {
         console.error("Initial load error:", error);
-        // Still show location prompt on error
+        // On error, show location prompt
         setShowLocationPrompt(true);
       } finally {
         setLoading(false);
@@ -463,13 +494,13 @@ export default function HomeScreen() {
     initialLoad();
   }, [token]);
 
-  // ⭐ NEW: App State Listener to Clear Cache on App Close
+  // ⭐ UPDATED: App State Listener to Clear Cache on App Close
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
       // When app goes from active to background/inactive (app closing)
       if (appState.current === 'active' && 
           (nextAppState === 'background' || nextAppState === 'inactive')) {
-        console.log('🔄 App closing - Clearing retailer cache');
+        console.log('🔄 App closing - Clearing retailer cache and session');
         clearRetailerCache();
       }
       
@@ -480,6 +511,17 @@ export default function HomeScreen() {
       subscription.remove();
     };
   }, []);
+
+  // ⭐ NEW: Handle logout - reset session state
+  useEffect(() => {
+    if (!token) {
+      // User logged out - clear session and show prompt next time
+      console.log("🔄 User logged out - resetting location session");
+      setLocationSelected(false);
+      setShowLocationPrompt(true);
+      AsyncStorage.removeItem(LOCATION_SESSION_KEY);
+    }
+  }, [token]);
 
   // ------------- Refresh -------------
   const onRefresh = async () => {
@@ -740,7 +782,7 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
-      {/* LOCATION PROMPT MODAL - Show every time app opens */}
+      {/* LOCATION PROMPT MODAL - Show only when needed */}
       <Modal 
         visible={showLocationPrompt} 
         animationType="slide" 

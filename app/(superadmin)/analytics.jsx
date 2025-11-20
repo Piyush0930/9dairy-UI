@@ -1,13 +1,12 @@
-// app/(tabs)/supadmin/products.jsx
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,36 +20,47 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 
-const { width } = Dimensions.get('window');
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-export default function ProductsScreen() {
+export default function ProductsManagement() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authToken, isLoading: authLoading, isAuthenticated, logout } = useAuth();
+  const {
+    authToken,
+    isLoading: authLoading,
+    isAuthenticated,
+    validateToken,
+    logout,
+  } = useAuth();
 
-  const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // Modals state
-  const [productModalVisible, setProductModalVisible] = useState(false);
-  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
-  const [productDetailsModalVisible, setProductDetailsModalVisible] = useState(false);
-  const [categoryManageModalVisible, setCategoryManageModalVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
-  // Barcode Modal & Camera States
+  // Categories Modal State
+  const [categoriesModalVisible, setCategoriesModalVisible] = useState(false);
+  const [categoryFormData, setCategoryFormData] = useState({
+    name: '',
+    description: '',
+    image: '',
+    displayOrder: 0,
+  });
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [isSubmittingCategory, setIsSubmittingCategory] = useState(false);
+
+  // Barcode Modal & Camera
   const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
   const [selectedProductForBarcode, setSelectedProductForBarcode] = useState(null);
   const [barcodeScanning, setBarcodeScanning] = useState(false);
@@ -59,164 +69,235 @@ export default function ProductsScreen() {
   const cameraRef = useRef();
   const viewShotRef = useRef();
 
-  // New Product Scanner States
-  const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
-  const [scannedBarcode, setScannedBarcode] = useState('');
-  const [fetchingProductData, setFetchingProductData] = useState(false);
-  const [scannedProductData, setScannedProductData] = useState(null);
-
-  // Form data states
-  const [productFormData, setProductFormData] = useState({
+  const [formData, setFormData] = useState({
     name: '',
     description: '',
     price: '',
     category: '',
-    unit: 'liter',
+    unit: 'piece',
     unitSize: '',
-    stock: '',
     milkType: 'Cow',
     image: null,
     discount: '',
     isFeatured: false,
     isAvailable: true,
+    nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' },
+    tags: '',
   });
+  const [imageUri, setImageUri] = useState('');
 
-  const [categoryFormData, setCategoryFormData] = useState({
-    name: '',
-    description: '',
-    image: null,
-    displayOrder: 0,
-  });
+  // OpenFoodFacts Integration States
+  const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
+  const [productDataPreviewVisible, setProductDataPreviewVisible] = useState(false);
+  const [scannedBarcode, setScannedBarcode] = useState('');
+  const [fetchedProductData, setFetchedProductData] = useState(null);
+  const [fetchingProductData, setFetchingProductData] = useState(false);
+  const [applyingProductData, setApplyingProductData] = useState(false);
+  const [autoFilledFields, setAutoFilledFields] = useState(new Set());
 
-  const [productImageUri, setProductImageUri] = useState('');
-  const [categoryImageUri, setCategoryImageUri] = useState('');
+  // Enhanced loading states
+  const [imageLoading, setImageLoading] = useState(false);
+  const [submissionProgress, setSubmissionProgress] = useState(0);
+  const [operationInProgress, setOperationInProgress] = useState('');
 
-  // Fetch data function - FIXED to ensure products display properly
-  const fetchData = async () => {
-    if (!authToken) return;
+  // ──────────────────────────────────────────────────────────────
+  // LOADING & PROGRESS HELPERS
+  // ──────────────────────────────────────────────────────────────
+  const startOperation = (operationName) => {
+    setOperationInProgress(operationName);
+    setSubmissionProgress(0);
+  };
 
+  const updateProgress = (progress) => {
+    setSubmissionProgress(progress);
+  };
+
+  const endOperation = () => {
+    setOperationInProgress('');
+    setSubmissionProgress(0);
+  };
+
+  const showLoadingAlert = (title, message) => {
+    Alert.alert(title, message, [], { cancelable: false });
+  };
+
+  // ──────────────────────────────────────────────────────────────
+  // PULL TO REFRESH
+  // ──────────────────────────────────────────────────────────────
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  };
+
+  // ──────────────────────────────────────────────────────────────
+  // CATEGORIES MANAGEMENT FUNCTIONS
+  // ──────────────────────────────────────────────────────────────
+  const fetchCategories = async () => {
     try {
-      setLoading(true);
-      
-      const [categoriesRes, productsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/catalog/categories`, {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          },
-        }),
-        fetch(`${API_BASE_URL}/api/catalog/products`, {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          },
-        })
-      ]);
+      const response = await fetch(`${API_BASE_URL}/api/catalog/categories`, {
+        headers: getAuthHeaders(),
+      });
 
-      if (!categoriesRes.ok || !productsRes.ok) {
-        throw new Error('Failed to fetch data');
+      if (!response.ok) {
+        throw new Error('Failed to fetch categories');
       }
 
-      const categoriesData = await categoriesRes.json();
-      const productsData = await productsRes.json();
-
-      // Handle different response formats - FIXED to ensure proper array handling
-      const categoriesArray = Array.isArray(categoriesData) 
-        ? categoriesData 
-        : categoriesData.categories || categoriesData.data || [];
-      
-      const productsArray = Array.isArray(productsData)
-        ? productsData
-        : productsData.products || productsData.data || [];
-
-      console.log('Fetched products:', productsArray.length);
-      console.log('Fetched categories:', categoriesArray.length);
-
-      setCategories(categoriesArray);
-      setProducts(productsArray);
-      setFilteredProducts(productsArray); // Initialize filtered products
-
+      const data = await response.json();
+      setCategories(Array.isArray(data) ? data : data.categories || []);
     } catch (error) {
-      console.error('Fetch error:', error);
-      Alert.alert('Error', 'Failed to load data');
+      console.error('Error fetching categories:', error);
       setCategories([]);
-      setProducts([]);
-      setFilteredProducts([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  // Filter products based on category and search - FIXED filtering logic
-  useEffect(() => {
-    let filtered = [...products]; // Create a copy to avoid mutation
+  const openCategoryCreateModal = () => {
+    setEditingCategory(null);
+    setCategoryFormData({
+      name: '',
+      description: '',
+      image: '',
+      displayOrder: categories.length,
+    });
+    setCategoriesModalVisible(true);
+  };
 
-    // Filter by category
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(product => {
-        const categoryId = product.category?._id || product.category;
-        return categoryId === selectedCategory;
-      });
+  const openCategoryEditModal = (category) => {
+    setEditingCategory(category);
+    setCategoryFormData({
+      name: category.name || '',
+      description: category.description || '',
+      image: category.image || '',
+      displayOrder: category.displayOrder || 0,
+    });
+    setCategoriesModalVisible(true);
+  };
+
+  const closeCategoryModal = () => {
+    setCategoriesModalVisible(false);
+    setEditingCategory(null);
+    setCategoryFormData({
+      name: '',
+      description: '',
+      image: '',
+      displayOrder: 0,
+    });
+  };
+
+  const handleCategorySubmit = async () => {
+    if (!categoryFormData.name.trim()) {
+      Alert.alert('Error', 'Category name is required.');
+      return;
     }
 
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(product =>
-        product.name?.toLowerCase().includes(query) ||
-        product.category?.name?.toLowerCase().includes(query) ||
-        product.description?.toLowerCase().includes(query)
-      );
-    }
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
 
-    console.log('Filtered products:', filtered.length);
-    setFilteredProducts(filtered);
-  }, [products, selectedCategory, searchQuery]);
+    setIsSubmittingCategory(true);
 
-  // Initial data fetch
-  useEffect(() => {
-    if (!authLoading && authToken && isAuthenticated) {
-      fetchData();
-    }
-  }, [authToken, authLoading, isAuthenticated]);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchData();
-  }, []);
-
-  // Image Picker Functions
-  const pickProductImage = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow access to your photo library.');
-        return;
+      let imageUrl = categoryFormData.image;
+
+      // If image is a local URI, upload it first
+      if (categoryFormData.image && categoryFormData.image.startsWith('file:')) {
+        startOperation('Uploading category image...');
+        
+        const uploadFormData = new FormData();
+        uploadFormData.append('image', {
+          uri: categoryFormData.image,
+          type: 'image/jpeg',
+          name: `category-${Date.now()}.jpg`,
+        });
+
+        const uploadResponse = await fetch(`${API_BASE_URL}/api/upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+          },
+          body: uploadFormData,
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload image');
+        }
+
+        const uploadData = await uploadResponse.json();
+        imageUrl = uploadData.imageUrl;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
+      const url = editingCategory
+        ? `${API_BASE_URL}/api/catalog/categories/${editingCategory._id}`
+        : `${API_BASE_URL}/api/catalog/categories`;
+
+      const method = editingCategory ? 'PUT' : 'POST';
+
+      const payload = {
+        name: categoryFormData.name.trim(),
+        description: categoryFormData.description?.trim() || '',
+        displayOrder: categoryFormData.displayOrder,
+        image: imageUrl || '',
+      };
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       });
 
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setProductFormData(prev => ({ 
-          ...prev, 
-          image: {
-            uri: result.assets[0].uri,
-            type: 'image/jpeg',
-            fileName: `product-${Date.now()}.jpg`
-          }
-        }));
-        setProductImageUri(result.assets[0].uri);
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert('Success', `Category ${editingCategory ? 'updated' : 'created'} successfully!`);
+        closeCategoryModal();
+        fetchCategories();
+      } else {
+        throw new Error(data.message || 'Failed to save category');
       }
     } catch (error) {
-      console.error('Image picker error:', error);
-      Alert.alert('Error', 'Could not select image. Please try again.');
+      console.error('Category submit error:', error);
+      Alert.alert('Error', error.message || 'Failed to save category. Please try again.');
+    } finally {
+      setIsSubmittingCategory(false);
+      endOperation();
     }
+  };
+
+  const handleCategoryDelete = async (categoryId, categoryName) => {
+    Alert.alert(
+      'Delete Category',
+      `Are you sure you want to delete "${categoryName}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_BASE_URL}/api/catalog/categories/${categoryId}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+              });
+              
+              if (response.ok) {
+                Alert.alert('Success', 'Category deleted successfully.');
+                fetchCategories();
+                if (selectedCategory === categoryId) {
+                  setSelectedCategory(null);
+                }
+              } else {
+                const data = await response.json();
+                Alert.alert('Error', data.message || 'Failed to delete category.');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete category.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const pickCategoryImage = async () => {
@@ -235,15 +316,7 @@ export default function ProductsScreen() {
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
-        setCategoryFormData(prev => ({ 
-          ...prev, 
-          image: {
-            uri: result.assets[0].uri,
-            type: 'image/jpeg',
-            fileName: `category-${Date.now()}.jpg`
-          }
-        }));
-        setCategoryImageUri(result.assets[0].uri);
+        setCategoryFormData(prev => ({ ...prev, image: result.assets[0].uri }));
       }
     } catch (error) {
       console.error('Image picker error:', error);
@@ -251,405 +324,693 @@ export default function ProductsScreen() {
     }
   };
 
-  // Product Modal Functions
-  const openAddProductModal = () => {
-    setProductFormData({
+  // ──────────────────────────────────────────────────────────────
+  // SIMPLIFIED IMAGE PICKER FUNCTIONS
+  // ──────────────────────────────────────────────────────────────
+  const pickImage = async () => {
+    try {
+      startOperation('Loading image picker...');
+      
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Permission to access camera roll is required!');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.length > 0) {
+        setImageLoading(true);
+        const selectedImage = result.assets[0];
+        
+        setFormData(prev => ({
+          ...prev,
+          image: {
+            uri: selectedImage.uri,
+            type: 'image/jpeg',
+            name: selectedImage.fileName || `product-${Date.now()}.jpg`,
+          }
+        }));
+        setImageUri(selectedImage.uri);
+        
+        setTimeout(() => setImageLoading(false), 500);
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    } finally {
+      endOperation();
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      startOperation('Opening camera...');
+      
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Camera permission is required!');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.length > 0) {
+        setImageLoading(true);
+        const selectedImage = result.assets[0];
+        
+        setFormData(prev => ({
+          ...prev,
+          image: {
+            uri: selectedImage.uri,
+            type: 'image/jpeg',
+            name: `product-photo-${Date.now()}.jpg`,
+          }
+        }));
+        setImageUri(selectedImage.uri);
+        
+        setTimeout(() => setImageLoading(false), 500);
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    } finally {
+      endOperation();
+    }
+  };
+
+  // ──────────────────────────────────────────────────────────────
+  // ENHANCED OPENFOODFACTS INTEGRATION WITH PROGRESS INDICATORS
+  // ──────────────────────────────────────────────────────────────
+  
+  const fetchProductDataFromBarcode = async (barcode) => {
+  try {
+    setFetchingProductData(true);
+    startOperation('Scanning barcode...');
+    updateProgress(10);
+    
+    console.log('🔍 Scanning barcode:', barcode);
+
+    // Validate barcode
+    if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
+      throw new Error('Invalid barcode');
+    }
+
+    const cleanBarcode = barcode.trim();
+    console.log('📦 Sending barcode to backend:', cleanBarcode);
+
+    updateProgress(30);
+    
+    // 🎯 FIX: Use the correct endpoint for scanning new barcodes
+    const response = await fetch(`${API_BASE_URL}/api/catalog/products/scan-barcode`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        barcode: cleanBarcode  // ✅ Correct field name
+      })
+    });
+
+    updateProgress(60);
+    const data = await response.json();
+    console.log('📦 Scan Response:', data);
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to scan barcode');
+    }
+
+    // 🎯 FIX: Handle the actual response structure from scan-barcode endpoint
+    if (data.productExists && data.existingProduct) {
+      Alert.alert(
+        'Product Already Exists',
+        `"${data.existingProduct.name}" already uses this barcode. Would you like to edit it?`,
+        [
+          { text: 'Edit Product', onPress: () => openEditModal(data.existingProduct) },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+      return;
+    }
+
+    updateProgress(80);
+    
+    // 🎯 FIX: Process the actual response structure from scan-barcode endpoint
+    const productData = {
+      found: Boolean(data.openFoodFactsData?.found),
+      barcode: (data.openFoodFactsData?.barcode || cleanBarcode || '').toString(),
+      name: data.suggestedData?.name || `Product ${cleanBarcode}`,
+      description: data.suggestedData?.description || '',
+      brand: data.openFoodFactsData?.brand || '',
+      categories: Array.isArray(data.openFoodFactsData?.categories) 
+        ? data.openFoodFactsData.categories 
+        : [],
+      unit: data.suggestedData?.unit || 'piece',
+      unitSize: data.suggestedData?.unitSize || '1',
+      nutritionalInfo: data.suggestedData?.nutritionalInfo || {
+        fat: '',
+        protein: '',
+        calories: '',
+        carbohydrates: ''
+      },
+      images: Array.isArray(data.imageInfo?.images) && data.imageInfo.images.length > 0
+        ? data.imageInfo.images.filter(img => img && img.url)
+        : [],
+      milkType: data.suggestedData?.milkType || 'Cow',
+      tags: data.suggestedData?.tags || '',
+      price: data.suggestedData?.price || 0,
+      category: data.suggestedData?.category || '',
+      autoFilledFields: data.autoFilledFields || {},
+      missingRequiredFields: data.missingRequiredFields || {},
+      dataSource: data.openFoodFactsData?.found ? 'openfoodfacts' : 'manual',
+      requiresUserInput: Boolean(data.requiresConfirmation),
+      availableCategories: Array.isArray(data.availableCategories) 
+        ? data.availableCategories 
+        : []
+    };
+
+    updateProgress(100);
+    console.log('📸 Final product data:', {
+      totalImages: productData.images.length,
+      hasImages: productData.images.length > 0,
+      imageUrls: productData.images.map(img => img.url)
+    });
+    
+    setFetchedProductData(productData);
+    setScannedBarcode(productData.barcode);
+    setProductDataPreviewVisible(true);
+
+  } catch (error) {
+    console.error('❌ Barcode Scan Error:', error);
+    
+    setFetchedProductData(null);
+    setScannedBarcode('');
+    
+    let errorMessage = 'Failed to scan barcode. Please try again.';
+    
+    if (error.message.includes('Network request failed')) {
+      errorMessage = 'Network error. Please check your internet connection.';
+    } else if (error.message.includes('401')) {
+      errorMessage = 'Session expired. Please login again.';
+      logout();
+    } else if (error.message.includes('500')) {
+      errorMessage = 'Server error. Please try again later.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    Alert.alert('Scan Error', errorMessage, [
+      { text: 'Try Again', onPress: () => setBarcodeScannerVisible(true) },
+      { text: 'Cancel', onPress: () => setBarcodeScannerVisible(false) }
+    ]);
+  } finally {
+    setFetchingProductData(false);
+    endOperation();
+  }
+};
+
+  const handleBarcodeScannedForProduct = (barcode) => {
+    if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
+      console.warn('⚠️ Invalid barcode scanned');
+      Alert.alert('Invalid Barcode', 'Please scan a valid barcode');
+      return;
+    }
+
+    console.log('📱 Barcode scanned:', barcode);
+    setScannedBarcode(barcode.trim());
+    setBarcodeScannerVisible(false);
+    fetchProductDataFromBarcode(barcode.trim());
+  };
+
+  const handleApplyProductDataToForm = async () => {
+    if (!fetchedProductData) {
+      console.error('❌ No fetched product data available');
+      Alert.alert('Error', 'No product data to apply');
+      return;
+    }
+
+    try {
+      setApplyingProductData(true);
+      startOperation('Applying product data...');
+      console.log('🔄 Applying scanned data to form...');
+      
+      updateProgress(20);
+      const downloadedImages = fetchedProductData.images || [];
+      console.log('📸 Using already downloaded images:', downloadedImages.length);
+
+      updateProgress(40);
+      const updates = {};
+      const newAutoFilledFields = new Set();
+
+      if (fetchedProductData.name && fetchedProductData.name.trim()) {
+        updates.name = fetchedProductData.name;
+        newAutoFilledFields.add('name');
+      }
+      
+      if (fetchedProductData.description && fetchedProductData.description.trim()) {
+        updates.description = fetchedProductData.description;
+        newAutoFilledFields.add('description');
+      }
+      
+      if (fetchedProductData.unit) {
+        updates.unit = fetchedProductData.unit;
+        newAutoFilledFields.add('unit');
+      }
+      
+      if (fetchedProductData.unitSize) {
+        updates.unitSize = fetchedProductData.unitSize;
+        newAutoFilledFields.add('unitSize');
+      }
+      
+      if (fetchedProductData.nutritionalInfo && typeof fetchedProductData.nutritionalInfo === 'object') {
+        updates.nutritionalInfo = fetchedProductData.nutritionalInfo;
+        newAutoFilledFields.add('nutritionalInfo');
+      }
+      
+      if (fetchedProductData.tags) {
+        updates.tags = Array.isArray(fetchedProductData.tags) 
+          ? fetchedProductData.tags.join(', ') 
+          : String(fetchedProductData.tags);
+        newAutoFilledFields.add('tags');
+      }
+      
+      if (fetchedProductData.price !== undefined && fetchedProductData.price !== null) {
+        updates.price = fetchedProductData.price.toString();
+      }
+      
+      if (fetchedProductData.milkType) {
+        updates.milkType = fetchedProductData.milkType;
+      }
+      
+      if (fetchedProductData.category) {
+        updates.category = fetchedProductData.category;
+        newAutoFilledFields.add('category');
+      }
+
+      updateProgress(60);
+      let mainImageUri = '';
+      
+      if (downloadedImages.length > 0) {
+        const frontImage = downloadedImages.find(img => img && img.type === 'front') || downloadedImages[0];
+        if (frontImage && frontImage.url) {
+          mainImageUri = frontImage.url;
+          console.log('✅ Main image set:', mainImageUri);
+        }
+      }
+
+      updateProgress(80);
+      const cloudinaryImages = downloadedImages
+        .filter(img => img && img.url)
+        .map(img => ({
+          url: img.url,
+          publicId: img.publicId || null,
+          type: img.type || 'product'
+        }));
+
+      setFormData(prev => ({ 
+        ...prev, 
+        ...updates,
+        scannedBarcodeId: scannedBarcode || fetchedProductData.barcode,
+        cloudinaryImages: cloudinaryImages
+      }));
+      
+      if (mainImageUri) {
+        setImageUri(mainImageUri);
+        console.log('🖼️ Image URI set for preview');
+      } else {
+        console.log('⚠️ No main image available');
+        setImageUri('');
+      }
+      
+      setAutoFilledFields(newAutoFilledFields);
+
+      updateProgress(100);
+      setProductDataPreviewVisible(false);
+      setModalVisible(true);
+      
+      const imageMessage = cloudinaryImages.length > 0 
+        ? `${cloudinaryImages.length} images ready.` 
+        : 'No images available.';
+      
+      Alert.alert(
+        'Success', 
+        `Product data applied! ${imageMessage} Please review and save.`
+      );
+
+    } catch (error) {
+      console.error('❌ Error applying product data:', error);
+      Alert.alert('Error', 'Failed to apply product data. Please try again.');
+    } finally {
+      setApplyingProductData(false);
+      setFetchedProductData(null);
+      setScannedBarcode('');
+      endOperation();
+    }
+  };
+
+  // ──────────────────────────────────────────────────────────────
+  // AUTH & API HELPERS
+  // ──────────────────────────────────────────────────────────────
+  const handleApiError = (error, customMessage = null) => {
+    console.error('API Error:', error);
+    if (
+      error.message?.includes('401') ||
+      error.response?.status === 401 ||
+      error.message?.includes('Unauthorized')
+    ) {
+      Alert.alert('Session Expired', 'Please login again.', [
+        { text: 'OK', onPress: () => logout() },
+      ]);
+      return true;
+    }
+    Alert.alert('Error', customMessage || 'Something went wrong.');
+    return false;
+  };
+
+  const validateAuthBeforeCall = async () => {
+    if (!authToken || !isAuthenticated) {
+      Alert.alert('Session Expired', 'Please login again');
+      return false;
+    }
+    const isValid = await validateToken();
+    if (!isValid) {
+      Alert.alert('Session Expired', 'Please login again');
+      return false;
+    }
+    return true;
+  };
+
+  const getAuthHeaders = (forFormData = false) => {
+    const headers = { Authorization: `Bearer ${authToken}` };
+    if (!forFormData) headers['Content-Type'] = 'application/json';
+    return headers;
+  };
+
+  // ──────────────────────────────────────────────────────────────
+  // DATA FETCHING
+  // ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!authLoading && authToken && isAuthenticated) {
+      fetchData();
+    } else if (!authLoading && (!authToken || !isAuthenticated)) {
+      setLoading(false);
+    }
+  }, [authToken, authLoading, isAuthenticated]);
+
+  const fetchData = async () => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) {
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      startOperation('Loading products...');
+      
+      updateProgress(30);
+      const [productsRes, categoriesRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/catalog/products`, {
+          headers: getAuthHeaders(),
+        }),
+        fetch(`${API_BASE_URL}/api/catalog/categories`, {
+          headers: getAuthHeaders(),
+        }),
+      ]);
+
+      updateProgress(70);
+      if (!productsRes.ok) throw new Error('Failed to fetch products');
+
+      const productsData = await productsRes.json();
+      const categoriesData = await categoriesRes.json();
+
+      setProducts(
+        Array.isArray(productsData) ? productsData : productsData.products || []
+      );
+      setCategories(
+        Array.isArray(categoriesData)
+          ? categoriesData
+          : categoriesData.categories || []
+      );
+      
+      updateProgress(100);
+    } catch (error) {
+      handleApiError(error, 'Failed to load data.');
+      setProducts([]);
+      setCategories([]);
+    } finally {
+      setLoading(false);
+      endOperation();
+    }
+  };
+
+  const filteredProducts = useMemo(() => {
+    let filtered = products;
+    
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          p.category?.name?.toLowerCase().includes(query) ||
+          p.tags?.some((tag) => tag.toLowerCase().includes(query))
+      );
+    }
+    
+    // Filter by selected category
+    if (selectedCategory) {
+      filtered = filtered.filter(
+        (p) => p.category?._id === selectedCategory
+      );
+    }
+    
+    return filtered;
+  }, [products, searchQuery, selectedCategory]);
+
+  // ──────────────────────────────────────────────────────────────
+  // FORM MODAL HANDLERS
+  // ──────────────────────────────────────────────────────────────
+  const openCreateModal = () => {
+    setEditingProduct(null);
+    resetForm();
+    setModalVisible(true);
+  };
+
+  const openEditModal = (product) => {
+    setEditingProduct(product);
+    setFormData({
+      name: product.name,
+      description: product.description || '',
+      price: product.price.toString(),
+      category: product.category?._id || product.category || '',
+      unit: product.unit || 'piece',
+      unitSize: product.unitSize?.toString() || '',
+      milkType: product.milkType || 'Cow',
+      image: null,
+      discount: product.discount?.toString() || '0',
+      isFeatured: product.isFeatured || false,
+      isAvailable: product.isAvailable !== false,
+      nutritionalInfo:
+        product.nutritionalInfo || {
+          fat: '',
+          protein: '',
+          calories: '',
+          carbohydrates: '',
+        },
+      tags: Array.isArray(product.tags)
+        ? product.tags.join(', ')
+        : typeof product.tags === 'string'
+        ? product.tags
+        : '',
+    });
+    setImageUri(product.image || '');
+    setModalVisible(true);
+  };
+
+  const resetForm = () => {
+    setFormData({
       name: '',
       description: '',
       price: '',
       category: '',
-      unit: 'liter',
+      unit: 'piece',
       unitSize: '',
-      stock: '',
       milkType: 'Cow',
       image: null,
       discount: '',
       isFeatured: false,
       isAvailable: true,
+      nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' },
+      tags: '',
+      cloudinaryImages: []
     });
-    setProductImageUri('');
-    setScannedProductData(null);
+    setImageUri('');
+    setAutoFilledFields(new Set());
     setScannedBarcode('');
-    setProductModalVisible(true);
+    setFetchedProductData(null);
   };
 
-  const openEditProductModal = (product) => {
-    setProductFormData({
-      name: product.name,
-      description: product.description || '',
-      price: product.price.toString(),
-      category: product.category?._id || product.category || '',
-      unit: product.unit || 'liter',
-      unitSize: product.unitSize?.toString() || '',
-      stock: product.stock?.toString() || '',
-      milkType: product.milkType || 'Cow',
-      image: null,
-      discount: product.discount?.toString() || '',
-      isFeatured: product.isFeatured || false,
-      isAvailable: product.isAvailable !== false,
-    });
-    setProductImageUri(product.image || '');
-    setProductModalVisible(true);
+  const closeModal = () => {
+    setModalVisible(false);
+    resetForm();
+    setEditingProduct(null);
+    setFetchedProductData(null);
   };
 
-  const closeProductModal = () => {
-    setProductModalVisible(false);
-    setScannedProductData(null);
-    setScannedBarcode('');
-  };
-
-  // FIXED: Enhanced product submission to ensure proper state update
-  const handleAddProduct = async () => {
-    if (!productFormData.name.trim() || !productFormData.price || !productFormData.category) {
-      Alert.alert('Error', 'Please fill in all required fields');
+  const handleSubmit = async () => {
+    if (!formData.name.trim() || !formData.price || !formData.category) {
+      Alert.alert('Error', 'Name, Price, and Category are required.');
       return;
     }
 
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
     try {
       setUploading(true);
+      startOperation(editingProduct ? 'Updating product...' : 'Creating product...');
+      
       const submitFormData = new FormData();
-
-      submitFormData.append('name', productFormData.name);
-      submitFormData.append('description', productFormData.description);
-      submitFormData.append('price', parseFloat(productFormData.price).toString());
-      submitFormData.append('category', productFormData.category);
-      submitFormData.append('unit', productFormData.unit);
-      submitFormData.append('unitSize', (parseInt(productFormData.unitSize) || 0).toString());
-      submitFormData.append('stock', (parseInt(productFormData.stock) || 0).toString());
-      submitFormData.append('milkType', productFormData.milkType);
-      submitFormData.append('discount', (parseFloat(productFormData.discount) || 0).toString());
-      submitFormData.append('isFeatured', productFormData.isFeatured.toString());
-      submitFormData.append('isAvailable', productFormData.isAvailable.toString());
-
-      // Add scanned barcode if available
-      if (scannedBarcode) {
+      
+      // Append basic fields
+      submitFormData.append('name', formData.name.trim());
+      submitFormData.append('description', formData.description.trim());
+      submitFormData.append('price', parseFloat(formData.price));
+      submitFormData.append('category', formData.category);
+      submitFormData.append('unit', formData.unit);
+      submitFormData.append('unitSize', formData.unitSize ? parseFloat(formData.unitSize) : '');
+      submitFormData.append('milkType', formData.milkType);
+      submitFormData.append('discount', formData.discount ? parseFloat(formData.discount) : 0);
+      submitFormData.append('isFeatured', formData.isFeatured);
+      submitFormData.append('isAvailable', formData.isAvailable);
+      submitFormData.append('tags', formData.tags);
+      
+      // Append nutritional info
+      submitFormData.append('nutritionalInfo[fat]', formData.nutritionalInfo.fat || '');
+      submitFormData.append('nutritionalInfo[protein]', formData.nutritionalInfo.protein || '');
+      submitFormData.append('nutritionalInfo[calories]', formData.nutritionalInfo.calories || '');
+      submitFormData.append('nutritionalInfo[carbohydrates]', formData.nutritionalInfo.carbohydrates || '');
+      
+      // Append barcode if available
+      if (scannedBarcode && !editingProduct) {
         submitFormData.append('scannedBarcodeId', scannedBarcode);
       }
 
-      if (productFormData.image) {
+      updateProgress(30);
+      
+      // Handle image upload - use cloudinaryImages if available, otherwise use local image
+      if (formData.cloudinaryImages && formData.cloudinaryImages.length > 0) {
+        console.log('📤 Using Cloudinary images:', formData.cloudinaryImages.length);
+        // For Cloudinary images, we'll send them as part of the form data
+        formData.cloudinaryImages.forEach((img, index) => {
+          if (img.url) {
+            submitFormData.append(`cloudinaryImages[${index}][url]`, img.url);
+            if (img.publicId) {
+              submitFormData.append(`cloudinaryImages[${index}][publicId]`, img.publicId);
+            }
+            if (img.type) {
+              submitFormData.append(`cloudinaryImages[${index}][type]`, img.type);
+            }
+          }
+        });
+      } else if (formData.image && formData.image.uri) {
+        console.log('📤 Uploading local image');
         submitFormData.append('image', {
-          uri: productFormData.image.uri,
-          type: productFormData.image.type,
-          name: productFormData.image.fileName,
+          uri: formData.image.uri,
+          type: 'image/jpeg',
+          name: formData.image.name || `product-${Date.now()}.jpg`,
         });
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/superadmin/products`, {
-        method: 'POST',
+      updateProgress(60);
+      const url = editingProduct 
+        ? `${API_BASE_URL}/api/catalog/products/${editingProduct._id}`
+        : `${API_BASE_URL}/api/catalog/products`;
+
+      const response = await fetch(url, {
+        method: editingProduct ? 'PUT' : 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
         body: submitFormData,
       });
 
-      const data = await response.json();
-      
-      if (response.ok) {
-        Alert.alert('Success', 'Product added successfully!');
-        closeProductModal();
-        
-        // FIXED: Enhanced data refresh to ensure products display properly
-        await fetchData(); // Wait for refresh to complete
-        
-        // Additional safety: Force state update
-        setTimeout(() => {
-          fetchData();
-        }, 500);
-        
-      } else {
-        Alert.alert('Error', data.message || 'Failed to add product');
-      }
-    } catch (error) {
-      console.error('Add product error:', error);
-      Alert.alert('Error', 'Failed to add product');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Delete Product Function
-  const handleDeleteProduct = async (productId, productName) => {
-    Alert.alert(
-      'Delete Product',
-      `Are you sure you want to delete "${productName}"? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const response = await fetch(`${API_BASE_URL}/api/superadmin/products/${productId}`, {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': `Bearer ${authToken}`,
-                  'Content-Type': 'application/json'
-                },
-              });
-
-              if (response.ok) {
-                Alert.alert('Success', 'Product deleted successfully!');
-                // FIXED: Enhanced refresh
-                await fetchData();
-              } else {
-                const data = await response.json();
-                Alert.alert('Error', data.message || 'Failed to delete product');
-              }
-            } catch (error) {
-              console.error('Delete product error:', error);
-              Alert.alert('Error', 'Failed to delete product');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Category Modal Functions
-  const openAddCategoryModal = () => {
-    setCategoryFormData({
-      name: '',
-      description: '',
-      image: null,
-      displayOrder: 0,
-    });
-    setCategoryImageUri('');
-    setCategoryModalVisible(true);
-  };
-
-  const closeCategoryModal = () => {
-    setCategoryModalVisible(false);
-  };
-
-  const handleAddCategory = async () => {
-    if (!categoryFormData.name.trim()) {
-      Alert.alert('Error', 'Category name is required');
-      return;
-    }
-
-    try {
-      setUploading(true);
-      const submitFormData = new FormData();
-
-      submitFormData.append('name', categoryFormData.name);
-      submitFormData.append('description', categoryFormData.description);
-      submitFormData.append('displayOrder', categoryFormData.displayOrder.toString());
-
-      if (categoryFormData.image) {
-        submitFormData.append('image', {
-          uri: categoryFormData.image.uri,
-          type: categoryFormData.image.type,
-          name: categoryFormData.image.fileName,
-        });
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/superadmin/categories`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: submitFormData,
-      });
-
-      const data = await response.json();
-      
-      if (response.ok) {
-        Alert.alert('Success', 'Category added successfully!');
-        closeCategoryModal();
-        await fetchData(); // FIXED: Enhanced refresh
-      } else {
-        Alert.alert('Error', data.message || 'Failed to add category');
-      }
-    } catch (error) {
-      console.error('Add category error:', error);
-      Alert.alert('Error', 'Failed to add category');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Category Management Functions
-  const openCategoryManageModal = () => {
-    setCategoryManageModalVisible(true);
-  };
-
-  const closeCategoryManageModal = () => {
-    setCategoryManageModalVisible(false);
-  };
-
-  const handleEditCategory = (category) => {
-    setCategoryFormData({
-      name: category.name,
-      description: category.description || '',
-      image: null,
-      displayOrder: category.displayOrder || 0,
-    });
-    setCategoryImageUri(category.image || '');
-    setCategoryManageModalVisible(false);
-    setCategoryModalVisible(true);
-  };
-
-  const handleDeleteCategory = async (categoryId, categoryName) => {
-    // Check if category has products
-    const productsInCategory = products.filter(product => 
-      product.category?._id === categoryId || product.category === categoryId
-    );
-
-    if (productsInCategory.length > 0) {
-      Alert.alert(
-        'Cannot Delete Category',
-        `This category has ${productsInCategory.length} product(s). Please remove or reassign these products before deleting the category.`,
-        [{ text: 'OK', style: 'default' }]
-      );
-      return;
-    }
-
-    Alert.alert(
-      'Delete Category',
-      `Are you sure you want to delete "${categoryName}"? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const response = await fetch(`${API_BASE_URL}/api/superadmin/categories/${categoryId}`, {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': `Bearer ${authToken}`,
-                  'Content-Type': 'application/json'
-                },
-              });
-
-              if (response.ok) {
-                Alert.alert('Success', 'Category deleted successfully!');
-                await fetchData(); // FIXED: Enhanced refresh
-              } else {
-                const data = await response.json();
-                Alert.alert('Error', data.message || 'Failed to delete category');
-              }
-            } catch (error) {
-              console.error('Delete category error:', error);
-              Alert.alert('Error', 'Failed to delete category');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Product Details Modal
-  const openProductDetails = (product) => {
-    setSelectedProduct(product);
-    setProductDetailsModalVisible(true);
-  };
-
-  const closeProductDetails = () => {
-    setProductDetailsModalVisible(false);
-    setSelectedProduct(null);
-  };
-
-  // ──────────────────────────────────────────────────────────────
-  // NEW PRODUCT SCANNER FUNCTIONS
-  // ──────────────────────────────────────────────────────────────
-  const openBarcodeScanner = () => {
-    setBarcodeScannerVisible(true);
-  };
-
-  const closeBarcodeScanner = () => {
-    setBarcodeScannerVisible(false);
-    setFetchingProductData(false);
-    setScannedProductData(null);
-  };
-
-  const handleBarcodeScannedForNewProduct = async ({ data }) => {
-    if (!data) return;
-
-    try {
-      setFetchingProductData(true);
-      setScannedBarcode(data);
-      
-      console.log('🔍 Scanning barcode for new product:', data);
-
-      // Call your API to fetch product data by barcode
-      const response = await fetch(`${API_BASE_URL}/api/catalog/products/scan-barcode`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ barcode: data })
-      });
-
+      updateProgress(80);
       const result = await response.json();
-      
-      if (response.ok) {
-        // Handle existing product
-        if (result.productExists && result.existingProduct) {
-          Alert.alert(
-            'Product Already Exists',
-            `"${result.existingProduct.name}" already uses this barcode.`,
-            [{ text: 'OK', style: 'default' }]
-          );
-          return;
-        }
 
-        if (result.success && result.suggestedData) {
-          setScannedProductData(result.suggestedData);
-          Alert.alert(
-            'Product Data Found', 
-            'Product information has been auto-filled. Please review and complete the form.',
-            [{ text: 'OK', onPress: applyScannedProductData }]
-          );
-        } else {
-          Alert.alert(
-            'No Product Data Found',
-            'No product information found for this barcode. Please fill in the details manually.',
-            [{ text: 'OK', onPress: () => setBarcodeScannerVisible(false) }]
-          );
-        }
-      } else {
-        throw new Error(result.message || 'Failed to scan barcode');
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to save product');
       }
+
+      updateProgress(100);
+      Alert.alert('Success!', `Product ${editingProduct ? 'updated' : 'created'} successfully.`, [
+        { text: 'OK', onPress: () => {
+          closeModal();
+          fetchData();
+        }}
+      ]);
+
     } catch (error) {
-      console.error('Barcode scan error:', error);
-      Alert.alert('Error', 'Failed to scan barcode. Please try again.');
+      console.error('Submit error:', error);
+      handleApiError(error, `Failed to ${editingProduct ? 'update' : 'create'} product.`);
     } finally {
-      setFetchingProductData(false);
-      setBarcodeScannerVisible(false);
+      setUploading(false);
+      endOperation();
     }
   };
 
-  const applyScannedProductData = () => {
-    if (scannedProductData) {
-      setProductFormData(prev => ({
-        ...prev,
-        name: scannedProductData.name || prev.name,
-        description: scannedProductData.description || prev.description,
-        unit: scannedProductData.unit || prev.unit,
-        unitSize: scannedProductData.unitSize || prev.unitSize,
-        milkType: scannedProductData.milkType || prev.milkType,
-        price: scannedProductData.price ? scannedProductData.price.toString() : prev.price,
-      }));
-      
-      // Auto-select category if available
-      if (scannedProductData.category && categories.length > 0) {
-        const matchingCategory = categories.find(cat => 
-          cat.name.toLowerCase().includes(scannedProductData.category.toLowerCase())
-        );
-        if (matchingCategory) {
-          setProductFormData(prev => ({
-            ...prev,
-            category: matchingCategory._id
-          }));
-        }
-      }
-    }
+  const handleDelete = async (productId) => {
+    const isValid = await validateAuthBeforeCall();
+    if (!isValid) return;
+
+    Alert.alert('Delete Product', 'This action cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            startOperation('Deleting product...');
+            const response = await fetch(
+              `${API_BASE_URL}/api/catalog/products/${productId}`,
+              {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+              }
+            );
+
+            if (response.ok) {
+              Alert.alert('Success', 'Product deleted.');
+              fetchData();
+            } else {
+              const data = await response.json();
+              handleApiError(
+                { message: data.message, response },
+                data.message || 'Failed to delete.'
+              );
+            }
+          } catch (error) {
+            handleApiError(error, 'Failed to delete product.');
+          } finally {
+            endOperation();
+          }
+        },
+      },
+    ]);
   };
 
   // ──────────────────────────────────────────────────────────────
-  // EXISTING BARCODE MANAGEMENT FUNCTIONS
+  // BARCODE FUNCTIONS
   // ──────────────────────────────────────────────────────────────
   const openBarcodeModal = (product) => {
     setSelectedProductForBarcode(product);
@@ -699,161 +1060,186 @@ export default function ProductsScreen() {
   };
 
   const onBarcodeScanned = async ({ data }) => {
-    if (!data || !selectedProductForBarcode) return;
+  if (!data || !selectedProductForBarcode) return;
 
-    try {
-      setBarcodeScanning(false);
-      
-      const response = await fetch(
-        `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ scannedBarcodeId: data }),
-        }
-      );
+  try {
+    setBarcodeScanning(false);
+    startOperation('Assigning barcode...');
 
-      const result = await response.json();
-      
-      if (response.ok) {
-        Alert.alert('Success', 'Scanned barcode assigned successfully!');
-        
-        updateProductState(selectedProductForBarcode._id, {
-          scannedBarcodeId: data,
-        });
-        
-      } else {
-        Alert.alert('Error', result.message || 'Failed to assign scanned barcode');
+    console.log('🔍 DEBUG - Barcode Assignment Details:', {
+      productId: selectedProductForBarcode._id,
+      productName: selectedProductForBarcode.name,
+      productObject: selectedProductForBarcode,
+      barcode: data,
+      apiUrl: `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`
+    });
+
+    // 🎯 FIX: Use the correct product ID from selectedProductForBarcode
+    const response = await fetch(
+      `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ scannedBarcodeId: data }),
       }
-    } catch (error) {
-      console.error('Barcode Assignment Error:', error);
-      Alert.alert('Error', 'Failed to assign scanned barcode');
-    } finally {
-      setShowCamera(false);
+    );
+
+    console.log('🔍 DEBUG - Response Status:', response.status);
+    
+    const result = await response.json();
+    console.log('🔍 DEBUG - Response Data:', result);
+    
+    if (response.ok) {
+      Alert.alert('Success', 'Scanned barcode assigned successfully!');
+      
+      updateProductState(selectedProductForBarcode._id, {
+        scannedBarcodeId: data,
+      });
+      
+      closeBarcodeModal();
+    } else {
+      Alert.alert('Error', result.message || 'Failed to assign scanned barcode');
     }
-  };
+  } catch (error) {
+    console.error('❌ Barcode Assignment Error:', error);
+    console.log('🔍 DEBUG - Error Details:', {
+      message: error.message,
+      productId: selectedProductForBarcode?._id,
+      apiUrl: `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode?._id}/scan-barcode`
+    });
+    handleApiError(error, 'Failed to assign scanned barcode');
+  } finally {
+    setShowCamera(false);
+    endOperation();
+  }
+};
 
   const removeScannedBarcode = async () => {
-    if (!selectedProductForBarcode?._id) return;
+  if (!selectedProductForBarcode?._id) return;
 
-    Alert.alert('Remove Scanned Barcode', 'Are you sure you want to remove the scanned barcode?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const response = await fetch(
-              `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scanned-barcode`,
-              {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': `Bearer ${authToken}`,
-                  'Content-Type': 'application/json'
-                },
-              }
-            );
-
-            if (response.ok) {
-              Alert.alert('Success', 'Scanned barcode removed successfully!');
-              
-              updateProductState(selectedProductForBarcode._id, {
-                scannedBarcodeId: null
-              });
-              
-            } else {
-              const result = await response.json();
-              Alert.alert('Error', result.message || 'Failed to remove scanned barcode');
+  Alert.alert('Remove Scanned Barcode', 'Are you sure you want to remove the scanned barcode?', [
+    { text: 'Cancel', style: 'cancel' },
+    {
+      text: 'Remove',
+      style: 'destructive',
+      onPress: async () => {
+        try {
+          startOperation('Removing barcode...');
+          
+          // 🎯 FIX: Use the correct product ID
+          const response = await fetch(
+            `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scanned-barcode`,
+            {
+              method: 'DELETE',
+              headers: getAuthHeaders(),
             }
-          } catch (error) {
-            Alert.alert('Error', 'Failed to remove scanned barcode');
+          );
+
+          if (response.ok) {
+            Alert.alert('Success', 'Scanned barcode removed successfully!');
+            
+            updateProductState(selectedProductForBarcode._id, {
+              scannedBarcodeId: null
+            });
+            
+          } else {
+            const result = await response.json();
+            Alert.alert('Error', result.message || 'Failed to remove scanned barcode');
           }
-        },
+        } catch (error) {
+          handleApiError(error, 'Failed to remove scanned barcode');
+        } finally {
+          endOperation();
+        }
       },
-    ]);
-  };
+    },
+  ]);
+};
 
   const removeGeneratedBarcode = async () => {
-    if (!selectedProductForBarcode?._id) return;
+  if (!selectedProductForBarcode?._id) return;
 
-    Alert.alert('Remove Generated Barcode', 'Are you sure you want to remove the generated barcode?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const response = await fetch(
-              `${API_BASE_URL}/api/superadmin/${selectedProductForBarcode._id}/generated-barcode`,
-              {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': `Bearer ${authToken}`,
-                  'Content-Type': 'application/json'
-                },
-              }
-            );
-
-            if (response.ok) {
-              Alert.alert('Success', 'Generated barcode removed successfully!');
-              
-              updateProductState(selectedProductForBarcode._id, {
-                barcodeId: null,
-                barcodeUrl: null
-              });
-              
-            } else {
-              const result = await response.json();
-              Alert.alert('Error', result.message || 'Failed to remove generated barcode');
+  Alert.alert('Remove Generated Barcode', 'Are you sure you want to remove the generated barcode?', [
+    { text: 'Cancel', style: 'cancel' },
+    {
+      text: 'Remove',
+      style: 'destructive',
+      onPress: async () => {
+        try {
+          startOperation('Removing generated barcode...');
+          
+          // 🎯 FIX: Use the correct product ID
+          const response = await fetch(
+            `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generated-barcode`,
+            {
+              method: 'DELETE',
+              headers: getAuthHeaders(),
             }
-          } catch (error) {
-            Alert.alert('Error', 'Failed to remove generated barcode');
+          );
+
+          if (response.ok) {
+            Alert.alert('Success', 'Generated barcode removed successfully!');
+            
+            updateProductState(selectedProductForBarcode._id, {
+              barcodeId: null,
+              barcodeUrl: null
+            });
+            
+          } else {
+            const result = await response.json();
+            Alert.alert('Error', result.message || 'Failed to remove generated barcode');
           }
-        },
+        } catch (error) {
+          handleApiError(error, 'Failed to remove generated barcode');
+        } finally {
+          endOperation();
+        }
       },
-    ]);
-  };
+    },
+  ]);
+};
 
   const generateBarcode = async () => {
-    if (!selectedProductForBarcode?._id) return;
+  if (!selectedProductForBarcode?._id) return;
+  const ok = await validateAuthBeforeCall();
+  if (!ok) return;
+
+  try {
+    setBarcodeScanning(true);
+    startOperation('Generating barcode...');
     
-    try {
-      setBarcodeScanning(true);
-      
-      const res = await fetch(
-        `${API_BASE_URL}/api/superadmin/${selectedProductForBarcode._id}/generate-barcode`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          },
-        }
-      );
-      
-      const data = await res.json();
-      if (res.ok && data.barcodeUrl) {
-        updateProductState(selectedProductForBarcode._id, {
-          barcodeUrl: data.barcodeUrl,
-          barcodeId: selectedProductForBarcode._id.toString()
-        });
-        Alert.alert('Success', 'Barcode generated successfully!');
-      } else {
-        Alert.alert('Info', data.message || 'Barcode already exists.');
+    // 🎯 FIX: Use the correct product ID
+    const res = await fetch(
+      `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generate-barcode`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
       }
-    } catch (e) {
-      Alert.alert('Error', 'Failed to generate barcode.');
-    } finally {
-      setBarcodeScanning(false);
+    );
+    
+    const data = await res.json();
+    if (res.ok && data.barcodeUrl) {
+      updateProductState(selectedProductForBarcode._id, {
+        barcodeUrl: data.barcodeUrl,
+        barcodeId: selectedProductForBarcode._id.toString()
+      });
+      Alert.alert('Success', 'Barcode generated successfully!');
+    } else {
+      Alert.alert('Info', data.message || 'Barcode already exists.');
     }
-  };
+  } catch (e) {
+    handleApiError(e, 'Failed to generate barcode.');
+  } finally {
+    setBarcodeScanning(false);
+    endOperation();
+  }
+};
 
   const downloadBarcode = async () => {
     if (!selectedProductForBarcode?.barcodeUrl) return;
     try {
+      startOperation('Preparing barcode for download...');
+      
       const capturedUri = await viewShotRef.current?.capture?.();
       if (!capturedUri) throw new Error('Capture failed');
 
@@ -882,126 +1268,165 @@ export default function ProductsScreen() {
     } catch (e) {
       console.error('Barcode download error:', e);
       Alert.alert('Error', 'Could not share barcode');
+    } finally {
+      endOperation();
     }
   };
 
-  // Instagram Stories-like Category Component
-  const CategoryStories = () => (
-    <View style={styles.storiesContainer}>
+  // ──────────────────────────────────────────────────────────────
+  // PROGRESS BAR COMPONENT
+  // ──────────────────────────────────────────────────────────────
+  const ProgressBar = ({ progress, color = Colors.light.accent, height = 6 }) => (
+    <View style={[styles.progressBarContainer, { height }]}>
+      <View 
+        style={[
+          styles.progressBar, 
+          { 
+            width: `${progress}%`,
+            backgroundColor: color
+          }
+        ]} 
+      />
+    </View>
+  );
+
+  // ──────────────────────────────────────────────────────────────
+  // LOADING OVERLAY COMPONENT
+  // ──────────────────────────────────────────────────────────────
+  const LoadingOverlay = ({ message, progress, showProgress = false }) => (
+    <View style={styles.loadingOverlay}>
+      <View style={styles.loadingContent}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <Text style={styles.loadingMessage}>{message}</Text>
+        {showProgress && progress !== undefined && (
+          <>
+            <ProgressBar progress={progress} />
+            <Text style={styles.progressText}>{Math.round(progress)}%</Text>
+          </>
+        )}
+      </View>
+    </View>
+  );
+
+  // ──────────────────────────────────────────────────────────────
+  // HORIZONTAL CATEGORIES COMPONENT
+  // ──────────────────────────────────────────────────────────────
+  const HorizontalCategories = () => (
+    <View style={styles.categoriesSection}>
+      <View style={styles.categoriesHeader}>
+        <Text style={styles.categoriesTitle}>Categories</Text>
+        <TouchableOpacity 
+          style={styles.manageCategoriesButton}
+          onPress={() => setCategoriesModalVisible(true)}
+        >
+          <Text style={styles.manageCategoriesText}>Manage</Text>
+        </TouchableOpacity>
+      </View>
+      
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.storiesScrollContent}
+        contentContainerStyle={styles.categoriesScrollContent}
       >
-        {/* All Categories Story */}
+        {/* All Categories Option */}
         <TouchableOpacity 
-          style={[
-            styles.storyItem,
-            selectedCategory === 'all' && styles.storyItemActive
-          ]}
-          onPress={() => setSelectedCategory('all')}
+          style={styles.categoryCircle}
+          onPress={() => setSelectedCategory(null)}
         >
           <View style={[
-            styles.storyCircle,
-            styles.allStoriesCircle,
-            selectedCategory === 'all' && styles.storyCircleActive
+            styles.categoryCircleImageContainer,
+            selectedCategory === null && styles.categorySelected
           ]}>
-            <MaterialIcons name="apps" size={22} color="#FFFFFF" />
+            <View style={styles.categoryCirclePlaceholder}>
+              <MaterialIcons name="all-inclusive" size={24} color={selectedCategory === null ? "#FFF" : Colors.light.textSecondary} />
+            </View>
+            {selectedCategory === null && (
+              <View style={styles.categorySelectedIndicator}>
+                <Ionicons name="checkmark" size={16} color="#FFF" />
+              </View>
+            )}
           </View>
           <Text style={[
-            styles.storyText,
-            selectedCategory === 'all' && styles.storyTextActive
+            styles.categoryCircleName,
+            selectedCategory === null && styles.categoryNameSelected
           ]}>
             All
           </Text>
         </TouchableOpacity>
 
-        {/* Category Stories */}
-        {categories.slice(0, 90).map((category) => (
+        {categories.map((category) => (
           <TouchableOpacity 
-            key={category._id}
-            style={[
-              styles.storyItem,
-              selectedCategory === category._id && styles.storyItemActive
-            ]}
+            key={category._id} 
+            style={styles.categoryCircle}
             onPress={() => setSelectedCategory(category._id)}
           >
             <View style={[
-              styles.storyCircle,
-              selectedCategory === category._id && styles.storyCircleActive
+              styles.categoryCircleImageContainer,
+              selectedCategory === category._id && styles.categorySelected
             ]}>
               {category.image ? (
                 <Image 
                   source={{ uri: category.image }} 
-                  style={styles.storyImage}
+                  style={styles.categoryCircleImage}
+                  resizeMode="cover"
                 />
               ) : (
-                <MaterialIcons name="category" size={22} color="#FFFFFF" />
+                <View style={styles.categoryCirclePlaceholder}>
+                  <MaterialIcons name="category" size={24} color={selectedCategory === category._id ? "#FFF" : Colors.light.textSecondary} />
+                </View>
+              )}
+              {selectedCategory === category._id && (
+                <View style={styles.categorySelectedIndicator}>
+                  <Ionicons name="checkmark" size={16} color="#FFF" />
+                </View>
               )}
             </View>
-            <Text 
-              style={[
-                styles.storyText,
-                selectedCategory === category._id && styles.storyTextActive
-              ]}
-              numberOfLines={1}
-            >
+            <Text style={[
+              styles.categoryCircleName,
+              selectedCategory === category._id && styles.categoryNameSelected
+            ]} numberOfLines={1}>
               {category.name}
             </Text>
           </TouchableOpacity>
         ))}
-
+        
         {/* Add Category Button */}
         <TouchableOpacity 
-          style={styles.storyItem}
-          onPress={openAddCategoryModal}
+          style={styles.addCategoryCircle}
+          onPress={openCategoryCreateModal}
         >
-          <View style={[styles.storyCircle, styles.addStoryCircle]}>
-            <Ionicons name="add" size={24} color="#FFFFFF" />
+          <View style={styles.addCategoryCircleInner}>
+            <Ionicons name="add" size={24} color={Colors.light.accent} />
           </View>
-          <Text style={styles.storyText}>
-            Add
-          </Text>
-        </TouchableOpacity>
-
-        {/* Manage Categories Button */}
-        <TouchableOpacity 
-          style={styles.storyItem}
-          onPress={openCategoryManageModal}
-        >
-          <View style={[styles.storyCircle, styles.manageStoryCircle]}>
-            <Ionicons name="settings" size={22} color="#FFFFFF" />
-          </View>
-          <Text style={styles.storyText}>
-            Manage
-          </Text>
+          <Text style={styles.addCategoryText}>Add New</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
   );
 
-  // Product Card Component with Barcode Integration
-  const ProductCard = ({ item }) => {
+  // ──────────────────────────────────────────────────────────────
+  // RENDER PRODUCT CARD
+  // ──────────────────────────────────────────────────────────────
+  const renderProduct = ({ item }) => {
     const isOutOfStock = item.stock <= 0;
     const discount = item.discount > 0 ? `${item.discount}% off` : null;
     const unitDisplay = item.unitSize ? `${item.unitSize}${item.unit}` : item.unit;
-
+    
     return (
       <TouchableOpacity 
         style={styles.productCard}
-        onPress={() => openProductDetails(item)}
-        activeOpacity={0.8}
+        onPress={() => openEditModal(item)}
+        activeOpacity={0.7}
       >
-        {/* Product Image with Overlays */}
+        {/* Product Image */}
         <View style={styles.imageContainer}>
           <Image
             source={{ 
-              uri: item.image || 'https://via.placeholder.com/200x200/FF6B35/FFFFFF?text=Product'
+              uri: item.image || 'https://via.placeholder.com/100'
             }}
             style={styles.productImage}
             resizeMode="cover"
           />
-          
           {/* Featured Badge */}
           {item.isFeatured && (
             <View style={styles.featuredBadge}>
@@ -1009,32 +1434,35 @@ export default function ProductsScreen() {
               <Text style={styles.featuredText}>Featured</Text>
             </View>
           )}
-
           {/* Out of Stock Overlay */}
           {isOutOfStock && (
             <View style={styles.outOfStockOverlay}>
               <Text style={styles.outOfStockText}>Out of Stock</Text>
             </View>
           )}
-
-          {/* Discount Badge */}
-          {discount && (
-            <View style={styles.discountBadge}>
-              <Text style={styles.discountText}>{discount}</Text>
-            </View>
-          )}
         </View>
 
         {/* Product Info */}
         <View style={styles.productInfo}>
-          {/* Title and Category */}
-          <Text style={styles.productName} numberOfLines={2}>
-            {item.name}
-          </Text>
-          
+          {/* Title Row */}
+          <View style={styles.titleRow}>
+            <Text style={styles.productName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.unitText}>{unitDisplay}</Text>
+          </View>
+
+          {/* Category */}
           <Text style={styles.productCategory} numberOfLines={1}>
             {item.category?.name || 'Uncategorized'}
           </Text>
+
+          {/* Description */}
+          {item.description && (
+            <Text style={styles.productDescription} numberOfLines={2}>
+              {item.description}
+            </Text>
+          )}
 
           {/* Barcode Info - Show Both Types */}
           {(item.barcodeId || item.scannedBarcodeId) && (
@@ -1065,312 +1493,616 @@ export default function ProductsScreen() {
             </View>
           )}
 
-          {/* Price and Actions */}
-          <View style={styles.priceSection}>
-            <Text style={styles.productPrice}>₹{item.price}</Text>
-            <View style={styles.actionButtons}>
-              {/* Barcode Button */}
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.barcodeButton]}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  openBarcodeModal(item);
-                }}
-              >
-                <Ionicons name="barcode-outline" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-
-              {/* Edit Button */}
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.editButton]}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  openEditProductModal(item);
-                }}
-              >
-                <Ionicons name="create-outline" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-
-              {/* Delete Button */}
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleDeleteProduct(item._id, item.name);
-                }}
-              >
-                <Ionicons name="trash-outline" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
+          {/* Price & Stock Row */}
+          <View style={styles.bottomRow}>
+            <View style={styles.priceSection}>
+              <Text style={styles.productPrice}>₹{item.price}</Text>
+              {discount && (
+                <View style={styles.discountContainer}>
+                  <Text style={styles.discountBadge}>{discount}</Text>
+                </View>
+              )}
             </View>
+            <Text style={[
+              styles.stockText, 
+              isOutOfStock && styles.outOfStockText
+            ]}>
+              {item.stock} in stock
+            </Text>
           </View>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.barcodeButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              openBarcodeModal(item);
+            }}
+          >
+            <Ionicons name="barcode-outline" size={20} color="#4CAF50" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDelete(item._id);
+            }}
+          >
+            <Feather name="trash-2" size={18} color="#F44336" />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
   };
 
-  // Empty State Component
-  const EmptyState = () => (
+  const EmptyList = () => (
     <View style={styles.emptyContainer}>
-      <MaterialIcons name="inventory-2" size={60} color={Colors.light.textSecondary} />
-      <Text style={styles.emptyTitle}>
-        {searchQuery || selectedCategory !== 'all' ? 'No Products Found' : 'No Products Yet'}
+      <MaterialIcons name="inventory-2" size={56} color={Colors.light.textSecondary} />
+      <Text style={styles.emptyText}>
+        {searchQuery || selectedCategory ? 'No products found' : 'No products yet'}
       </Text>
-      <Text style={styles.emptySubtitle}>
-        {searchQuery 
-          ? 'Try adjusting your search or filter' 
-          : selectedCategory !== 'all'
+      <Text style={styles.emptySubtext}>
+        {searchQuery
+          ? 'Try a different search term'
+          : selectedCategory
           ? 'No products in this category'
-          : 'Start by adding your first product'
-        }
+          : 'Add your first product to get started'}
       </Text>
-      {(selectedCategory === 'all' && !searchQuery) && (
-        <TouchableOpacity style={styles.addFirstButton} onPress={openAddProductModal}>
-          <Text style={styles.addFirstButtonText}>Add First Product</Text>
+      {!searchQuery && !selectedCategory && (
+        <TouchableOpacity style={styles.addFirstButton} onPress={openCreateModal}>
+          <Text style={styles.addFirstButtonText}>Add Product</Text>
         </TouchableOpacity>
       )}
     </View>
   );
 
-  // Loading State
-  if (loading) {
+  // ──────────────────────────────────────────────────────────────
+  // CATEGORIES LIST COMPONENT
+  // ──────────────────────────────────────────────────────────────
+  const CategoriesList = () => (
+    <View style={styles.categoriesListContainer}>
+      <Text style={styles.categoriesListTitle}>Manage Categories</Text>
+      <Text style={styles.categoriesListSubtitle}>Tap to edit, long press to delete</Text>
+      
+      <FlatList
+        data={categories}
+        keyExtractor={(item) => item._id}
+        renderItem={({ item }) => (
+          <TouchableOpacity 
+            style={styles.categoryListItem}
+            onPress={() => openCategoryEditModal(item)}
+            onLongPress={() => handleCategoryDelete(item._id, item.name)}
+          >
+            <View style={styles.categoryListImageContainer}>
+              {item.image ? (
+                <Image source={{ uri: item.image }} style={styles.categoryListImage} />
+              ) : (
+                <View style={styles.categoryListPlaceholder}>
+                  <MaterialIcons name="category" size={24} color={Colors.light.textSecondary} />
+                </View>
+              )}
+            </View>
+            
+            <View style={styles.categoryListInfo}>
+              <Text style={styles.categoryListName}>{item.name}</Text>
+              {item.description ? (
+                <Text style={styles.categoryListDescription} numberOfLines={2}>
+                  {item.description}
+                </Text>
+              ) : (
+                <Text style={styles.categoryListDescription}>No description</Text>
+              )}
+              <Text style={styles.categoryListOrder}>Order: {item.displayOrder}</Text>
+            </View>
+            
+            <View style={styles.categoryListActions}>
+              <TouchableOpacity 
+                style={styles.categoryEditButton}
+                onPress={() => openCategoryEditModal(item)}
+              >
+                <Feather name="edit" size={18} color={Colors.light.accent} />
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <View style={styles.categoriesEmpty}>
+            <MaterialIcons name="category" size={48} color={Colors.light.textSecondary} />
+            <Text style={styles.categoriesEmptyText}>No categories yet</Text>
+            <Text style={styles.categoriesEmptySubtext}>
+              Create your first category to organize products
+            </Text>
+          </View>
+        }
+      />
+    </View>
+  );
+
+  // ──────────────────────────────────────────────────────────────
+  // LOADING STATES
+  // ──────────────────────────────────────────────────────────────
+  if (authLoading || loading) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={Colors.light.accent} />
-        <Text style={styles.loadingText}>Loading Products...</Text>
+      <View style={[styles.container, styles.centered, { paddingTop: insets.top + 16 }]}>
+        <LoadingOverlay 
+          message="Loading your products..." 
+          progress={submissionProgress}
+          showProgress={operationInProgress !== ''}
+        />
       </View>
     );
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // MAIN RETURN
+  // ──────────────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Stats Bar - Sticky to navbar */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{products.length}</Text>
-          <Text style={styles.statLabel}>Products</Text>
+      {/* Global Loading Overlay */}
+      {operationInProgress !== '' && (
+        <LoadingOverlay 
+          message={operationInProgress}
+          progress={submissionProgress}
+          showProgress={true}
+        />
+      )}
+
+      {/* PROFESSIONAL HEADER */}
+      <View style={styles.professionalHeader}>
+        <View style={styles.headerTop}>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Products</Text>
+            <View style={styles.searchInputContainer}>
+              <Ionicons name="search" size={20} color={Colors.light.textSecondary} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search products..."
+                placeholderTextColor={Colors.light.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+          </View>
         </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{categories.length}</Text>
-          <Text style={styles.statLabel}>Categories</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>
-            {products.filter(p => p.barcodeId || p.scannedBarcodeId).length}
-          </Text>
-          <Text style={styles.statLabel}>With Barcodes</Text>
+
+        {/* Stats Bar - Now inside scrollable content */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{filteredProducts.length}</Text>
+            <Text style={styles.statLabel}>Showing</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>
+              {filteredProducts.filter(p => p.barcodeId || p.scannedBarcodeId).length}
+            </Text>
+            <Text style={styles.statLabel}>With Barcodes</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>
+              {filteredProducts.filter(p => p.isFeatured).length}
+            </Text>
+            <Text style={styles.statLabel}>Featured</Text>
+          </View>
         </View>
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons name="search" size={16} color={Colors.light.textSecondary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search products..."
-            placeholderTextColor={Colors.light.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={16} color={Colors.light.textSecondary} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </View>
+      {/* Horizontal Categories Section */}
+      <HorizontalCategories />
 
-      {/* Instagram Stories-like Categories */}
-      <CategoryStories />
-
-      {/* Products Grid */}
+      {/* Product List with Pull to Refresh */}
       <FlatList
         data={filteredProducts}
-        renderItem={({ item }) => <ProductCard item={item} />}
+        renderItem={renderProduct}
         keyExtractor={(item) => item._id}
-        numColumns={2}
-        contentContainerStyle={styles.productsGrid}
+        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={<EmptyList />}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             colors={[Colors.light.accent]}
             tintColor={Colors.light.accent}
           />
         }
-        ListEmptyComponent={<EmptyState />}
-        columnWrapperStyle={styles.columnWrapper}
       />
 
-      {/* Add Product FAB */}
-      <TouchableOpacity style={styles.fab} onPress={openAddProductModal}>
-        <Ionicons name="add" size={28} color="#FFFFFF" />
+      {/* FAB */}
+      <TouchableOpacity style={styles.fab} onPress={openCreateModal}>
+        <Ionicons name="add" size={28} color="#FFF" />
       </TouchableOpacity>
 
-      {/* Add Product Modal */}
-      <Modal visible={productModalVisible} animationType="slide" transparent={true}>
+      {/* Product Form Modal */}
+      <Modal visible={modalVisible} animationType="slide" onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Product</Text>
-              <TouchableOpacity onPress={closeProductModal}>
+              <View>
+                <Text style={styles.modalTitle}>
+                  {editingProduct ? 'Edit Product' : 'Add New Product'}
+                </Text>
+                <Text style={styles.modalSubtitle}>
+                  {editingProduct ? 'Update product information' : 'Create a new product entry'}
+                </Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={closeModal}
+              >
                 <MaterialIcons name="close" size={24} color={Colors.light.text} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Scan Barcode Section */}
-              <View style={styles.scanSection}>
-                <TouchableOpacity 
-                  style={styles.scanBarcodeButton}
-                  onPress={openBarcodeScanner}
-                >
-                  <Ionicons name="barcode-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.scanBarcodeButtonText}>Scan Product Barcode</Text>
-                </TouchableOpacity>
-                {scannedBarcode && (
-                  <Text style={styles.scannedBarcodeText}>
-                    Scanned Barcode: {scannedBarcode}
-                  </Text>
-                )}
-              </View>
-
-              {/* Product Image Upload */}
-              {(productImageUri || productFormData.image) && (
-                <View style={styles.imagePreviewContainer}>
-                  <Image
-                    source={{ uri: productImageUri || productFormData.image?.uri }}
-                    style={styles.imagePreview}
-                    resizeMode="cover"
-                  />
+              {/* Minimal Scan Barcode Section - Only for new products */}
+              {!editingProduct && (
+                <View style={styles.scanSection}>
                   <TouchableOpacity
-                    style={styles.removeImageButton}
-                    onPress={() => {
-                      setProductFormData({ ...productFormData, image: null });
-                      setProductImageUri('');
-                    }}
+                    style={styles.minimalScanButton}
+                    onPress={() => setBarcodeScannerVisible(true)}
                   >
-                    <Ionicons name="close" size={16} color="#FFF" />
+                    <Ionicons name="barcode-outline" size={20} color={Colors.light.accent} />
+                    <Text style={styles.minimalScanButtonText}>Scan Barcode</Text>
                   </TouchableOpacity>
                 </View>
               )}
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Product Image</Text>
-                <TouchableOpacity style={styles.imageUploadButton} onPress={pickProductImage}>
-                  <Ionicons name="camera" size={20} color={Colors.light.accent} />
-                  <Text style={styles.imageUploadText}>
-                    {productFormData.image ? 'Change Image' : 'Select Product Image'}
+              {/* Basic Information Section */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="information-circle-outline" size={20} color={Colors.light.accent} />
+                  <Text style={styles.sectionTitle}>Basic Information</Text>
+                </View>
+
+                {/* Improved Image Upload with Loading */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Product Image</Text>
+                  
+                  {/* Image Preview with Loading */}
+                  {(imageUri || (formData.image && formData.image.uri)) && (
+                    <View style={styles.imagePreviewContainer}>
+                      {imageLoading && (
+                        <View style={styles.imageLoadingOverlay}>
+                          <ActivityIndicator size="small" color="#FFF" />
+                          <Text style={styles.imageLoadingText}>Processing Image...</Text>
+                        </View>
+                      )}
+                      <Image
+                        source={{ uri: imageUri || formData.image?.uri }}
+                        style={styles.imagePreview}
+                        resizeMode="cover"
+                        onError={(e) => {
+                          console.log('Image preview error:', e.nativeEvent.error);
+                          setImageUri('');
+                          setFormData(prev => ({ ...prev, image: null }));
+                        }}
+                      />
+                      <TouchableOpacity
+                        style={styles.removeImageButton}
+                        onPress={() => {
+                          setFormData(prev => ({ ...prev, image: null, cloudinaryImages: [] }));
+                          setImageUri('');
+                        }}
+                      >
+                        <Ionicons name="close" size={16} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Image Selection Buttons */}
+                  <View style={styles.imageButtonsRow}>
+                    <TouchableOpacity 
+                      style={[styles.imageButton, styles.galleryButton]} 
+                      onPress={pickImage}
+                      disabled={imageLoading}
+                    >
+                      {imageLoading ? (
+                        <ActivityIndicator size="small" color={Colors.light.accent} />
+                      ) : (
+                        <>
+                          <Ionicons name="image-outline" size={20} color={Colors.light.accent} />
+                          <Text style={styles.imageButtonText}>Choose from Gallery</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.imageButton, styles.cameraButton]} 
+                      onPress={takePhoto}
+                      disabled={imageLoading}
+                    >
+                      {imageLoading ? (
+                        <ActivityIndicator size="small" color={Colors.light.accent} />
+                      ) : (
+                        <>
+                          <Ionicons name="camera-outline" size={20} color={Colors.light.accent} />
+                          <Text style={styles.imageButtonText}>Take Photo</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>
+                      Product Name * {autoFilledFields.has('name') && '✓'}
+                    </Text>
+                    <TextInput
+                      style={[styles.textInput, autoFilledFields.has('name') && styles.autoFilledField]}
+                      value={formData.name}
+                      onChangeText={(t) => setFormData({ ...formData, name: t })}
+                      placeholder="Enter product name"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>
+                    Description {autoFilledFields.has('description') && '✓'}
                   </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Product Name *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={productFormData.name}
-                  onChangeText={(text) => setProductFormData({ ...productFormData, name: text })}
-                  placeholder="Enter product name"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description</Text>
-                <TextInput
-                  style={[styles.textInput, styles.textArea]}
-                  value={productFormData.description}
-                  onChangeText={(text) => setProductFormData({ ...productFormData, description: text })}
-                  placeholder="Enter product description"
-                  multiline
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Price (₹) *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={productFormData.price}
-                  onChangeText={(text) => setProductFormData({ ...productFormData, price: text })}
-                  placeholder="Enter price"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Category *</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                  {categories.map((cat) => (
-                    <TouchableOpacity
-                      key={cat._id}
-                      style={[styles.chip, productFormData.category === cat._id && styles.chipSelected]}
-                      onPress={() => setProductFormData({ ...productFormData, category: cat._id })}
-                    >
-                      <Text style={[styles.chipText, productFormData.category === cat._id && styles.chipTextSelected]}>
-                        {cat.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              <View style={styles.row}>
-                <View style={styles.inputGroupFlex}>
-                  <Text style={styles.inputLabel}>Stock</Text>
                   <TextInput
-                    style={styles.textInput}
-                    value={productFormData.stock}
-                    onChangeText={(text) => setProductFormData({ ...productFormData, stock: text })}
-                    placeholder="100"
-                    keyboardType="numeric"
+                    style={[styles.textInput, styles.textArea, autoFilledFields.has('description') && styles.autoFilledField]}
+                    value={formData.description}
+                    onChangeText={(t) => setFormData({ ...formData, description: t })}
+                    placeholder="Product description..."
+                    multiline
+                    numberOfLines={3}
                   />
                 </View>
-                <View style={styles.inputGroupFlex}>
-                  <Text style={styles.inputLabel}>Unit Size</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={productFormData.unitSize}
-                    onChangeText={(text) => setProductFormData({ ...productFormData, unitSize: text })}
-                    placeholder="1"
-                    keyboardType="numeric"
-                  />
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>
+                    Category * {autoFilledFields.has('category') && '✓'}
+                  </Text>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false} 
+                    style={styles.chipScroll}
+                    contentContainerStyle={styles.chipScrollContent}
+                  >
+                    {categories.map((cat) => (
+                      <TouchableOpacity
+                        key={cat._id}
+                        style={[styles.chip, formData.category === cat._id && styles.chipSelected]}
+                        onPress={() => setFormData({ ...formData, category: cat._id })}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            formData.category === cat._id && styles.chipTextSelected,
+                          ]}
+                        >
+                          {cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
                 </View>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Unit</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                  {['ml', 'liter', 'gm', 'kg', 'pack', 'piece'].map((unit) => (
-                    <TouchableOpacity
-                      key={unit}
-                      style={[styles.chip, productFormData.unit === unit && styles.chipSelected]}
-                      onPress={() => setProductFormData({ ...productFormData, unit: unit })}
+              {/* Pricing Section */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="pricetag-outline" size={20} color={Colors.light.accent} />
+                  <Text style={styles.sectionTitle}>Pricing</Text>
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Price (₹) *</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={formData.price}
+                      onChangeText={(t) => setFormData({ ...formData, price: t })}
+                      keyboardType="numeric"
+                      placeholder="0.00"
+                    />
+                  </View>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Discount (%)</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={formData.discount}
+                      onChangeText={(t) => setFormData({ ...formData, discount: t })}
+                      keyboardType="numeric"
+                      placeholder="0"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Milk Type</Text>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.chipScroll}
+                    contentContainerStyle={styles.chipScrollContent}
+                  >
+                    {['Cow', 'Buffalo', 'Mixed', 'None'].map((t) => (
+                      <TouchableOpacity
+                        key={t}
+                        style={[styles.chip, formData.milkType === t && styles.chipSelected]}
+                        onPress={() => setFormData({ ...formData, milkType: t })}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            formData.milkType === t && styles.chipTextSelected,
+                          ]}
+                        >
+                          {t}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+
+              {/* Product Details Section */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="cube-outline" size={20} color={Colors.light.accent} />
+                  <Text style={styles.sectionTitle}>Product Details</Text>
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>
+                      Unit {autoFilledFields.has('unit') && '✓'}
+                    </Text>
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.chipScroll}
+                      contentContainerStyle={styles.chipScrollContent}
                     >
-                      <Text style={[styles.chipText, productFormData.unit === unit && styles.chipTextSelected]}>
-                        {unit}
+                      {['ml', 'liter', 'gm', 'kg', 'pack', 'piece'].map((u) => (
+                        <TouchableOpacity
+                          key={u}
+                          style={[styles.chip, formData.unit === u && styles.chipSelected]}
+                          onPress={() => setFormData({ ...formData, unit: u })}
+                        >
+                          <Text
+                            style={[styles.chipText, formData.unit === u && styles.chipTextSelected]}
+                          >
+                            {u}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>
+                      Size {autoFilledFields.has('unitSize') && '✓'}
+                    </Text>
+                    <TextInput
+                      style={[styles.textInput, autoFilledFields.has('unitSize') && styles.autoFilledField]}
+                      value={formData.unitSize}
+                      onChangeText={(t) => setFormData({ ...formData, unitSize: t })}
+                      keyboardType="numeric"
+                      placeholder="1"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>
+                    Tags {autoFilledFields.has('tags') && '✓'}
+                  </Text>
+                    <TextInput
+                      style={[styles.textInput, autoFilledFields.has('tags') && styles.autoFilledField]}
+                      value={formData.tags}
+                      onChangeText={(t) => setFormData({ ...formData, tags: t })}
+                      placeholder="organic, fresh, premium (comma separated)"
+                    />
+                </View>
+              </View>
+
+              {/* Nutrition Information Section */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="nutrition-outline" size={20} color={Colors.light.accent} />
+                  <Text style={styles.sectionTitle}>
+                    Nutrition Information {autoFilledFields.has('nutritionalInfo') && '✓'}
+                  </Text>
+                  <Text style={styles.sectionSubtitle}>(per 100{formData.unit})</Text>
+                </View>
+
+                <View style={styles.nutritionGrid}>
+                  {['fat', 'protein', 'calories', 'carbohydrates'].map((key) => (
+                    <View key={key} style={styles.nutritionInput}>
+                      <Text style={styles.nutritionLabel}>
+                        {key.charAt(0).toUpperCase() + key.slice(1)}
                       </Text>
-                    </TouchableOpacity>
+                      <TextInput
+                        style={[styles.nutritionTextInput, autoFilledFields.has('nutritionalInfo') && styles.autoFilledField]}
+                        value={formData.nutritionalInfo[key]}
+                        onChangeText={(t) =>
+                          setFormData({
+                            ...formData,
+                            nutritionalInfo: { ...formData.nutritionalInfo, [key]: t },
+                          })
+                        }
+                        keyboardType="numeric"
+                        placeholder="0"
+                      />
+                    </View>
                   ))}
-                </ScrollView>
+                </View>
+              </View>
+
+              {/* Settings Section */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="settings-outline" size={20} color={Colors.light.accent} />
+                  <Text style={styles.sectionTitle}>Settings</Text>
+                </View>
+
+                <View style={styles.toggleRow}>
+                  <TouchableOpacity
+                    style={styles.toggle}
+                    onPress={() => setFormData({ ...formData, isFeatured: !formData.isFeatured })}
+                  >
+                    <View
+                      style={[styles.checkbox, formData.isFeatured && styles.checkboxChecked]}
+                    >
+                      {formData.isFeatured && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                    </View>
+                    <View style={styles.toggleTexts}>
+                      <Text style={styles.toggleLabel}>Featured Product</Text>
+                      <Text style={styles.toggleDescription}>Show this product in featured section</Text>
+                    </View>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toggle}
+                    onPress={() =>
+                      setFormData({ ...formData, isAvailable: !formData.isAvailable })
+                    }
+                  >
+                    <View
+                      style={[styles.checkbox, formData.isAvailable && styles.checkboxChecked]}
+                    >
+                      {formData.isAvailable && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                    </View>
+                    <View style={styles.toggleTexts}>
+                      <Text style={styles.toggleLabel}>Available for Sale</Text>
+                      <Text style={styles.toggleDescription}>Product is available in store</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={closeProductModal}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={closeModal}
+                disabled={uploading}
+              >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.submitButton, uploading && styles.submitButtonDisabled]} 
-                onPress={handleAddProduct}
+              <TouchableOpacity
+                style={[styles.submitButton, uploading && styles.submitButtonDisabled]}
+                onPress={handleSubmit}
                 disabled={uploading}
               >
                 {uploading ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <View style={styles.submitButtonLoading}>
+                    <ActivityIndicator size="small" color="#FFF" />
+                    <Text style={styles.submitButtonLoadingText}>
+                      {editingProduct ? 'Updating...' : 'Creating...'}
+                    </Text>
+                  </View>
                 ) : (
-                  <Text style={styles.submitButtonText}>Add Product</Text>
+                  <Text style={styles.submitButtonText}>
+                    {editingProduct ? 'Update Product' : 'Create Product'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1378,12 +2110,180 @@ export default function ProductsScreen() {
         </View>
       </Modal>
 
-      {/* Barcode Scanner Modal for New Products */}
+      {/* Categories Management Modal */}
+      <Modal visible={categoriesModalVisible} animationType="slide" onRequestClose={closeCategoryModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Manage Categories</Text>
+                <Text style={styles.modalSubtitle}>
+                  Create, edit, or delete product categories
+                </Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={closeCategoryModal}
+                disabled={isSubmittingCategory}
+              >
+                <MaterialIcons name="close" size={24} color={Colors.light.text} />
+              </TouchableOpacity>
+            </View>
+
+            <CategoriesList />
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.cancelButton, isSubmittingCategory && styles.buttonDisabled]}
+                onPress={closeCategoryModal}
+                disabled={isSubmittingCategory}
+              >
+                <Text style={styles.cancelButtonText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, isSubmittingCategory && styles.buttonDisabled]}
+                onPress={openCategoryCreateModal}
+                disabled={isSubmittingCategory}
+              >
+                <Text style={styles.submitButtonText}>Add New Category</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Category Form Modal */}
+      <Modal visible={editingCategory !== null || categoryFormData.name !== ''} animationType="slide" onRequestClose={closeCategoryModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>
+                  {editingCategory ? 'Edit Category' : 'Create New Category'}
+                </Text>
+                <Text style={styles.modalSubtitle}>
+                  {editingCategory ? 'Update category information' : 'Add a new product category'}
+                </Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={closeCategoryModal}
+                disabled={isSubmittingCategory}
+              >
+                <MaterialIcons name="close" size={24} color={Colors.light.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Category Image Preview */}
+              {categoryFormData.image && (
+                <View style={styles.imagePreviewContainer}>
+                  <Image source={{ uri: categoryFormData.image }} style={styles.imagePreview} />
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => setCategoryFormData(prev => ({ ...prev, image: '' }))}
+                    disabled={isSubmittingCategory}
+                  >
+                    <Ionicons name="close" size={16} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Category Name *</Text>
+                <TextInput
+                  style={[styles.textInput, categoryFormData.name.trim() && styles.inputValid]}
+                  value={categoryFormData.name}
+                  onChangeText={(text) => setCategoryFormData(prev => ({ ...prev, name: text }))}
+                  placeholder="e.g., Dairy Products, Fresh Milk"
+                  editable={!isSubmittingCategory}
+                />
+                <Text style={styles.charCount}>{categoryFormData.name.length}/50</Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Description</Text>
+                <TextInput
+                  style={[styles.textInput, styles.textArea]}
+                  value={categoryFormData.description}
+                  onChangeText={(text) => setCategoryFormData(prev => ({ ...prev, description: text }))}
+                  placeholder="Optional category description..."
+                  multiline
+                  numberOfLines={4}
+                  editable={!isSubmittingCategory}
+                />
+                <Text style={styles.charCount}>{categoryFormData.description.length}/200</Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Category Image</Text>
+                <View style={styles.imageInputContainer}>
+                  <TextInput
+                    style={[styles.textInput, styles.imageInput]}
+                    value={categoryFormData.image}
+                    onChangeText={(text) => setCategoryFormData(prev => ({ ...prev, image: text }))}
+                    placeholder="Image URL or select from gallery"
+                    editable={!isSubmittingCategory}
+                  />
+                  <TouchableOpacity 
+                    style={styles.imagePickerButton} 
+                    onPress={pickCategoryImage} 
+                    disabled={isSubmittingCategory}
+                  >
+                    <Ionicons name="image" size={20} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Display Order</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={categoryFormData.displayOrder.toString()}
+                  onChangeText={(text) => {
+                    const num = parseInt(text) || 0;
+                    setCategoryFormData(prev => ({ ...prev, displayOrder: Math.max(0, num) }));
+                  }}
+                  placeholder="0"
+                  keyboardType="numeric"
+                  editable={!isSubmittingCategory}
+                />
+                <Text style={styles.helperText}>Lower numbers appear first in listings</Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.cancelButton, isSubmittingCategory && styles.buttonDisabled]}
+                onPress={closeCategoryModal}
+                disabled={isSubmittingCategory}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, isSubmittingCategory && styles.buttonDisabled]}
+                onPress={handleCategorySubmit}
+                disabled={isSubmittingCategory || !categoryFormData.name.trim()}
+              >
+                {isSubmittingCategory ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>
+                    {editingCategory ? 'Update Category' : 'Create Category'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Barcode Scanner Modal for Product Creation */}
       <Modal
         visible={barcodeScannerVisible}
         transparent
         animationType="fade"
-        onRequestClose={closeBarcodeScanner}
+        onRequestClose={() => setBarcodeScannerVisible(false)}
       >
         <View style={styles.barcodeScannerOverlay}>
           <View style={styles.barcodeScannerContent}>
@@ -1396,7 +2296,7 @@ export default function ProductsScreen() {
               </View>
               <TouchableOpacity 
                 style={styles.closeButton}
-                onPress={closeBarcodeScanner}
+                onPress={() => setBarcodeScannerVisible(false)}
               >
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -1417,28 +2317,25 @@ export default function ProductsScreen() {
                     'itf14'
                   ],
                 }}
-                onBarcodeScanned={fetchingProductData ? undefined : handleBarcodeScannedForNewProduct}
+                onBarcodeScanned={({ data }) => handleBarcodeScannedForProduct(data)}
               />
               <View style={styles.cameraOverlay}>
                 <View style={styles.scanFrameContainer}>
                   <View style={styles.scanFrame} />
                   <Text style={styles.cameraInstruction}>
-                    {fetchingProductData ? 'Fetching product data...' : 'Align barcode within the frame'}
+                    Align barcode within the frame
                   </Text>
                 </View>
-                {fetchingProductData && (
-                  <ActivityIndicator size="large" color="#FFF" style={styles.scanningIndicator} />
-                )}
               </View>
             </View>
 
             <View style={styles.barcodeScannerFooter}>
               <Text style={styles.scannerHelpText}>
-                Scanning will automatically fetch product details if available
+                Scanning will automatically fetch product details, images, and nutritional information
               </Text>
               <TouchableOpacity
                 style={styles.cancelScanButton}
-                onPress={closeBarcodeScanner}
+                onPress={() => setBarcodeScannerVisible(false)}
               >
                 <Text style={styles.cancelScanButtonText}>Cancel Scan</Text>
               </TouchableOpacity>
@@ -1447,312 +2344,271 @@ export default function ProductsScreen() {
         </View>
       </Modal>
 
-      {/* Add Category Modal */}
-      <Modal visible={categoryModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {categoryFormData.name ? 'Edit Category' : 'Add New Category'}
-              </Text>
-              <TouchableOpacity onPress={closeCategoryModal}>
-                <MaterialIcons name="close" size={24} color={Colors.light.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Category Image Upload */}
-              {(categoryImageUri || categoryFormData.image) && (
-                <View style={styles.imagePreviewContainer}>
-                  <Image
-                    source={{ uri: categoryImageUri || categoryFormData.image?.uri }}
-                    style={styles.imagePreview}
-                    resizeMode="cover"
-                  />
-                  <TouchableOpacity
-                    style={styles.removeImageButton}
-                    onPress={() => {
-                      setCategoryFormData({ ...categoryFormData, image: null });
-                      setCategoryImageUri('');
-                    }}
-                  >
-                    <Ionicons name="close" size={16} color="#FFF" />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Category Image</Text>
-                <TouchableOpacity style={styles.imageUploadButton} onPress={pickCategoryImage}>
-                  <Ionicons name="camera" size={20} color={Colors.light.accent} />
-                  <Text style={styles.imageUploadText}>
-                    {categoryFormData.image ? 'Change Image' : 'Select Category Image'}
-                  </Text>
-                </TouchableOpacity>
+      {/* Product Data Preview Modal with Enhanced Loading */}
+      <Modal
+        visible={productDataPreviewVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setProductDataPreviewVisible(false);
+          setFetchedProductData(null);
+          setScannedBarcode('');
+        }}
+      >
+        <View style={styles.previewModalOverlay}>
+          <View style={styles.previewModalContent}>
+            <View style={styles.previewModalHeader}>
+              <View>
+                <Text style={styles.previewModalTitle}>
+                  {fetchingProductData ? '🔍 Scanning Barcode...' : 
+                   fetchedProductData?.found ? '🎉 Product Data Found!' : '📝 Create New Product'}
+                </Text>
+                <Text style={styles.previewModalSubtitle}>
+                  {fetchingProductData ? 'Fetching product information...' : 
+                   `Barcode: ${scannedBarcode}${fetchedProductData?.dataSource === 'openfoodfacts' ? ' • From OpenFoodFacts' : ''}`}
+                </Text>
               </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Category Name *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={categoryFormData.name}
-                  onChangeText={(text) => setCategoryFormData({ ...categoryFormData, name: text })}
-                  placeholder="Enter category name"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description</Text>
-                <TextInput
-                  style={[styles.textInput, styles.textArea]}
-                  value={categoryFormData.description}
-                  onChangeText={(text) => setCategoryFormData({ ...categoryFormData, description: text })}
-                  placeholder="Enter category description"
-                  multiline
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Display Order</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={categoryFormData.displayOrder.toString()}
-                  onChangeText={(text) => {
-                    const num = parseInt(text) || 0;
-                    setCategoryFormData({ ...categoryFormData, displayOrder: Math.max(0, num) });
+              {!fetchingProductData && (
+                <TouchableOpacity 
+                  style={styles.closeButton}
+                  onPress={() => {
+                    setProductDataPreviewVisible(false);
+                    setFetchedProductData(null);
+                    setScannedBarcode('');
                   }}
-                  placeholder="0"
-                  keyboardType="numeric"
-                />
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={closeCategoryModal}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.submitButton, uploading && styles.submitButtonDisabled]} 
-                onPress={handleAddCategory}
-                disabled={uploading}
-              >
-                {uploading ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Text style={styles.submitButtonText}>
-                    {categoryFormData.name ? 'Update Category' : 'Add Category'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Manage Categories Modal */}
-      <Modal visible={categoryManageModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Manage Categories</Text>
-              <TouchableOpacity onPress={closeCategoryManageModal}>
-                <MaterialIcons name="close" size={24} color={Colors.light.text} />
-              </TouchableOpacity>
+                >
+                  <MaterialIcons name="close" size={24} color={Colors.light.text} />
+                </TouchableOpacity>
+              )}
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {categories.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <MaterialIcons name="category" size={60} color={Colors.light.textSecondary} />
-                  <Text style={styles.emptyStateTitle}>No Categories Yet</Text>
-                  <Text style={styles.emptyStateSubtitle}>
-                    Start by adding your first category
+            <ScrollView style={styles.previewModalBody}>
+              {fetchingProductData ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={Colors.light.accent} />
+                  <ProgressBar progress={submissionProgress} />
+                  <Text style={styles.loadingText}>Scanning barcode and fetching product data...</Text>
+                  <Text style={styles.loadingSubtext}>
+                    This may take a few seconds as we gather product information and images
                   </Text>
                 </View>
-              ) : (
-                categories.map((category) => (
-                  <View key={category._id} style={styles.categoryItem}>
-                    <View style={styles.categoryInfo}>
-                      {category.image ? (
-                        <Image 
-                          source={{ uri: category.image }} 
-                          style={styles.categoryThumbnail}
-                        />
-                      ) : (
-                        <View style={[styles.categoryThumbnail, styles.categoryThumbnailPlaceholder]}>
-                          <MaterialIcons name="category" size={20} color="#64748B" />
-                        </View>
-                      )}
-                      <View style={styles.categoryDetails}>
-                        <Text style={styles.categoryName}>{category.name}</Text>
-                        {category.description ? (
-                          <Text style={styles.categoryDescription} numberOfLines={2}>
-                            {category.description}
-                          </Text>
-                        ) : null}
-                        <Text style={styles.categoryMeta}>
-                          Display Order: {category.displayOrder || 0}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.categoryActions}>
-                      <TouchableOpacity 
-                        style={[styles.categoryActionButton, styles.editCategoryButton]}
-                        onPress={() => handleEditCategory(category)}
-                      >
-                        <Ionicons name="create-outline" size={16} color="#FFFFFF" />
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={[styles.categoryActionButton, styles.deleteCategoryButton]}
-                        onPress={() => handleDeleteCategory(category._id, category.name)}
-                      >
-                        <Ionicons name="trash-outline" size={16} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={closeCategoryManageModal}>
-                <Text style={styles.cancelButtonText}>Close</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.submitButton} 
-                onPress={openAddCategoryModal}
-              >
-                <Text style={styles.submitButtonText}>Add New Category</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Product Details Modal */}
-      <Modal visible={productDetailsModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Product Details</Text>
-              <TouchableOpacity onPress={closeProductDetails}>
-                <MaterialIcons name="close" size={24} color={Colors.light.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {selectedProduct && (
-                <>
-                  <View style={styles.productDetailsImageContainer}>
-                    <Image
-                      source={{ uri: selectedProduct.image || 'https://via.placeholder.com/200x200/FF6B35/FFFFFF?text=Product' }}
-                      style={styles.productDetailsImage}
-                      resizeMode="cover"
+              ) : applyingProductData ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={Colors.light.accent} />
+                  <ProgressBar progress={submissionProgress} />
+                  <Text style={styles.loadingText}>Applying product data to form...</Text>
+                  <Text style={styles.loadingSubtext}>
+                    Preparing form with product information and images
+                  </Text>
+                </View>
+              ) : fetchedProductData ? (
+                <View style={styles.previewData}>
+                  
+                  {/* Data Source Info */}
+                  <View style={[
+                    styles.warningSection, 
+                    fetchedProductData.found ? styles.successSection : styles.infoSection
+                  ]}>
+                    <Ionicons 
+                      name={fetchedProductData.found ? "checkmark-circle" : "information-circle"} 
+                      size={20} 
+                      color={fetchedProductData.found ? "#4CAF50" : "#2196F3"} 
                     />
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Product Name</Text>
-                    <Text style={styles.detailValue}>{selectedProduct.name}</Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Category</Text>
-                    <Text style={styles.detailValue}>{selectedProduct.category?.name || 'Uncategorized'}</Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Price</Text>
-                    <Text style={styles.detailValue}>₹{selectedProduct.price}</Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Stock</Text>
-                    <Text style={[styles.detailValue, selectedProduct.stock <= 0 && styles.outOfStockText]}>
-                      {selectedProduct.stock} {selectedProduct.unitSize}{selectedProduct.unit}
+                    <Text style={[
+                      styles.warningText,
+                      fetchedProductData.found ? styles.successText : styles.infoText
+                    ]}>
+                      {fetchedProductData.found 
+                        ? 'Product data found online! Review and complete the information below.'
+                        : 'No product data found. Please fill in the details manually.'}
                     </Text>
                   </View>
 
-                  {selectedProduct.discount > 0 && (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Discount</Text>
-                      <Text style={styles.detailValue}>{selectedProduct.discount}% off</Text>
+                  {/* Product Images */}
+                  {fetchedProductData.images && Array.isArray(fetchedProductData.images) && fetchedProductData.images.length > 0 && (
+                    <View style={styles.previewSection}>
+                      <Text style={styles.previewSectionTitle}>
+                        Product Images ({fetchedProductData.images.length})
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <View style={styles.previewImagesContainer}>
+                          {fetchedProductData.images.map((image, index) => {
+                            if (!image || !image.url) return null;
+                            
+                            return (
+                              <View key={index} style={styles.previewImageContainer}>
+                                <Image
+                                  source={{ uri: image.url }}
+                                  style={styles.previewImage}
+                                  resizeMode="cover"
+                                  onError={(e) => console.log(`Image ${index} load error:`, e.nativeEvent.error)}
+                                />
+                                <View style={styles.previewImageBadge}>
+                                  <Text style={styles.previewImageBadgeText}>
+                                    {image.type === 'front' ? 'Main' : `Image ${index + 1}`}
+                                  </Text>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </ScrollView>
+                      <Text style={styles.previewImageNote}>
+                        {fetchedProductData.images.find(img => img && img.type === 'front') 
+                          ? 'Front product image will be used as main image.' 
+                          : 'First image will be used as main product image.'
+                        }
+                      </Text>
                     </View>
                   )}
 
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Milk Type</Text>
-                    <Text style={styles.detailValue}>{selectedProduct.milkType}</Text>
+                  {/* Product Information */}
+                  <View style={styles.previewSection}>
+                    <Text style={styles.previewSectionTitle}>Product Information</Text>
+                    
+                    {fetchedProductData.name && (
+                      <View style={styles.previewField}>
+                        <Text style={styles.previewLabel}>
+                          Product Name {fetchedProductData.autoFilledFields?.name && '✓'}
+                        </Text>
+                        <Text style={styles.previewValue}>{fetchedProductData.name}</Text>
+                      </View>
+                    )}
+                    
+                    {fetchedProductData.description && (
+                      <View style={styles.previewField}>
+                        <Text style={styles.previewLabel}>
+                          Description {fetchedProductData.autoFilledFields?.description && '✓'}
+                        </Text>
+                        <Text style={styles.previewValue}>{fetchedProductData.description}</Text>
+                      </View>
+                    )}
+                    
+                    {fetchedProductData.brand && (
+                      <View style={styles.previewField}>
+                        <Text style={styles.previewLabel}>Brand</Text>
+                        <Text style={styles.previewValue}>{fetchedProductData.brand}</Text>
+                      </View>
+                    )}
                   </View>
 
-                  {/* Barcode Information in Details */}
-                  {(selectedProduct.barcodeId || selectedProduct.scannedBarcodeId) && (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Barcode Information</Text>
-                      <View style={styles.barcodeDetails}>
-                        {selectedProduct.scannedBarcodeId && (
-                          <View style={styles.barcodeDetailItem}>
-                            <Text style={styles.barcodeDetailLabel}>Scanned Barcode:</Text>
-                            <Text style={styles.barcodeDetailValue}>{selectedProduct.scannedBarcodeId}</Text>
-                          </View>
-                        )}
-                        {selectedProduct.barcodeId && (
-                          <View style={styles.barcodeDetailItem}>
-                            <Text style={styles.barcodeDetailLabel}>Generated Barcode:</Text>
-                            <Text style={styles.barcodeDetailValue}>{selectedProduct.barcodeId}</Text>
-                          </View>
-                        )}
+                  {/* Product Details */}
+                  <View style={styles.previewSection}>
+                    <Text style={styles.previewSectionTitle}>Product Details</Text>
+                    
+                    <View style={styles.previewFieldRow}>
+                      <View style={styles.previewFieldHalf}>
+                        <Text style={styles.previewLabel}>
+                          Unit {fetchedProductData.autoFilledFields?.unit && '✓'}
+                        </Text>
+                        <Text style={styles.previewValue}>{fetchedProductData.unit || 'piece'}</Text>
+                      </View>
+                      <View style={styles.previewFieldHalf}>
+                        <Text style={styles.previewLabel}>
+                          Size {fetchedProductData.autoFilledFields?.unitSize && '✓'}
+                        </Text>
+                        <Text style={styles.previewValue}>{fetchedProductData.unitSize || '1'}</Text>
+                      </View>
+                    </View>
+
+                    {fetchedProductData.milkType && (
+                      <View style={styles.previewField}>
+                        <Text style={styles.previewLabel}>
+                          Milk Type {fetchedProductData.autoFilledFields?.milkType && '✓'}
+                        </Text>
+                        <Text style={styles.previewValue}>{fetchedProductData.milkType}</Text>
+                      </View>
+                    )}
+
+                    {fetchedProductData.categories && Array.isArray(fetchedProductData.categories) && fetchedProductData.categories.length > 0 && (
+                      <View style={styles.previewField}>
+                        <Text style={styles.previewLabel}>
+                          Suggested Categories {fetchedProductData.autoFilledFields?.category && '✓'}
+                        </Text>
+                        <Text style={styles.previewValue}>{fetchedProductData.categories.join(', ')}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Required Fields Warning */}
+                  {fetchedProductData.missingRequiredFields && 
+                  Object.values(fetchedProductData.missingRequiredFields).some(val => val) && (
+                    <View style={styles.warningSection}>
+                      <Ionicons name="warning" size={20} color="#FF9800" />
+                      <View style={styles.warningContent}>
+                        <Text style={styles.warningTitle}>Required Fields Missing</Text>
+                        <Text style={styles.warningText}>
+                          Please fill in these required fields:{' '}
+                          {Object.entries(fetchedProductData.missingRequiredFields)
+                            .filter(([_, isMissing]) => isMissing)
+                            .map(([field]) => {
+                              const fieldNames = {
+                                name: 'Product Name',
+                                price: 'Price',
+                                category: 'Category',
+                                unit: 'Unit'
+                              };
+                              return fieldNames[field] || field;
+                            })
+                            .join(', ')}
+                        </Text>
                       </View>
                     </View>
                   )}
 
-                  {selectedProduct.description && (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Description</Text>
-                      <Text style={styles.detailValue}>{selectedProduct.description}</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Status</Text>
-                    <View style={styles.statusContainer}>
-                      <View style={[styles.statusBadge, selectedProduct.isFeatured && styles.featuredBadge]}>
-                        <Text style={styles.statusText}>
-                          {selectedProduct.isFeatured ? 'Featured' : 'Regular'}
-                        </Text>
-                      </View>
-                      <View style={[styles.statusBadge, selectedProduct.isAvailable ? styles.availableBadge : styles.unavailableBadge]}>
-                        <Text style={styles.statusText}>
-                          {selectedProduct.isAvailable ? 'Available' : 'Unavailable'}
-                        </Text>
-                      </View>
+                  {/* Action Instructions */}
+                  <View style={styles.infoSection}>
+                    <Ionicons name="help-circle" size={20} color="#2196F3" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoTitle}>Next Steps</Text>
+                      <Text style={styles.infoText}>
+                        Choose "Apply to Form" to auto-fill available data, then complete any missing information before saving.
+                      </Text>
                     </View>
                   </View>
-                </>
+                </View>
+              ) : (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No product data available</Text>
+                </View>
               )}
             </ScrollView>
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={closeProductDetails}>
-                <Text style={styles.cancelButtonText}>Close</Text>
-              </TouchableOpacity>
-              {selectedProduct && (
-                <TouchableOpacity 
-                  style={styles.submitButton} 
+            {!fetchingProductData && !applyingProductData && (
+              <View style={styles.previewModalFooter}>
+                <TouchableOpacity
+                  style={styles.previewCancelButton}
                   onPress={() => {
-                    closeProductDetails();
-                    openEditProductModal(selectedProduct);
+                    setProductDataPreviewVisible(false);
+                    setFetchedProductData(null);
+                    setScannedBarcode('');
                   }}
+                  disabled={applyingProductData}
                 >
-                  <Text style={styles.submitButtonText}>Edit Product</Text>
+                  <Text style={styles.previewCancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-              )}
-            </View>
+                
+                <TouchableOpacity
+                  style={[styles.previewApplyButton, applyingProductData && styles.previewApplyButtonDisabled]}
+                  onPress={handleApplyProductDataToForm}
+                  disabled={applyingProductData || !fetchedProductData}
+                >
+                  {applyingProductData ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="document-text" size={20} color="#FFF" />
+                      <Text style={styles.previewApplyButtonText}>Apply to Form</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Barcode Management Modal */}
+      {/* Existing Barcode Modal for Product Management */}
       <Modal
         visible={barcodeModalVisible}
         transparent
@@ -1994,200 +2850,414 @@ export default function ProductsScreen() {
   );
 }
 
+// ──────────────────────────────────────────────────────────────
+// UPDATED STYLES WITH ALL CHANGES
+// ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.light.background,
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-  },
 
-  // Stats Bar - Sticky design
-  statsContainer: {
+  // Header Styles
+  professionalHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    backgroundColor: Colors.light.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+  },
+  headerTop: {
+    marginBottom: 12,
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    top: -29,
+    justifyContent: 'space-between',
   },
-  statItem: {
-    alignItems: 'center',
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.light.text,
     flex: 1,
   },
-  statNumber: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.light.accent,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-    fontWeight: '600',
-  },
-  statDivider: {
-    width: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    marginHorizontal: 16,
-  },
-
-  // Search Bar
-  searchContainer: {
-    paddingHorizontal: 14,
-    paddingTop: 5,
-    paddingBottom: 1,
-    backgroundColor: '#FFFFFF',
-    top: -29,
-  },
   searchInputContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: Colors.light.background,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: Colors.light.border,
+    paddingHorizontal: 12,
+    marginLeft: 16,
+    maxWidth: 200,
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 6,
-    fontSize: 13,
-    color: '#1E293B',
-    fontWeight: '500',
+    paddingVertical: 10,
+    fontSize: 14,
+    color: Colors.light.text,
   },
 
-  // Instagram Stories Styles - Slightly larger icons
-  storiesContainer: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    top: -29,
-  },
-  storiesScrollContent: {
-    paddingHorizontal: 10,
-  },
-  storyItem: {
+  // Stats Bar
+  statsContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 6,
-    width: 70,
-  },
-  storyItemActive: {
-    // Active state styling
-  },
-  storyCircle: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.light.accent,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    backgroundColor: Colors.light.white,
+    borderRadius: 12,
+    paddingVertical: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
-  storyCircleActive: {
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.accent,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: Colors.light.border,
+  },
+
+  // Horizontal Categories Styles
+  categoriesSection: {
+    backgroundColor: Colors.light.white,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+  },
+  categoriesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  categoriesTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.text,
+  },
+  manageCategoriesButton: {
+    backgroundColor: Colors.light.accent + '20',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  manageCategoriesText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.accent,
+  },
+  categoriesScrollContent: {
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  categoryCircle: {
+    alignItems: 'center',
+    marginHorizontal: 8,
+    width: 80,
+  },
+  categoryCircleImageContainer: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    overflow: 'hidden',
+  },
+  categorySelected: {
     borderColor: Colors.light.accent,
-    shadowColor: Colors.light.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    backgroundColor: Colors.light.accent + '20',
   },
-  allStoriesCircle: {
-    backgroundColor: '#8B5CF6',
-  },
-  addStoryCircle: {
-    backgroundColor: '#10B981',
-  },
-  manageStoryCircle: {
-    backgroundColor: '#8B5CF6',
-  },
-  storyImage: {
+  categoryCircleImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 31,
   },
-  storyText: {
-    marginTop: 5,
-    fontSize: 11,
-    color: '#64748B',
+  categoryCirclePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Colors.light.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categorySelectedIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: Colors.light.accent,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.light.white,
+  },
+  categoryCircleName: {
+    fontSize: 12,
     fontWeight: '600',
+    color: Colors.light.text,
     textAlign: 'center',
+    maxWidth: 80,
   },
-  storyTextActive: {
+  categoryNameSelected: {
     color: Colors.light.accent,
     fontWeight: '700',
   },
-
-  // Products Grid - Reduced gap
-  productsGrid: {
-    padding: 8,
-    paddingBottom: 100,
-    paddingTop: 4, // Reduced top padding to move cards up
+  addCategoryCircle: {
+    alignItems: 'center',
+    marginHorizontal: 8,
+    width: 80,
   },
-  columnWrapper: {
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
+  addCategoryCircleInner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: Colors.light.accent,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    backgroundColor: Colors.light.background,
+  },
+  addCategoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.light.accent,
+    textAlign: 'center',
   },
 
-  // Product Card Styles with Barcode Integration
-  productCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    margin: 6,
-    width: (width - 40) / 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+  // Categories List Styles
+  categoriesListContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  categoriesListTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  categoriesListSubtitle: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 16,
+  },
+  categoryListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.white,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: Colors.light.border,
+  },
+  categoryListImageContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: Colors.light.background,
   },
-  imageContainer: {
-    position: 'relative',
-    height: 120,
-  },
-  productImage: {
+  categoryListImage: {
     width: '100%',
     height: '100%',
   },
-  featuredBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
+  categoryListPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryListInfo: {
+    flex: 1,
+  },
+  categoryListName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  categoryListDescription: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 4,
+  },
+  categoryListOrder: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+  categoryListActions: {
+    marginLeft: 12,
+  },
+  categoryEditButton: {
+    padding: 8,
+  },
+  categoriesEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  categoriesEmptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginTop: 16,
+  },
+  categoriesEmptySubtext: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
+  // Loading Components
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  loadingContent: {
+    backgroundColor: '#FFF',
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  loadingMessage: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    textAlign: 'center',
+  },
+  progressText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    fontWeight: '600',
+  },
+  progressBarContainer: {
+    width: 200,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 3,
+    marginTop: 16,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 3,
+    transition: 'width 0.3s ease-in-out',
+  },
+
+  // Image Loading
+  imageLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  imageLoadingText: {
+    color: '#FFF',
+    fontSize: 12,
+    marginTop: 8,
+    fontWeight: '600',
+  },
+
+  // Submit Button Loading
+  submitButtonLoading: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 107, 53, 0.95)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 2,
+    gap: 8,
+  },
+  submitButtonLoadingText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+
+  // Product List
+  listContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 100,
+  },
+  productCard: {
+    backgroundColor: Colors.light.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  imageContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  productImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+  },
+  featuredBadge: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
   },
   featuredText: {
-    fontSize: 9,
-    color: '#FFFFFF',
-    fontWeight: '700',
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '600',
   },
   outOfStockOverlay: {
     position: 'absolute',
@@ -2195,47 +3265,53 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   outOfStockText: {
-    fontSize: 10,
-    color: '#FFFFFF',
-    fontWeight: '700',
+    fontSize: 11,
+    color: '#F44336',
+    fontWeight: '600',
   },
-  discountBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 5,
+  productInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    flex: 1,
+    marginRight: 8,
+  },
+  unitText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    fontWeight: '500',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  discountText: {
-    fontSize: 9,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  productInfo: {
-    padding: 10,
-  },
-  productName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-    lineHeight: 16,
-  },
   productCategory: {
-    fontSize: 11,
-    color: Colors.light.accent,
-    fontWeight: '600',
+    fontSize: 13,
+    color: Colors.light.textSecondary,
     marginBottom: 6,
   },
-  
-  // Barcode Info Styles
+  productDescription: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
   barcodeInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2252,16 +3328,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   barcodeText: {
-    fontSize: 9,
+    fontSize: 11,
     color: Colors.light.textSecondary,
     fontFamily: 'monospace',
     flex: 1,
   },
   barcodeBadge: {
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
-    marginLeft: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
   },
   scannedBadge: {
     backgroundColor: '#E3F2FD',
@@ -2270,91 +3346,104 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F5E9',
   },
   barcodeBadgeText: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '600',
   },
-
-  priceSection: {
+  bottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  priceSection: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   productPrice: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     color: Colors.light.accent,
   },
+  discountContainer: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  discountBadge: {
+    fontSize: 11,
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  stockText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
   actionButtons: {
-    flexDirection: 'row',
-    gap: 4,
+    alignItems: 'center',
+    gap: 8,
   },
   actionButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   barcodeButton: {
-    backgroundColor: '#4CAF50',
-  },
-  editButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#E8F5E9',
   },
   deleteButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#FFEBEE',
   },
 
-  // FAB (Floating Action Button)
+  // FAB
   fab: {
     position: 'absolute',
     right: 20,
     bottom: 20,
     backgroundColor: Colors.light.accent,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: Colors.light.accent,
+    elevation: 8,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowRadius: 6,
   },
 
-  // Empty State Styles
+  // Empty State
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 60,
-    paddingHorizontal: 40,
   },
-  emptyTitle: {
+  emptyText: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontWeight: '600',
+    color: Colors.light.text,
     marginTop: 16,
-    textAlign: 'center',
   },
-  emptySubtitle: {
+  emptySubtext: {
     fontSize: 14,
-    color: '#64748B',
+    color: Colors.light.textSecondary,
     marginTop: 8,
     textAlign: 'center',
-    lineHeight: 20,
+    paddingHorizontal: 32,
   },
   addFirstButton: {
     backgroundColor: Colors.light.accent,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
     marginTop: 16,
   },
   addFirstButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+    color: '#FFF',
+    fontWeight: '600',
   },
 
   // Modal Styles
@@ -2364,101 +3453,305 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '80%',
+    maxHeight: '95%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: Colors.light.border,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1E293B',
+    color: Colors.light.text,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 4,
+  },
+  closeButton: {
+    padding: 4,
   },
   modalBody: {
     padding: 20,
   },
+
+  // Section Styles
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginLeft: 'auto',
+  },
+
+  // Minimal Scan Section
+  scanSection: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  minimalScanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F8FF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    gap: 8,
+  },
+  minimalScanButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2196F3',
+  },
+
+  // Form Styles
+  formRow: {
+    flexDirection: 'row',
+    marginHorizontal: -6,
+  },
   inputGroup: {
     marginBottom: 16,
   },
-  inputGroupFlex: {
+  flex1: {
     flex: 1,
-    marginBottom: 16,
+    marginHorizontal: 6,
   },
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1E293B',
+    color: Colors.light.text,
     marginBottom: 8,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: Colors.light.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: '#1E293B',
-    backgroundColor: '#FFFFFF',
+    color: Colors.light.text,
+    backgroundColor: '#FFF',
   },
   textArea: {
     height: 80,
     textAlignVertical: 'top',
   },
-  row: {
+  autoFilledField: {
+    backgroundColor: '#F0F8FF',
+    borderColor: '#2196F3',
+  },
+  inputValid: {
+    borderColor: Colors.light.accent,
+  },
+  charCount: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  helperText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginTop: 4,
+  },
+
+  // Improved Image Upload Styles
+  imagePreviewContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 200,
+    marginBottom: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(244, 67, 54, 0.9)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageButtonsRow: {
     flexDirection: 'row',
     gap: 12,
   },
+  imageButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 8,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  galleryButton: {
+    backgroundColor: '#F8F9FA',
+  },
+  cameraButton: {
+    backgroundColor: '#F8F9FA',
+  },
+  imageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.accent,
+  },
+  imageInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  imageInput: {
+    flex: 1,
+  },
+  imagePickerButton: {
+    marginLeft: 8,
+    backgroundColor: Colors.light.accent,
+    padding: 12,
+    borderRadius: 8,
+  },
+
+  // Chip Styles
   chipScroll: {
     marginBottom: 8,
   },
+  chipScrollContent: {
+    paddingRight: 20,
+  },
   chip: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
     marginRight: 8,
   },
   chipSelected: {
     backgroundColor: Colors.light.accent,
   },
   chipText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
+    fontSize: 14,
+    color: Colors.light.text,
   },
   chipTextSelected: {
-    color: '#FFFFFF',
+    color: '#FFF',
+    fontWeight: '600',
   },
+
+  // Nutrition Grid
+  nutritionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  nutritionInput: {
+    flex: 1,
+    minWidth: '45%',
+  },
+  nutritionLabel: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginBottom: 4,
+  },
+  nutritionTextInput: {
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+  },
+
+  // Toggle Styles
+  toggleRow: {
+    gap: 16,
+  },
+  toggle: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.light.accent,
+    borderColor: Colors.light.accent,
+  },
+  toggleTexts: {
+    flex: 1,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 2,
+  },
+  toggleDescription: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+
+  // Modal Footer
   modalFooter: {
     flexDirection: 'row',
     padding: 20,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: Colors.light.border,
     gap: 12,
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 12,
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#64748B',
+    color: Colors.light.text,
   },
   submitButton: {
     flex: 1,
     backgroundColor: Colors.light.accent,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
   },
@@ -2468,81 +3761,13 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
-  },
-
-  // Image Upload Styles
-  imagePreviewContainer: {
-    alignItems: 'center',
-    marginBottom: 16,
-    position: 'relative',
-  },
-  imagePreview: {
-    width: 120,
-    height: 120,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#F44336',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imageUploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    padding: 16,
-    backgroundColor: '#F9F9F9',
-  },
-  imageUploadText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: Colors.light.accent,
-    fontWeight: '600',
-  },
-
-  // Scan Barcode Section
-  scanSection: {
-    marginBottom: 20,
-    alignItems: 'center',
-  },
-  scanBarcodeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 10,
-    width: '100%',
-  },
-  scanBarcodeButtonText: {
     color: '#FFF',
-    fontWeight: '600',
-    fontSize: 16,
   },
-  scannedBarcodeText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: '600',
-    textAlign: 'center',
+  buttonDisabled: {
+    opacity: 0.6,
   },
 
-  // Barcode Scanner Modal Styles
+  // Barcode Scanner Modal
   barcodeScannerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.9)',
@@ -2573,6 +3798,43 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     marginTop: 4,
   },
+  cameraContainer: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    margin: 20,
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanFrameContainer: {
+    alignItems: 'center',
+  },
+  scanFrame: {
+    width: 250,
+    height: 150,
+    borderWidth: 2,
+    borderColor: '#FFF',
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+  },
+  cameraInstruction: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 20,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
   barcodeScannerFooter: {
     padding: 20,
     backgroundColor: 'rgba(0,0,0,0.8)',
@@ -2584,167 +3846,229 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
-  scanningIndicator: {
-    marginTop: 20,
+  cancelScanButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  cancelScanButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
   },
 
-  // Product Details Styles
-  productDetailsImageContainer: {
+  // Product Data Preview Modal
+  previewModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 16,
   },
-  productDetailsImage: {
-    width: 200,
-    height: 200,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  previewModalContent: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
   },
-  detailRow: {
-    marginBottom: 16,
-  },
-  detailLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 4,
-  },
-  detailValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  
-  // Barcode Details in Product Details Modal
-  barcodeDetails: {
-    marginTop: 8,
-  },
-  barcodeDetailItem: {
+  previewModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    padding: 8,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
+    alignItems: 'flex-start',
+    marginBottom: 20,
   },
-  barcodeDetailLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  barcodeDetailValue: {
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: '#1E293B',
-    fontWeight: '600',
-  },
-
-  statusContainer: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  featuredBadge: {
-    backgroundColor: '#FF6B35',
-  },
-  availableBadge: {
-    backgroundColor: '#10B981',
-  },
-  unavailableBadge: {
-    backgroundColor: '#EF4444',
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-
-  // Category Management Styles
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
+  previewModalTitle: {
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1E293B',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  previewModalSubtitle: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
+  previewModalBody: {
+    marginBottom: 20,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
     marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
     textAlign: 'center',
   },
-  emptyStateSubtitle: {
+  loadingSubtext: {
     fontSize: 14,
-    color: '#64748B',
+    color: Colors.light.textSecondary,
     marginTop: 8,
     textAlign: 'center',
   },
-  categoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 12,
+  previewData: {
+    gap: 16,
+  },
+  previewSection: {
+    marginBottom: 16,
+  },
+  previewSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
     marginBottom: 8,
   },
-  categoryInfo: {
+  previewField: {
+    marginBottom: 12,
+  },
+  previewFieldRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: 12,
+  },
+  previewFieldHalf: {
     flex: 1,
   },
-  categoryThumbnail: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
-    marginRight: 12,
+  previewLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 4,
   },
-  categoryThumbnailPlaceholder: {
-    backgroundColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  categoryDetails: {
-    flex: 1,
-  },
-  categoryName: {
+  previewValue: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
+    color: Colors.light.text,
+    backgroundColor: '#F9F9F9',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
   },
-  categoryDescription: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 4,
-  },
-  categoryMeta: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  categoryActions: {
+  previewImagesContainer: {
     flexDirection: 'row',
     gap: 8,
+    paddingVertical: 8,
   },
-  categoryActionButton: {
-    width: 36,
-    height: 36,
+  previewImageContainer: {
+    position: 'relative',
+    marginRight: 8,
     borderRadius: 8,
-    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  previewImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+  },
+  previewImageBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  previewImageBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  previewImageNote: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  previewModalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  previewCancelButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 14,
+    borderRadius: 8,
     alignItems: 'center',
   },
-  editCategoryButton: {
-    backgroundColor: '#3B82F6',
+  previewCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
   },
-  deleteCategoryButton: {
-    backgroundColor: '#EF4444',
+  previewApplyButton: {
+    flex: 1,
+    backgroundColor: Colors.light.accent,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  previewApplyButtonDisabled: {
+    opacity: 0.6,
+  },
+  previewApplyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
   },
 
-  // Barcode Modal Styles
+  // Warning & Info Sections
+  warningSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    marginBottom: 16,
+    gap: 8,
+  },
+  successSection: {
+    backgroundColor: '#E8F5E9',
+    borderLeftColor: '#4CAF50',
+  },
+  infoSection: {
+    backgroundColor: '#E3F2FD',
+    borderLeftColor: '#2196F3',
+  },
+  warningContent: {
+    flex: 1,
+  },
+  infoContent: {
+    flex: 1,
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFA000',
+    marginBottom: 2,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2196F3',
+    marginBottom: 2,
+  },
+  warningText: {
+    fontSize: 14,
+    color: '#FFA000',
+    flex: 1,
+  },
+  successText: {
+    color: '#4CAF50',
+  },
+  infoText: {
+    color: '#2196F3',
+  },
+
+  // Barcode Management Modal
   barcodeModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
@@ -2758,7 +4082,7 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '100%',
     maxWidth: 400,
-    maxHeight: '85%',
+    maxHeight: screenHeight * 0.85,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
@@ -2782,9 +4106,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     marginTop: 4,
   },
-  closeButton: {
-    padding: 4,
-  },
   barcodeScrollView: {
     width: '100%',
   },
@@ -2805,17 +4126,6 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 20,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
   barcodeContainer: {
     padding: 16,
     backgroundColor: '#F9F9F9',
@@ -2827,8 +4137,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   barcodeImage: {
-    width: 220,
-    height: 130,
+    width: Math.min(screenWidth * 0.6, 220),
+    height: Math.min(screenWidth * 0.35, 130),
     borderRadius: 8,
   },
   barcodeOverlay: {
@@ -2989,56 +4299,5 @@ const styles = StyleSheet.create({
   },
   removeGeneratedButton: {
     flex: 1,
-  },
-
-  // Camera Styles
-  cameraContainer: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    margin: 20,
-  },
-  camera: {
-    flex: 1,
-  },
-  cameraOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scanFrameContainer: {
-    alignItems: 'center',
-  },
-  scanFrame: {
-    width: 250,
-    height: 150,
-    borderWidth: 2,
-    borderColor: '#FFF',
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-  },
-  cameraInstruction: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 20,
-    textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  cancelScanButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 20,
-  },
-  cancelScanButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-    fontSize: 16,
   },
 });

@@ -1,36 +1,11 @@
 // C:\Users\Krishna\OneDrive\Desktop\dairy9-frontend\9dairy-UI\app\(superadmin)\_layout.jsx
-import { useAuth } from "@/contexts/AuthContext";
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { Tabs, useRouter } from "expo-router";
-import { Alert, Text, TouchableOpacity, View } from "react-native";
+import { Feather, FontAwesome5, MaterialIcons } from "@expo/vector-icons";
+import { Tabs } from "expo-router";
+import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function SupadminLayout() {
-  const { logout, user } = useAuth();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  const handleLogout = () => {
-    Alert.alert(
-      "SuperAdmin Logout",
-      "Are you sure you want to logout from SuperAdmin panel?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await logout();
-              router.replace("/Login");
-            } catch {
-              Alert.alert("Error", "Failed to logout.");
-            }
-          },
-        },
-      ]
-    );
-  };
 
   return (
     <Tabs
@@ -50,9 +25,9 @@ export default function SupadminLayout() {
           fontSize: 18,
         },
         headerRight: () => (
-          <View style={{ flexDirection: "row", alignItems: "center", marginRight: 15, gap: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginRight: 15 }}>
             {/* SuperAdmin Badge - Enhanced */}
-            <View style={{ 
+            <View style={{
               backgroundColor: "#FF6B35",
               paddingHorizontal: 12,
               paddingVertical: 6,
@@ -67,29 +42,15 @@ export default function SupadminLayout() {
               elevation: 3,
             }}>
               <MaterialIcons name="admin-panel-settings" size={16} color="#FFFFFF" />
-              <Text style={{ 
-                color: '#FFFFFF', 
-                fontSize: 12, 
+              <Text style={{
+                color: '#FFFFFF',
+                fontSize: 12,
                 fontWeight: '700',
                 letterSpacing: 0.5,
               }}>
                 SUPER ADMIN
               </Text>
             </View>
-
-            {/* Logout Button - Consistent with Admin */}
-            <TouchableOpacity 
-              onPress={handleLogout}
-              style={{
-                padding: 8,
-                borderRadius: 8,
-                backgroundColor: '#F8F9FA',
-                borderWidth: 1,
-                borderColor: '#E9ECEF',
-              }}
-            >
-              <MaterialIcons name="logout" size={20} color="#DC3545" />
-            </TouchableOpacity>
           </View>
         ),
         
@@ -176,39 +137,39 @@ export default function SupadminLayout() {
         }}
       />
 
-      {/* ANALYTICS TAB */}
+      {/* PRODUCT TAB */}
       <Tabs.Screen
-        name="analytics"
+        name="product"
         options={{
-          title: "Analytics",
+          title: "Product",
           tabBarIcon: ({ color, size, focused }) => (
             <View style={{
               padding: 4,
               borderRadius: 8,
               backgroundColor: focused ? 'rgba(33, 150, 243, 0.1)' : 'transparent'
             }}>
-              <MaterialIcons name="bar-chart" size={focused ? 26 : 24} color={color} />
+              <MaterialIcons name="inventory" size={focused ? 26 : 24} color={color} />
             </View>
           ),
           headerTitle: "Product Catalog",
         }}
       />
 
-      {/* SYSTEM TAB */}
+      {/* PROFILE TAB */}
       <Tabs.Screen
         name="system"
         options={{
-          title: "System",
+          title: "Profile",
           tabBarIcon: ({ color, size, focused }) => (
             <View style={{
               padding: 4,
               borderRadius: 8,
               backgroundColor: focused ? 'rgba(33, 150, 243, 0.1)' : 'transparent'
             }}>
-              <Ionicons name="settings-sharp" size={focused ? 24 : 22} color={color} />
+              <MaterialIcons name="person" size={focused ? 24 : 22} color={color} />
             </View>
           ),
-          headerTitle: "System Settings",
+          headerTitle: "Profile",
         }}
       />
 

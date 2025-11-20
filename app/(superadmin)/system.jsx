@@ -1,561 +1,459 @@
-// app/(tabs)/supadmin/analytics.jsx
-import { useState, useEffect, useRef } from 'react';
+// app/(tabs)/supadmin/profile.jsx
+import { useAuth } from '@/contexts/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Alert,
+  Image,
   ScrollView,
   StyleSheet,
+  Switch,
+  Text,
+  TextInput,
   TouchableOpacity,
-  RefreshControl,
-  Dimensions,
-  Alert,
-  Animated,
+  View,
 } from 'react-native';
-import { MaterialIcons, FontAwesome5, Ionicons, Feather, Octicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
+export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
+  const { logout } = useAuth();
+  const router = useRouter();
+  
+  // Superadmin data
+  const [profileData, setProfileData] = useState({
+    name: 'Mohan Patil',
+    phone: '9552524301',
+    email: 'mohan.patil@dairyapp.com',
+    role: 'Super Admin',
+    joinDate: '2024-01-15',
+    lastLogin: '2024-12-19 14:30',
+    status: 'Active',
+  });
 
-// Mock analytics data
-const MOCK_ANALYTICS = {
-  overview: {
-    totalRevenue: 2540000,
-    revenueGrowth: 22,
-    totalOrders: 1567,
-    orderGrowth: 15,
-    activeCustomers: 11200,
-    customerGrowth: 8,
-    avgOrderValue: 285,
-    aovGrowth: 12,
-  },
-  revenueData: {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-    values: [1200000, 1350000, 1420000, 1560000, 1680000, 1850000, 1920000, 2100000, 2250000, 2380000, 2450000, 2540000],
-  },
-  orderData: {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    values: [45, 52, 38, 74, 65, 89, 76],
-  },
-  customerMetrics: {
-    newCustomers: 234,
-    returningCustomers: 856,
-    churnRate: 4.2,
-    retentionRate: 95.8,
-    customerLifetimeValue: 2450,
-  },
-  topProducts: [
-    { name: 'Buffalo Milk', sales: 1245, revenue: 99600, growth: 15 },
-    { name: 'Fresh Curd', sales: 856, revenue: 34240, growth: 12 },
-    { name: 'Cow Milk', sales: 734, revenue: 44040, growth: 8 },
-    { name: 'Paneer', sales: 456, revenue: 54720, growth: 25 },
-    { name: 'White Butter', sales: 389, revenue: 42790, growth: 18 },
-  ],
-  retailerPerformance: [
-    { name: 'Fresh Dairy Mart', orders: 1234, revenue: 345000, rating: 4.8 },
-    { name: 'Dairy King', orders: 876, revenue: 189000, rating: 4.5 },
-    { name: 'Milk & More', orders: 654, revenue: 143000, rating: 4.2 },
-    { name: 'Pure Milk Center', orders: 432, revenue: 95000, rating: 3.9 },
-    { name: 'Farm Fresh Dairy', orders: 321, revenue: 70500, rating: 4.1 },
-  ],
-  platformMetrics: {
-    avgResponseTime: '120ms',
-    successRate: '99.2%',
-    uptime: '99.9%',
-    loadTime: '2.1s',
-  }
-};
+  const [profileImage, setProfileImage] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedData, setEditedData] = useState({ ...profileData });
+  const [loading, setLoading] = useState(false);
+  const [notifications, setNotifications] = useState({
+    orderAlerts: true,
+    stockUpdates: true,
+    priceChanges: false,
+    systemNotifications: true,
+  });
 
-export default function AnalyticsScreen() {
-  const [refreshing, setRefreshing] = useState(false);
-  const [analyticsData, setAnalyticsData] = useState(MOCK_ANALYTICS);
-  const [dateRange, setDateRange] = useState('month');
-  const [activeTab, setActiveTab] = useState('overview');
-  const fadeAnim = useState(new Animated.Value(0))[0];
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setAnalyticsData(MOCK_ANALYTICS);
-      setRefreshing(false);
-      Alert.alert('✅ Refreshed', 'Analytics data updated');
-    }, 1500);
+  // Logout functionality
+  const handleLogout = () => {
+    Alert.alert(
+      "SuperAdmin Logout",
+      "Are you sure you want to logout from SuperAdmin panel?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await logout();
+              router.replace("/Login");
+            } catch {
+              Alert.alert("Error", "Failed to logout.");
+            }
+          },
+        },
+      ]
+    );
   };
 
-  const handleExport = (type) => {
-    Alert.alert('Export Data', `Export ${type} report?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Export', 
-        onPress: () => console.log(`Exporting ${type} report`)
+  // Pick image from gallery
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
+        return;
       }
-    ]);
-  };
 
-  // Custom Bar Chart Component
-  const BarChart = ({ data, color = '#3B82F6' }) => {
-    const maxValue = Math.max(...data.values);
-    
-    return (
-      <View style={styles.barChartContainer}>
-        <View style={styles.barChart}>
-          {data.values.map((value, index) => (
-            <View key={index} style={styles.barColumn}>
-              <View style={styles.barWrapper}>
-                <View 
-                  style={[
-                    styles.bar,
-                    { 
-                      height: `${(value / maxValue) * 80}%`,
-                      backgroundColor: color
-                    }
-                  ]} 
-                />
-              </View>
-              <Text style={styles.barLabel}>{data.labels[index]}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    );
-  };
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
 
-  // Custom Line Chart Component
-  const LineChart = ({ data, color = '#3B82F6' }) => {
-    const maxValue = Math.max(...data.values);
-    const minValue = Math.min(...data.values);
-    
-    return (
-      <View style={styles.lineChartContainer}>
-        <View style={styles.lineChart}>
-          {data.values.map((value, index) => (
-            <View key={index} style={styles.linePoint}>
-              <View 
-                style={[
-                  styles.lineDot,
-                  { backgroundColor: color }
-                ]} 
-              />
-              {index < data.values.length - 1 && (
-                <View 
-                  style={[
-                    styles.lineConnector,
-                    { 
-                      height: 2,
-                      backgroundColor: color,
-                      opacity: 0.6
-                    }
-                  ]} 
-                />
-              )}
-            </View>
-          ))}
-        </View>
-        <View style={styles.lineLabels}>
-          {data.labels.map((label, index) => (
-            <Text key={index} style={styles.lineLabel}>{label}</Text>
-          ))}
-        </View>
-      </View>
-    );
-  };
-
-  // Metric Card Component
-  const MetricCard = ({ title, value, growth, subtitle, color, icon }) => {
-    return (
-      <View style={styles.metricCard}>
-        <View style={styles.metricHeader}>
-          <View style={styles.metricInfo}>
-            <Text style={styles.metricValue}>{value}</Text>
-            {growth && (
-              <View style={styles.growthContainer}>
-                <MaterialIcons 
-                  name={growth > 0 ? "trending-up" : "trending-down"} 
-                  size={16} 
-                  color={growth > 0 ? '#10B981' : '#EF4444'} 
-                />
-                <Text style={[
-                  styles.growthText, 
-                  { color: growth > 0 ? '#10B981' : '#EF4444' }
-                ]}>
-                  {growth > 0 ? '+' : ''}{growth}%
-                </Text>
-              </View>
-            )}
-          </View>
-          <View style={[styles.metricIcon, { backgroundColor: color }]}>
-            {icon}
-          </View>
-        </View>
-        <Text style={styles.metricTitle}>{title}</Text>
-        {subtitle && <Text style={styles.metricSubtitle}>{subtitle}</Text>}
-      </View>
-    );
-  };
-
-  // Revenue Chart Component
-  const RevenueChart = () => (
-    <View style={styles.chartContainer}>
-      <View style={styles.chartHeader}>
-        <Text style={styles.chartTitle}>Revenue Trend</Text>
-        <Text style={styles.chartSubtitle}>Last 12 months</Text>
-      </View>
-      <LineChart data={analyticsData.revenueData} color="#3B82F6" />
-      <View style={styles.chartStats}>
-        <Text style={styles.chartStat}>
-          Highest: ₹{(Math.max(...analyticsData.revenueData.values) / 1000000).toFixed(1)}M
-        </Text>
-        <Text style={styles.chartStat}>
-          Growth: +{analyticsData.overview.revenueGrowth}%
-        </Text>
-      </View>
-    </View>
-  );
-
-  // Orders Chart Component
-  const OrdersChart = () => (
-    <View style={styles.chartContainer}>
-      <View style={styles.chartHeader}>
-        <Text style={styles.chartTitle}>Weekly Orders</Text>
-        <Text style={styles.chartSubtitle}>Current week</Text>
-      </View>
-      <BarChart data={analyticsData.orderData} color="#10B981" />
-      <View style={styles.chartStats}>
-        <Text style={styles.chartStat}>
-          Peak: {Math.max(...analyticsData.orderData.values)} orders
-        </Text>
-        <Text style={styles.chartStat}>
-          Total: {analyticsData.orderData.values.reduce((a, b) => a + b, 0)} orders
-        </Text>
-      </View>
-    </View>
-  );
-
-  // Top Products Component
-  const TopProducts = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Top Products</Text>
-        <TouchableOpacity onPress={() => handleExport('products')}>
-          <Text style={styles.seeAllText}>Export</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.productsList}>
-        {analyticsData.topProducts.map((product, index) => (
-          <View key={product.name} style={styles.productItem}>
-            <View style={styles.productRank}>
-              <Text style={styles.rankText}>#{index + 1}</Text>
-            </View>
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{product.name}</Text>
-              <Text style={styles.productSales}>{product.sales} units sold</Text>
-            </View>
-            <View style={styles.productRevenue}>
-              <Text style={styles.revenueText}>₹{(product.revenue / 1000).toFixed(0)}K</Text>
-              <View style={styles.growthBadge}>
-                <MaterialIcons name="trending-up" size={12} color="#10B981" />
-                <Text style={styles.growthBadgeText}>+{product.growth}%</Text>
-              </View>
-            </View>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-
-  // Retailer Performance Component
-  const RetailerPerformance = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Top Retailers</Text>
-        <TouchableOpacity onPress={() => handleExport('retailers')}>
-          <Text style={styles.seeAllText}>Export</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.retailersList}>
-        {analyticsData.retailerPerformance.map((retailer, index) => (
-          <View key={retailer.name} style={styles.retailerItem}>
-            <View style={styles.retailerInfo}>
-              <Text style={styles.retailerName}>{retailer.name}</Text>
-              <View style={styles.retailerStats}>
-                <Text style={styles.retailerStat}>{retailer.orders} orders</Text>
-                <Text style={styles.retailerStat}>₹{(retailer.revenue / 1000).toFixed(0)}K revenue</Text>
-              </View>
-            </View>
-            <View style={styles.retailerRating}>
-              <MaterialIcons name="star" size={16} color="#F59E0B" />
-              <Text style={styles.ratingText}>{retailer.rating}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-
-  // Customer Metrics Component
-  const CustomerMetrics = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Customer Insights</Text>
-      <View style={styles.metricsGrid}>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>{analyticsData.customerMetrics.newCustomers}</Text>
-          <Text style={styles.metricLabel}>New Customers</Text>
-        </View>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>{analyticsData.customerMetrics.returningCustomers}</Text>
-          <Text style={styles.metricLabel}>Returning</Text>
-        </View>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>{analyticsData.customerMetrics.retentionRate}%</Text>
-          <Text style={styles.metricLabel}>Retention Rate</Text>
-        </View>
-        <View style={styles.customerMetric}>
-          <Text style={styles.metricValue}>₹{analyticsData.customerMetrics.customerLifetimeValue}</Text>
-          <Text style={styles.metricLabel}>CLV</Text>
-        </View>
-      </View>
-    </View>
-  );
-
-  // Platform Metrics Component
-  const PlatformMetrics = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Platform Performance</Text>
-      <View style={styles.platformMetrics}>
-        <View style={styles.platformMetric}>
-          <Ionicons name="speedometer" size={20} color="#3B82F6" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.avgResponseTime}</Text>
-            <Text style={styles.platformMetricLabel}>Avg Response Time</Text>
-          </View>
-        </View>
-        <View style={styles.platformMetric}>
-          <MaterialIcons name="check-circle" size={20} color="#10B981" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.successRate}</Text>
-            <Text style={styles.platformMetricLabel}>Success Rate</Text>
-          </View>
-        </View>
-        <View style={styles.platformMetric}>
-          <MaterialIcons name="cloud-queue" size={20} color="#8B5CF6" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.uptime}</Text>
-            <Text style={styles.platformMetricLabel}>Uptime</Text>
-          </View>
-        </View>
-        <View style={styles.platformMetric}>
-          <Feather name="clock" size={20} color="#F59E0B" />
-          <View style={styles.platformMetricInfo}>
-            <Text style={styles.platformMetricValue}>{analyticsData.platformMetrics.loadTime}</Text>
-            <Text style={styles.platformMetricLabel}>Avg Load Time</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-
-  // Date Range Selector
-  const DateRangeSelector = () => {
-    const ranges = [
-      { key: 'today', label: 'Today' },
-      { key: 'week', label: 'This Week' },
-      { key: 'month', label: 'This Month' },
-      { key: 'quarter', label: 'This Quarter' },
-      { key: 'year', label: 'This Year' },
-    ];
-
-    return (
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.dateRangeContainer}
-      >
-        {ranges.map((range) => (
-          <TouchableOpacity
-            key={range.key}
-            style={[
-              styles.dateRangeButton,
-              dateRange === range.key && styles.dateRangeButtonActive
-            ]}
-            onPress={() => setDateRange(range.key)}
-          >
-            <Text style={[
-              styles.dateRangeText,
-              dateRange === range.key && styles.dateRangeTextActive
-            ]}>
-              {range.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    );
-  };
-
-  // Tab Navigation
-  const AnalyticsTabs = () => {
-    const tabs = [
-      { key: 'overview', label: 'Overview', icon: 'dashboard' },
-      { key: 'revenue', label: 'Revenue', icon: 'trending-up' },
-      { key: 'customers', label: 'Customers', icon: 'people' },
-      { key: 'products', label: 'Products', icon: 'inventory' },
-    ];
-
-    return (
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsContainer}
-      >
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[
-              styles.tabButton,
-              activeTab === tab.key && styles.tabButtonActive
-            ]}
-            onPress={() => setActiveTab(tab.key)}
-          >
-            <MaterialIcons 
-              name={tab.icon} 
-              size={18} 
-              color={activeTab === tab.key ? '#3B82F6' : '#64748B'} 
-            />
-            <Text style={[
-              styles.tabText,
-              activeTab === tab.key && styles.tabTextActive
-            ]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    );
-  };
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'overview':
-        return (
-          <>
-            <RevenueChart />
-            <View style={styles.metricsGrid}>
-              <MetricCard
-                title="Total Revenue"
-                value={`₹${(analyticsData.overview.totalRevenue / 1000000).toFixed(1)}M`}
-                growth={analyticsData.overview.revenueGrowth}
-                subtitle="Year to date"
-                color="#3B82F6"
-                icon={<FontAwesome5 name="rupee-sign" size={18} color="#FFFFFF" />}
-              />
-              <MetricCard
-                title="Total Orders"
-                value={analyticsData.overview.totalOrders.toLocaleString()}
-                growth={analyticsData.overview.orderGrowth}
-                subtitle="Completed orders"
-                color="#10B981"
-                icon={<Feather name="shopping-bag" size={18} color="#FFFFFF" />}
-              />
-              <MetricCard
-                title="Active Customers"
-                value={analyticsData.overview.activeCustomers.toLocaleString()}
-                growth={analyticsData.overview.customerGrowth}
-                subtitle="Monthly active"
-                color="#8B5CF6"
-                icon={<MaterialIcons name="people" size={20} color="#FFFFFF" />}
-              />
-              <MetricCard
-                title="Avg Order Value"
-                value={`₹${analyticsData.overview.avgOrderValue}`}
-                growth={analyticsData.overview.aovGrowth}
-                subtitle="Per order"
-                color="#F59E0B"
-                icon={<MaterialIcons name="attach-money" size={20} color="#FFFFFF" />}
-              />
-            </View>
-            <TopProducts />
-            <CustomerMetrics />
-          </>
-        );
-      
-      case 'revenue':
-        return (
-          <>
-            <RevenueChart />
-            <OrdersChart />
-            <RetailerPerformance />
-          </>
-        );
-      
-      case 'customers':
-        return (
-          <>
-            <CustomerMetrics />
-            <PlatformMetrics />
-          </>
-        );
-      
-      case 'products':
-        return (
-          <>
-            <TopProducts />
-            <OrdersChart />
-          </>
-        );
-      
-      default:
-        return null;
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setProfileImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Could not select image. Please try again.');
     }
   };
 
+  // Handle edit
+  const handleEdit = () => {
+    setEditedData({ ...profileData });
+    setIsEditing(true);
+  };
+
+  // Handle save
+  const handleSave = async () => {
+    if (!editedData.name.trim()) {
+      Alert.alert('Error', 'Please enter your name');
+      return;
+    }
+
+    if (!editedData.phone.trim() || editedData.phone.length !== 10) {
+      Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    setLoading(true);
+    
+    // Simulate API call
+    setTimeout(() => {
+      setProfileData({ ...editedData });
+      setIsEditing(false);
+      setLoading(false);
+      Alert.alert('Success', 'Profile updated successfully!');
+    }, 1500);
+  };
+
+  // Handle cancel
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditedData({ ...profileData });
+  };
+
+  // Handle notification toggle
+  const toggleNotification = (key) => {
+    setNotifications(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Profile stats data
+  const profileStats = [
+    { label: 'Total Orders', value: '1,247', icon: 'receipt-outline', color: '#3B82F6' },
+    { label: 'Products', value: '156', icon: 'cube-outline', color: '#10B981' },
+    { label: 'Retailers', value: '89', icon: 'storefront-outline', color: '#8B5CF6' },
+    { label: 'This Month', value: '₹2.4L', icon: 'trending-up-outline', color: '#F59E0B' },
+  ];
+
+  // Menu items
+  const menuItems = [
+    {
+      title: 'Account Settings',
+      icon: 'person-outline',
+      items: [
+        { label: 'Change Password', icon: 'lock-closed-outline', onPress: () => Alert.alert('Change Password', 'Password change feature coming soon!') },
+        { label: 'Privacy & Security', icon: 'shield-checkmark-outline', onPress: () => Alert.alert('Privacy', 'Privacy settings coming soon!') },
+        { label: 'Two-Factor Auth', icon: 'phone-portrait-outline', onPress: () => Alert.alert('2FA', 'Two-factor authentication coming soon!') },
+      ]
+    },
+    {
+      title: 'App Settings',
+      icon: 'settings-outline',
+      items: [
+        { label: 'Notifications', icon: 'notifications-outline', onPress: () => {} },
+        { label: 'Language', icon: 'language-outline', onPress: () => Alert.alert('Language', 'Language settings coming soon!') },
+        { label: 'Theme', icon: 'color-palette-outline', onPress: () => Alert.alert('Theme', 'Theme settings coming soon!') },
+      ]
+    },
+    {
+      title: 'Support',
+      icon: 'help-circle-outline',
+      items: [
+        { label: 'Help & Support', icon: 'chatbubble-ellipses-outline', onPress: () => Alert.alert('Support', 'Contact support at: support@dairyapp.com') },
+        { label: 'About App', icon: 'information-circle-outline', onPress: () => Alert.alert('About', 'Dairy Management App v2.0.0') },
+        { label: 'Terms & Conditions', icon: 'document-text-outline', onPress: () => Alert.alert('Terms', 'Terms and conditions coming soon!') },
+      ]
+    }
+  ];
+
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      {/* Header Section */}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Analytics & Reports</Text>
-          <Text style={styles.headerSubtitle}>Platform performance insights</Text>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <Text style={styles.headerSubtitle}>Manage your account settings</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.exportButton}
-          onPress={() => handleExport('full')}
-        >
-          <Feather name="download" size={18} color="#FFFFFF" />
-          <Text style={styles.exportButtonText}>Export Report</Text>
+        <TouchableOpacity style={styles.editButton} onPress={isEditing ? handleCancel : handleEdit}>
+          <Ionicons 
+            name={isEditing ? "close-outline" : "create-outline"} 
+            size={22} 
+            color={isEditing ? "#EF4444" : "#3B82F6"} 
+          />
         </TouchableOpacity>
       </View>
 
       <ScrollView 
         style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
-        {/* Date Range Selector */}
-        <View style={styles.section}>
-          <DateRangeSelector />
+        {/* Profile Header Section */}
+        <View style={styles.profileSection}>
+          <View style={styles.profileHeader}>
+            {/* Profile Image */}
+            <View style={styles.imageContainer}>
+              <View style={styles.profileImageWrapper}>
+                <View style={styles.profileImage}>
+                  {profileImage ? (
+                    <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                  ) : (
+                    <View style={styles.defaultAvatar}>
+                      <Text style={styles.avatarText}>
+                        {profileData.name.split(' ').map(n => n[0]).join('')}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
+                  <Ionicons name="camera" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+              
+              {!isEditing && (
+                <TouchableOpacity style={styles.changePhotoButton} onPress={pickImage}>
+                  <Text style={styles.changePhotoText}>Change Photo</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Profile Info */}
+            <View style={styles.profileInfo}>
+              {isEditing ? (
+                <View style={styles.editForm}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Full Name</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editedData.name}
+                      onChangeText={(text) => setEditedData({ ...editedData, name: text })}
+                      placeholder="Enter your name"
+                    />
+                  </View>
+                  
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Phone Number</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editedData.phone}
+                      onChangeText={(text) => setEditedData({ ...editedData, phone: text })}
+                      placeholder="Enter phone number"
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                    />
+                  </View>
+                  
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Email Address</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editedData.email}
+                      onChangeText={(text) => setEditedData({ ...editedData, email: text })}
+                      placeholder="Enter email address"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.profileName}>{profileData.name}</Text>
+                  <Text style={styles.profileRole}>{profileData.role}</Text>
+                  
+                  <View style={styles.profileDetails}>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="call-outline" size={16} color="#64748B" />
+                      <Text style={styles.detailText}>{profileData.phone}</Text>
+                    </View>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="mail-outline" size={16} color="#64748B" />
+                      <Text style={styles.detailText}>{profileData.email}</Text>
+                    </View>
+                    <View style={styles.detailItem}>
+                      <Ionicons name="calendar-outline" size={16} color="#64748B" />
+                      <Text style={styles.detailText}>Joined {new Date(profileData.joinDate).toLocaleDateString('en-IN', { 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.statusBadge}>
+                    <View style={[styles.statusDot, { backgroundColor: profileData.status === 'Active' ? '#10B981' : '#EF4444' }]} />
+                    <Text style={styles.statusText}>{profileData.status}</Text>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* Save/Cancel Buttons for Edit Mode */}
+          {isEditing && (
+            <View style={styles.editActions}>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.cancelButton]} 
+                onPress={handleCancel}
+                disabled={loading}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.saveButton]} 
+                onPress={handleSave}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
-        {/* Analytics Tabs */}
-        <View style={styles.section}>
-          <AnalyticsTabs />
+        
+
+        {/* Notification Settings */}
+        <View style={styles.settingsSection}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          <View style={styles.settingsCard}>
+            <View style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <Ionicons name="notifications-outline" size={20} color="#3B82F6" />
+                <View style={styles.settingText}>
+                  <Text style={styles.settingTitle}>Order Alerts</Text>
+                  <Text style={styles.settingDescription}>Get notified for new orders</Text>
+                </View>
+              </View>
+              <Switch
+                value={notifications.orderAlerts}
+                onValueChange={() => toggleNotification('orderAlerts')}
+                trackColor={{ false: '#E5E7EB', true: '#BFDBFE' }}
+                thumbColor={notifications.orderAlerts ? '#3B82F6' : '#9CA3AF'}
+              />
+            </View>
+
+            <View style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <Ionicons name="archive-outline" size={20} color="#10B981" />
+                <View style={styles.settingText}>
+                  <Text style={styles.settingTitle}>Stock Updates</Text>
+                  <Text style={styles.settingDescription}>Low stock alerts</Text>
+                </View>
+              </View>
+              <Switch
+                value={notifications.stockUpdates}
+                onValueChange={() => toggleNotification('stockUpdates')}
+                trackColor={{ false: '#E5E7EB', true: '#A7F3D0' }}
+                thumbColor={notifications.stockUpdates ? '#10B981' : '#9CA3AF'}
+              />
+            </View>
+
+            <View style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <Ionicons name="pricetag-outline" size={20} color="#F59E0B" />
+                <View style={styles.settingText}>
+                  <Text style={styles.settingTitle}>Price Changes</Text>
+                  <Text style={styles.settingDescription}>Product price updates</Text>
+                </View>
+              </View>
+              <Switch
+                value={notifications.priceChanges}
+                onValueChange={() => toggleNotification('priceChanges')}
+                trackColor={{ false: '#E5E7EB', true: '#FDE68A' }}
+                thumbColor={notifications.priceChanges ? '#F59E0B' : '#9CA3AF'}
+              />
+            </View>
+
+            <View style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <Ionicons name="server-outline" size={20} color="#8B5CF6" />
+                <View style={styles.settingText}>
+                  <Text style={styles.settingTitle}>System Notifications</Text>
+                  <Text style={styles.settingDescription}>App updates and maintenance</Text>
+                </View>
+              </View>
+              <Switch
+                value={notifications.systemNotifications}
+                onValueChange={() => toggleNotification('systemNotifications')}
+                trackColor={{ false: '#E5E7EB', true: '#DDD6FE' }}
+                thumbColor={notifications.systemNotifications ? '#8B5CF6' : '#9CA3AF'}
+              />
+            </View>
+          </View>
         </View>
 
-        {/* Tab Content */}
-        <View style={styles.tabContent}>
-          {renderTabContent()}
+        {/* Menu Sections */}
+        {menuItems.map((section, sectionIndex) => (
+          <View key={sectionIndex} style={styles.menuSection}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <View style={styles.menuCard}>
+              {section.items.map((item, itemIndex) => (
+                <TouchableOpacity
+                  key={itemIndex}
+                  style={[
+                    styles.menuItem,
+                    itemIndex < section.items.length - 1 && styles.menuItemBorder
+                  ]}
+                  onPress={item.onPress}
+                >
+                  <View style={styles.menuItemLeft}>
+                    <View style={styles.menuIcon}>
+                      <Ionicons name={item.icon} size={20} color="#3B82F6" />
+                    </View>
+                    <Text style={styles.menuText}>{item.label}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ))}
+
+        {/* Action Buttons */}
+        <View style={styles.actionsSection}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.logoutButton]}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={() => Alert.alert(
+              'Delete Account',
+              'This action cannot be undone. All your data will be permanently deleted.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => console.log('Delete account pressed') }
+              ]
+            )}
+          >
+            <Ionicons name="trash-outline" size={20} color="#9CA3AF" />
+            <Text style={styles.deleteButtonText}>Delete Account</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Bottom Spacer */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -564,17 +462,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  scrollView: {
-    flex: 1,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#F1F5F9',
   },
   headerContent: {
     flex: 1,
@@ -583,411 +479,355 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#64748B',
   },
-  exportButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
+  editButton: {
+    padding: 8,
   },
-  exportButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+  scrollView: {
+    flex: 1,
   },
-  section: {
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  
+  // Profile Section
+  profileSection: {
     backgroundColor: '#FFFFFF',
-    margin: 16,
-    marginBottom: 0,
-    borderRadius: 16,
+    margin: 20,
+    borderRadius: 20,
     padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  sectionHeader: {
+  profileHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  imageContainer: {
     alignItems: 'center',
+    marginRight: 20,
+  },
+  profileImageWrapper: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: '#F1F5F9',
+  },
+  defaultAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  cameraButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#3B82F6',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  changePhotoButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+  },
+  changePhotoText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  profileRole: {
+    fontSize: 16,
+    color: '#3B82F6',
+    fontWeight: '600',
     marginBottom: 16,
+  },
+  profileDetails: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailText: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignSelf: 'flex-start',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#065F46',
+    fontWeight: '600',
+  },
+  
+  // Edit Form
+  editForm: {
+    gap: 16,
+  },
+  inputGroup: {
+    gap: 6,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#1F2937',
+    backgroundColor: '#FFFFFF',
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  cancelButton: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  saveButton: {
+    backgroundColor: '#3B82F6',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  
+  // Stats Section
+  statsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1E293B',
+    marginBottom: 12,
   },
-  seeAllText: {
-    fontSize: 14,
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  dateRangeContainer: {
-    marginBottom: 8,
-  },
-  dateRangeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-  },
-  dateRangeButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  dateRangeText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  dateRangeTextActive: {
-    color: '#FFFFFF',
-  },
-  tabsContainer: {
-    marginBottom: 8,
-  },
-  tabButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginRight: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
-  },
-  tabButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  tabText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: '#FFFFFF',
-  },
-  tabContent: {
-    gap: 16,
-  },
-  metricsGrid: {
+  statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
   },
-  metricCard: {
-    width: (width - 88) / 2,
+  statCard: {
+    flex: 1,
+    minWidth: '45%',
     backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
-  metricHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  metricInfo: {
-    flex: 1,
-  },
-  metricValue: {
+  statValue: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#1E293B',
     marginBottom: 4,
   },
-  growthContainer: {
+  statLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  
+  // Settings Section
+  settingsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  settingsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'space-between',
+    paddingVertical: 12,
   },
-  growthText: {
-    fontSize: 12,
-    fontWeight: '700',
+  settingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
-  metricIcon: {
+  settingText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  settingTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  settingDescription: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  
+  // Menu Sections
+  menuSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  menuCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  menuItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  menuIcon: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
   },
-  metricTitle: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  metricSubtitle: {
-    fontSize: 11,
-    color: '#94A3B8',
+  menuText: {
+    fontSize: 16,
+    color: '#1E293B',
     fontWeight: '500',
   },
-  // Chart Styles
-  chartContainer: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
+  
+  // Actions Section
+  actionsSection: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  logoutButton: {
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#FECACA',
   },
-  chartHeader: {
-    marginBottom: 16,
+  deleteButton: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  chartTitle: {
+  logoutButtonText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  chartSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  chartStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  chartStat: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  // Bar Chart Styles
-  barChartContainer: {
-    height: 200,
-    marginVertical: 8,
-  },
-  barChart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 150,
-    paddingHorizontal: 8,
-  },
-  barColumn: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  barWrapper: {
-    height: '100%',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  bar: {
-    width: 20,
-    borderRadius: 4,
-    minHeight: 4,
-  },
-  barLabel: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 4,
-    fontWeight: '500',
-  },
-  // Line Chart Styles
-  lineChartContainer: {
-    height: 200,
-    marginVertical: 8,
-  },
-  lineChart: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 150,
-    paddingHorizontal: 8,
-    justifyContent: 'space-between',
-  },
-  linePoint: {
-    flex: 1,
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  lineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  lineConnector: {
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  lineLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-  },
-  lineLabel: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  // Products List Styles
-  productsList: {
-    gap: 12,
-  },
-  productItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    gap: 12,
-  },
-  productRank: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rankText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 14,
     fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 2,
+    color: '#EF4444',
   },
-  productSales: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  productRevenue: {
-    alignItems: 'flex-end',
-  },
-  revenueText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  growthBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 2,
-  },
-  growthBadgeText: {
-    fontSize: 10,
-    color: '#10B981',
-    fontWeight: '700',
-  },
-  // Retailers List Styles
-  retailersList: {
-    gap: 12,
-  },
-  retailerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    justifyContent: 'space-between',
-  },
-  retailerInfo: {
-    flex: 1,
-  },
-  retailerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  retailerStats: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  retailerStat: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  retailerRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  // Customer Metrics Styles
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  customerMetric: {
-    width: (width - 88) / 2,
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-  },
-  metricLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  // Platform Metrics Styles
-  platformMetrics: {
-    gap: 12,
-  },
-  platformMetric: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    gap: 12,
-  },
-  platformMetricInfo: {
-    flex: 1,
-  },
-  platformMetricValue: {
+  deleteButtonText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 2,
+    fontWeight: '600',
+    color: '#6B7280',
   },
-  platformMetricLabel: {
-    fontSize: 12,
-    color: '#64748B',
-  },
+  
   bottomSpacer: {
     height: 20,
   },
