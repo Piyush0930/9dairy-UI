@@ -74,10 +74,12 @@ export default function InventoryScreen() {
   });
   
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timeFilter, setTimeFilter] = useState('all');
   const [activeFilter, setActiveFilter] = useState(FILTER_TYPES.ALL);
+  const [error, setError] = useState(null);
 
   // Scanner states
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -120,6 +122,15 @@ export default function InventoryScreen() {
   const [searchingProducts, setSearchingProducts] = useState(false);
   const [addingProduct, setAddingProduct] = useState(false);
 
+  // Add debouncing to search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     if (permission) {
       setHasPermission(permission.granted);
@@ -130,11 +141,14 @@ export default function InventoryScreen() {
   const fetchData = useCallback(async () => {
     if (!authToken) {
       console.log("No auth token available");
+      setError("Authentication required");
+      setLoading(false);
       return;
     }
     
     try {
       setLoading(true);
+      setError(null);
       console.log("Starting to fetch inventory data...");
       
       const headers = { 
@@ -147,7 +161,8 @@ export default function InventoryScreen() {
       console.log("Inventory response status:", invRes.status);
       
       if (!invRes.ok) {
-        throw new Error(`HTTP error! status: ${invRes.status}`);
+        const errorText = await invRes.text();
+        throw new Error(`HTTP error! status: ${invRes.status}, message: ${errorText}`);
       }
       
       const invData = await invRes.json();
@@ -178,10 +193,10 @@ export default function InventoryScreen() {
 
         console.log('🎯 Revenue-Based Summary:', invData.data?.summary);
       } else {
-        console.error('Inventory API error:', invData.message);
+        throw new Error(invData.message || 'Failed to fetch inventory data');
       }
 
-      // Fetch low stock alerts
+      // Fetch low stock alerts with error handling
       try {
         const alertRes = await fetch(`${API_BASE_URL}/alerts/low-stock`, { headers });
         if (alertRes.ok) {
@@ -189,12 +204,14 @@ export default function InventoryScreen() {
           if (alertData.success) {
             setLowStockAlerts(alertData.data || { critical: [], warning: [], total: 0 });
           }
+        } else {
+          console.warn('Failed to fetch low stock alerts:', alertRes.status);
         }
       } catch (alertError) {
         console.error('Error fetching alerts:', alertError);
       }
 
-      // Fetch recent activity logs
+      // Fetch recent activity logs with error handling
       try {
         const logRes = await fetch(`${API_BASE_URL}/logs?limit=6`, { headers });
         if (logRes.ok) {
@@ -202,6 +219,8 @@ export default function InventoryScreen() {
           if (logData.success) {
             setRecentActivity(logData.data?.logs || []);
           }
+        } else {
+          console.warn('Failed to fetch recent activity:', logRes.status);
         }
       } catch (logError) {
         console.error('Error fetching logs:', logError);
@@ -209,7 +228,7 @@ export default function InventoryScreen() {
 
     } catch (e) {
       console.error("Fetch Error:", e);
-      Alert.alert("Error", "Failed to load inventory data");
+      setError(e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -224,12 +243,15 @@ export default function InventoryScreen() {
       console.log("Auth still loading...");
     } else if (!authToken) {
       console.log("No auth token available");
+      setError("Authentication required");
+      setLoading(false);
     }
   }, [authLoading, authToken, fetchData]);
 
   const onRefresh = () => {
     console.log("Refreshing data...");
     setRefreshing(true);
+    setError(null);
     fetchData();
   };
 
@@ -237,6 +259,7 @@ export default function InventoryScreen() {
   const handleTimeFilterChange = (filter) => {
     setTimeFilter(filter);
     setLoading(true);
+    setError(null);
   };
 
   // Filter Handler for Summary Cards
@@ -269,9 +292,20 @@ export default function InventoryScreen() {
     return item.product?.price || 0;
   };
 
-  // Calculate item sales value (frontend calculation)
+  // Calculate item sales value with per-piece pricing
   const getItemSalesValue = (item) => {
     if (!item) return 0;
+    
+    // If quantity pricing is enabled, calculate based on per-piece pricing
+    if (item.enableQuantityPricing && item.pricingSlabs && item.pricingSlabs.length > 0) {
+      const totalSold = item.totalSold || 0;
+      const basePrice = item.sellingPrice || 0;
+      
+      // For sales value calculation, we'll use the base price for simplicity
+      // In a real scenario, you might want to track actual discounted prices per sale
+      return totalSold * basePrice;
+    }
+    
     return (item.totalSold || 0) * (item.sellingPrice || 0);
   };
 
@@ -307,14 +341,32 @@ export default function InventoryScreen() {
     return sellingPrice !== defaultPrice;
   };
 
+  // Input validation for stock updates
+  const validateStockInput = (qty, transactionType, selectedItem) => {
+    if (!qty || isNaN(qty) || parseInt(qty) <= 0) {
+      Alert.alert("Error", "Please enter a valid positive quantity");
+      return false;
+    }
+    
+    if (transactionType === "STOCK_OUT") {
+      const availableStock = getAvailableStock(selectedItem);
+      if (parseInt(qty) > availableStock) {
+        Alert.alert("Error", `Cannot remove more than available stock (${availableStock})`);
+        return false;
+      }
+    }
+    
+    return true;
+  };
+
   // Filter inventory based on active filter
   const getFilteredInventory = () => {
     let filtered = inventory.filter((item) => {
       const productName = item.productName || item.product?.name || '';
       const sku = item.product?.sku || '';
       return (
-        productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        sku.toLowerCase().includes(searchQuery.toLowerCase())
+        productName.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        sku.toLowerCase().includes(debouncedSearch.toLowerCase())
       );
     });
 
@@ -360,160 +412,6 @@ export default function InventoryScreen() {
   };
 
   const filteredInventory = getFilteredInventory();
-
-  // Time Filter Component
-  const TimeFilterSelector = () => (
-    <View style={styles.timeFilterContainer}>
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.timeFilterScroll}
-      >
-        {TIME_FILTERS.map((filter) => (
-          <TouchableOpacity
-            key={filter.key}
-            style={[
-              styles.timeFilterButton,
-              timeFilter === filter.key && styles.timeFilterButtonActive
-            ]}
-            onPress={() => handleTimeFilterChange(filter.key)}
-          >
-            <Text style={[
-              styles.timeFilterText,
-              timeFilter === filter.key && styles.timeFilterTextActive
-            ]}>
-              {filter.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-
-  // Interactive Summary Grid Component
-  const InteractiveSummaryGrid = () => (
-    <View style={styles.summaryGrid}>
-      {/* Total Sales Card - Click to show top selling products */}
-      <TouchableOpacity 
-        style={[
-          styles.summaryCard, 
-          styles.salesCard,
-          activeFilter === FILTER_TYPES.TOP_SELLING && styles.summaryCardActive
-        ]}
-        onPress={() => handleFilterChange(
-          activeFilter === FILTER_TYPES.TOP_SELLING ? FILTER_TYPES.ALL : FILTER_TYPES.TOP_SELLING
-        )}
-      >
-        <View style={[styles.iconContainer, { backgroundColor: '#4CAF50' }]}>
-          <Ionicons name="trending-up" size={20} color="#FFF" />
-        </View>
-        <Text style={styles.summaryValue}>₹{(summary.totalSales || 0).toLocaleString()}</Text>
-        <Text style={styles.summaryLabel}>Total Sales</Text>
-        <Text style={styles.timePeriodText}>
-          {TIME_FILTERS.find(f => f.key === timeFilter)?.label || 'All Time'}
-        </Text>
-        {activeFilter === FILTER_TYPES.TOP_SELLING && (
-          <View style={styles.activeFilterIndicator}>
-            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Low Stock Card - Click to show low stock products */}
-      <TouchableOpacity 
-        style={[
-          styles.summaryCard, 
-          styles.lowStockCard,
-          activeFilter === FILTER_TYPES.LOW_STOCK && styles.summaryCardActive
-        ]}
-        onPress={() => handleFilterChange(
-          activeFilter === FILTER_TYPES.LOW_STOCK ? FILTER_TYPES.ALL : FILTER_TYPES.LOW_STOCK
-        )}
-      >
-        <View style={[styles.iconContainer, { backgroundColor: '#FF9800' }]}>
-          <Ionicons name="warning" size={20} color="#FFF" />
-        </View>
-        <Text style={styles.summaryValue}>{summary.lowStockCount || 0}</Text>
-        <Text style={styles.summaryLabel}>Low Stock</Text>
-        <Text style={styles.stockAlertText}>
-          {summary.outOfStockCount || 0} out of stock
-        </Text>
-        {activeFilter === FILTER_TYPES.LOW_STOCK && (
-          <View style={styles.activeFilterIndicator}>
-            <Ionicons name="checkmark-circle" size={16} color="#FF9800" />
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Inventory Value Card - Click to show high stock products */}
-      <TouchableOpacity 
-        style={[
-          styles.summaryCard, 
-          styles.inventoryCard,
-          activeFilter === FILTER_TYPES.HIGH_STOCK && styles.summaryCardActive
-        ]}
-        onPress={() => handleFilterChange(
-          activeFilter === FILTER_TYPES.HIGH_STOCK ? FILTER_TYPES.ALL : FILTER_TYPES.HIGH_STOCK
-        )}
-      >
-        <View style={[styles.iconContainer, { backgroundColor: Colors.light.accent }]}>
-          <Ionicons name="business" size={20} color="#FFF" />
-        </View>
-        <Text style={styles.summaryValue}>₹{(summary.totalInventoryValue || 0).toLocaleString()}</Text>
-        <Text style={styles.summaryLabel}>Stock Value</Text>
-        <Text style={styles.stockInfoText}>
-          {summary.totalProducts || 0} products
-        </Text>
-        {activeFilter === FILTER_TYPES.HIGH_STOCK && (
-          <View style={styles.activeFilterIndicator}>
-            <Ionicons name="checkmark-circle" size={16} color={Colors.light.accent} />
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Items Sold Card */}
-      <View style={[styles.summaryCard, styles.itemsCard]}>
-        <View style={[styles.iconContainer, { backgroundColor: '#2196F3' }]}>
-          <Ionicons name="cube" size={20} color="#FFF" />
-        </View>
-        <Text style={styles.summaryValue}>{(summary.totalItemsSold || 0).toLocaleString()}</Text>
-        <Text style={styles.summaryLabel}>Items Sold</Text>
-        <Text style={styles.averageOrderText}>
-          Avg: ₹{summary.averageOrderValue?.toFixed(0) || '0'}
-        </Text>
-      </View>
-    </View>
-  );
-
-  // Filter Indicator Component
-  const FilterIndicator = () => {
-    if (activeFilter === FILTER_TYPES.ALL) return null;
-
-    const getFilterText = () => {
-      switch (activeFilter) {
-        case FILTER_TYPES.LOW_STOCK:
-          return `Showing Low Stock Items (${filteredInventory.length})`;
-        case FILTER_TYPES.TOP_SELLING:
-          return `Showing Top Selling Items (${filteredInventory.length})`;
-        case FILTER_TYPES.HIGH_STOCK:
-          return `Showing High Stock Items (${filteredInventory.length})`;
-        default:
-          return `Showing ${filteredInventory.length} items`;
-      }
-    };
-
-    return (
-      <View style={styles.filterIndicator}>
-        <Text style={styles.filterIndicatorText}>{getFilterText()}</Text>
-        <TouchableOpacity 
-          style={styles.clearFilterButton}
-          onPress={() => handleFilterChange(FILTER_TYPES.ALL)}
-        >
-          <Ionicons name="close" size={16} color="#FFF" />
-        </TouchableOpacity>
-      </View>
-    );
-  };
 
   // Scanner Functions
   const requestCameraPermission = async () => {
@@ -729,6 +627,385 @@ export default function InventoryScreen() {
     }
   };
 
+  // Delete Inventory Item
+  const handleDeleteItem = async (item) => {
+    Alert.alert(
+      "Delete Product",
+      `Are you sure you want to remove ${getProductName(item)} from your inventory?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_BASE_URL}/products/${item._id}`, {
+                method: "DELETE",
+                headers: {
+                  Authorization: `Bearer ${authToken}`,
+                  "Content-Type": "application/json",
+                },
+              });
+
+              const data = await res.json();
+              if (!data.success) throw new Error(data.message);
+
+              Alert.alert("Success", "Product removed from inventory successfully!");
+              await fetchData();
+              
+            } catch (e) {
+              console.error("Delete error:", e);
+              Alert.alert("Error", e.message || "Failed to delete product from inventory");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Search Products for Adding to Inventory
+  const searchProducts = async (query) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      setSearchingProducts(true);
+      const headers = { 
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      };
+
+      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/catalog/products/search?q=${encodeURIComponent(query)}`, { headers });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSearchResults(data.data || []);
+        } else {
+          setSearchResults([]);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Search products error:', error);
+      setSearchResults([]);
+    } finally {
+      setSearchingProducts(false);
+    }
+  };
+
+  // Add Product to Inventory - WITH AUTO-REFRESH
+  const handleAddProductToInventory = async () => {
+    if (!selectedProduct) {
+      Alert.alert("Error", "Please select a product");
+      return;
+    }
+
+    if (!sellingPrice) {
+      Alert.alert("Error", "Please enter selling price");
+      return;
+    }
+
+    try {
+      setAddingProduct(true);
+      
+      const res = await fetch(`${API_BASE_URL}/products`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productId: selectedProduct._id,
+          initialStock: parseInt(initialStock) || 0,
+          sellingPrice: parseFloat(sellingPrice),
+          costPrice: costPrice ? parseFloat(costPrice) : undefined,
+          minStockLevel: minStockLevel ? parseInt(minStockLevel) : undefined,
+          maxStockLevel: maxStockLevel ? parseInt(maxStockLevel) : undefined,
+        }),
+      });
+
+      const data = await res.json();
+      console.log("Add product response:", data);
+      
+      if (!data.success) throw new Error(data.message);
+
+      Alert.alert("Success", "Product added to inventory successfully!");
+      resetAddProductModal();
+      setAddProductModal(false);
+      await fetchData();
+      
+    } catch (e) {
+      console.error("Add product error:", e);
+      Alert.alert("Error", e.message || "Failed to add product to inventory");
+    } finally {
+      setAddingProduct(false);
+    }
+  };
+
+  // Reset Add Product Modal
+  const resetAddProductModal = () => {
+    setProductSearch("");
+    setSearchResults([]);
+    setSelectedProduct(null);
+    setInitialStock("");
+    setSellingPrice("");
+    setCostPrice("");
+    setMinStockLevel("");
+    setMaxStockLevel("");
+  };
+
+  // Open Add Product Modal
+  const openAddProductModal = () => {
+    resetAddProductModal();
+    setAddProductModal(true);
+  };
+
+  // Stock Update - WITH AUTO-REFRESH
+  const handleStockUpdate = async () => {
+    if (!selectedItem) {
+      Alert.alert("Error", "Please select a product");
+      return;
+    }
+
+    // Use input validation
+    if (!validateStockInput(qty, transactionType, selectedItem)) {
+      return;
+    }
+
+    try {
+      const productId = selectedItem.product?._id || selectedItem.product;
+      
+      console.log("Updating stock for product:", productId, "Quantity:", qty);
+      
+      const res = await fetch(`${API_BASE_URL}/stock`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productId: productId,
+          quantity: parseInt(qty),
+          transactionType,
+          reason,
+        }),
+      });
+
+      const data = await res.json();
+      console.log("Stock update response:", data);
+      
+      if (!data.success) throw new Error(data.message);
+
+      Alert.alert("Success", "Stock updated successfully!");
+      setStockModal(false);
+      resetStockModal();
+      await fetchData();
+      
+    } catch (e) {
+      console.error("Stock update error:", e);
+      Alert.alert("Error", e.message || "Failed to update stock");
+    }
+  };
+
+  const openStockModal = (item) => {
+    if (!item) {
+      console.error('Cannot open stock modal: item is null');
+      return;
+    }
+    setSelectedItem(item);
+    setQty("");
+    setTransactionType("STOCK_IN");
+    setReason("PURCHASE");
+    setStockModal(true);
+  };
+
+  const resetStockModal = () => {
+    setQty("");
+    setTransactionType("STOCK_IN");
+    setReason("PURCHASE");
+  };
+
+  // Open Detail Modal
+  const openDetailModal = (item) => {
+    if (!item) {
+      console.error('Cannot open detail modal: item is null');
+      return;
+    }
+    setSelectedItem(item);
+    setDetailModal(true);
+  };
+
+  // Open Pricing Modal
+  const openPricingModal = (item) => {
+    if (!item) {
+      console.error('Cannot open pricing modal: item is null');
+      return;
+    }
+    setSelectedItem(item);
+    setPricingModal(true);
+  };
+
+  // ==================== COMPONENT RENDERERS ====================
+
+  // Time Filter Component
+  const TimeFilterSelector = () => (
+    <View style={styles.timeFilterContainer}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.timeFilterScroll}
+      >
+        {TIME_FILTERS.map((filter) => (
+          <TouchableOpacity
+            key={filter.key}
+            style={[
+              styles.timeFilterButton,
+              timeFilter === filter.key && styles.timeFilterButtonActive
+            ]}
+            onPress={() => handleTimeFilterChange(filter.key)}
+          >
+            <Text style={[
+              styles.timeFilterText,
+              timeFilter === filter.key && styles.timeFilterTextActive
+            ]}>
+              {filter.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
+  // Interactive Summary Grid Component
+  const InteractiveSummaryGrid = () => (
+    <View style={styles.summaryGrid}>
+      {/* Total Sales Card - Click to show top selling products */}
+      <TouchableOpacity 
+        style={[
+          styles.summaryCard, 
+          styles.salesCard,
+          activeFilter === FILTER_TYPES.TOP_SELLING && styles.summaryCardActive
+        ]}
+        onPress={() => handleFilterChange(
+          activeFilter === FILTER_TYPES.TOP_SELLING ? FILTER_TYPES.ALL : FILTER_TYPES.TOP_SELLING
+        )}
+      >
+        <View style={[styles.iconContainer, { backgroundColor: '#4CAF50' }]}>
+          <Ionicons name="trending-up" size={20} color="#FFF" />
+        </View>
+        <Text style={styles.summaryValue}>₹{(summary.totalSales || 0).toLocaleString()}</Text>
+        <Text style={styles.summaryLabel}>Total Sales</Text>
+        <Text style={styles.timePeriodText}>
+          {TIME_FILTERS.find(f => f.key === timeFilter)?.label || 'All Time'}
+        </Text>
+        {activeFilter === FILTER_TYPES.TOP_SELLING && (
+          <View style={styles.activeFilterIndicator}>
+            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Low Stock Card - Click to show low stock products */}
+      <TouchableOpacity 
+        style={[
+          styles.summaryCard, 
+          styles.lowStockCard,
+          activeFilter === FILTER_TYPES.LOW_STOCK && styles.summaryCardActive
+        ]}
+        onPress={() => handleFilterChange(
+          activeFilter === FILTER_TYPES.LOW_STOCK ? FILTER_TYPES.ALL : FILTER_TYPES.LOW_STOCK
+        )}
+      >
+        <View style={[styles.iconContainer, { backgroundColor: '#FF9800' }]}>
+          <Ionicons name="warning" size={20} color="#FFF" />
+        </View>
+        <Text style={styles.summaryValue}>{summary.lowStockCount || 0}</Text>
+        <Text style={styles.summaryLabel}>Low Stock</Text>
+        <Text style={styles.stockAlertText}>
+          {summary.outOfStockCount || 0} out of stock
+        </Text>
+        {activeFilter === FILTER_TYPES.LOW_STOCK && (
+          <View style={styles.activeFilterIndicator}>
+            <Ionicons name="checkmark-circle" size={16} color="#FF9800" />
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Inventory Value Card - Click to show high stock products */}
+      <TouchableOpacity 
+        style={[
+          styles.summaryCard, 
+          styles.inventoryCard,
+          activeFilter === FILTER_TYPES.HIGH_STOCK && styles.summaryCardActive
+        ]}
+        onPress={() => handleFilterChange(
+          activeFilter === FILTER_TYPES.HIGH_STOCK ? FILTER_TYPES.ALL : FILTER_TYPES.HIGH_STOCK
+        )}
+      >
+        <View style={[styles.iconContainer, { backgroundColor: Colors.light.accent }]}>
+          <Ionicons name="business" size={20} color="#FFF" />
+        </View>
+        <Text style={styles.summaryValue}>₹{(summary.totalInventoryValue || 0).toLocaleString()}</Text>
+        <Text style={styles.summaryLabel}>Stock Value</Text>
+        <Text style={styles.stockInfoText}>
+          {summary.totalProducts || 0} products
+        </Text>
+        {activeFilter === FILTER_TYPES.HIGH_STOCK && (
+          <View style={styles.activeFilterIndicator}>
+            <Ionicons name="checkmark-circle" size={16} color={Colors.light.accent} />
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Items Sold Card */}
+      <View style={[styles.summaryCard, styles.itemsCard]}>
+        <View style={[styles.iconContainer, { backgroundColor: '#2196F3' }]}>
+          <Ionicons name="cube" size={20} color="#FFF" />
+        </View>
+        <Text style={styles.summaryValue}>{(summary.totalItemsSold || 0).toLocaleString()}</Text>
+        <Text style={styles.summaryLabel}>Items Sold</Text>
+        <Text style={styles.averageOrderText}>
+          Avg: ₹{summary.averageOrderValue?.toFixed(0) || '0'}
+        </Text>
+      </View>
+    </View>
+  );
+
+  // Filter Indicator Component
+  const FilterIndicator = () => {
+    if (activeFilter === FILTER_TYPES.ALL) return null;
+
+    const getFilterText = () => {
+      switch (activeFilter) {
+        case FILTER_TYPES.LOW_STOCK:
+          return `Showing Low Stock Items (${filteredInventory.length})`;
+        case FILTER_TYPES.TOP_SELLING:
+          return `Showing Top Selling Items (${filteredInventory.length})`;
+        case FILTER_TYPES.HIGH_STOCK:
+          return `Showing High Stock Items (${filteredInventory.length})`;
+        default:
+          return `Showing ${filteredInventory.length} items`;
+      }
+    };
+
+    return (
+      <View style={styles.filterIndicator}>
+        <Text style={styles.filterIndicatorText}>{getFilterText()}</Text>
+        <TouchableOpacity 
+          style={styles.clearFilterButton}
+          onPress={() => handleFilterChange(FILTER_TYPES.ALL)}
+        >
+          <Ionicons name="close" size={16} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Scanner Modal
   const renderScannerModal = () => (
     <Modal
       visible={isScannerOpen}
@@ -891,7 +1168,7 @@ export default function InventoryScreen() {
         {/* Footer */}
         <View style={styles.scannerFooter}>
           <Text style={styles.scannerHelpText}>
-            {scanFeedback === "success" ? "Opening stock management..." :
+            {scanFeedback === "success" ? "Opening stock management with per-piece pricing..." :
              scanFeedback === "error" ? "Product not found in catalog" :
              "Point camera at product barcode to manage stock"}
           </Text>
@@ -903,224 +1180,187 @@ export default function InventoryScreen() {
     </Modal>
   );
 
-  // Delete Inventory Item
-  const handleDeleteItem = async (item) => {
-    Alert.alert(
-      "Delete Product",
-      `Are you sure you want to remove ${getProductName(item)} from your inventory?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const res = await fetch(`${API_BASE_URL}/products/${item._id}`, {
-                method: "DELETE",
-                headers: {
-                  Authorization: `Bearer ${authToken}`,
-                  "Content-Type": "application/json",
-                },
-              });
+  // Add Product Modal
+  const renderAddProductModal = () => (
+    <Modal
+      visible={addProductModal}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setAddProductModal(false)}
+    >
+      <View style={styles.modalContent}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Add Product to Inventory</Text>
+          <TouchableOpacity onPress={() => setAddProductModal(false)}>
+            <Ionicons name="close" size={24} color={Colors.light.text} />
+          </TouchableOpacity>
+        </View>
 
-              const data = await res.json();
-              if (!data.success) throw new Error(data.message);
+        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          {/* Product Search */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Search Products</Text>
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={20} color={Colors.light.accent} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search products by name or SKU..."
+                placeholderTextColor="#BDBDBD"
+                value={productSearch}
+                onChangeText={(text) => {
+                  setProductSearch(text);
+                  searchProducts(text);
+                }}
+              />
+            </View>
+            
+            {searchingProducts && (
+              <ActivityIndicator size="small" color={Colors.light.accent} style={styles.searchLoading} />
+            )}
+          </View>
 
-              Alert.alert("Success", "Product removed from inventory successfully!");
-              await fetchData();
-              
-            } catch (e) {
-              console.error("Delete error:", e);
-              Alert.alert("Error", e.message || "Failed to delete product from inventory");
-            }
-          }
-        }
-      ]
-    );
-  };
+          {/* Search Results */}
+          {searchResults.length > 0 && (
+            <View style={styles.searchResults}>
+              <Text style={styles.resultsTitle}>Search Results</Text>
+              {searchResults.map((product) => (
+                <TouchableOpacity
+                  key={product._id}
+                  style={[
+                    styles.productResult,
+                    selectedProduct?._id === product._id && styles.productResultSelected
+                  ]}
+                  onPress={() => setSelectedProduct(product)}
+                >
+                  <Image
+                    source={{ uri: product.image || "https://via.placeholder.com/60x60?text=No+Img" }}
+                    style={styles.productResultImage}
+                  />
+                  <View style={styles.productResultInfo}>
+                    <Text style={styles.productResultName}>{product.name}</Text>
+                    <Text style={styles.productResultSku}>SKU: {product.sku}</Text>
+                    <Text style={styles.productResultPrice}>Default Price: ₹{product.price}</Text>
+                  </View>
+                  {selectedProduct?._id === product._id && (
+                    <Ionicons name="checkmark-circle" size={24} color={Colors.light.accent} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-  // Search Products for Adding to Inventory
-  const searchProducts = async (query) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
+          {selectedProduct && (
+            <>
+              {/* Product Details */}
+              <View style={styles.selectedProductSection}>
+                <Text style={styles.sectionTitle}>Selected Product</Text>
+                <View style={styles.selectedProductCard}>
+                  <Image
+                    source={{ uri: selectedProduct.image || "https://via.placeholder.com/80x80?text=No+Img" }}
+                    style={styles.selectedProductImage}
+                  />
+                  <View style={styles.selectedProductInfo}>
+                    <Text style={styles.selectedProductName}>{selectedProduct.name}</Text>
+                    <Text style={styles.selectedProductSku}>SKU: {selectedProduct.sku}</Text>
+                    <Text style={styles.selectedProductCategory}>
+                      Category: {selectedProduct.category?.name || 'N/A'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
 
-    try {
-      setSearchingProducts(true);
-      const headers = { 
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json'
-      };
+              {/* Inventory Settings */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Inventory Settings</Text>
+                
+                <View style={styles.inputRow}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Initial Stock *</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      value={initialStock}
+                      onChangeText={setInitialStock}
+                    />
+                  </View>
+                  
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Selling Price (₹) *</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      placeholder="Enter selling price"
+                      value={sellingPrice}
+                      onChangeText={setSellingPrice}
+                    />
+                  </View>
+                </View>
 
-      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/catalog/products/search?q=${encodeURIComponent(query)}`, { headers });
-      
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setSearchResults(data.data || []);
-        } else {
-          setSearchResults([]);
-        }
-      } else {
-        setSearchResults([]);
-      }
-    } catch (error) {
-      console.error('Search products error:', error);
-      setSearchResults([]);
-    } finally {
-      setSearchingProducts(false);
-    }
-  };
+                <View style={styles.inputRow}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Cost Price (₹)</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      placeholder="Optional"
+                      value={costPrice}
+                      onChangeText={setCostPrice}
+                    />
+                  </View>
+                  
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Min Stock Level</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      placeholder="10"
+                      value={minStockLevel}
+                      onChangeText={setMinStockLevel}
+                    />
+                  </View>
+                </View>
 
-  // Add Product to Inventory - WITH AUTO-REFRESH
-  const handleAddProductToInventory = async () => {
-    if (!selectedProduct) {
-      Alert.alert("Error", "Please select a product");
-      return;
-    }
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Max Stock Level</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    keyboardType="numeric"
+                    placeholder="100"
+                    value={maxStockLevel}
+                    onChangeText={setMaxStockLevel}
+                  />
+                </View>
+              </View>
+            </>
+          )}
+        </ScrollView>
 
-    if (!sellingPrice) {
-      Alert.alert("Error", "Please enter selling price");
-      return;
-    }
+        <View style={styles.modalFooter}>
+          <TouchableOpacity 
+            style={styles.cancelButton}
+            onPress={() => setAddProductModal(false)}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[
+              styles.submitButton,
+              (!selectedProduct || !sellingPrice || addingProduct) && styles.submitButtonDisabled
+            ]}
+            onPress={handleAddProductToInventory}
+            disabled={!selectedProduct || !sellingPrice || addingProduct}
+          >
+            <Text style={styles.submitButtonText}>
+              {addingProduct ? 'Adding...' : 'Add to Inventory'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
 
-    try {
-      setAddingProduct(true);
-      
-      const res = await fetch(`${API_BASE_URL}/products`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          productId: selectedProduct._id,
-          initialStock: parseInt(initialStock) || 0,
-          sellingPrice: parseFloat(sellingPrice),
-          costPrice: costPrice ? parseFloat(costPrice) : undefined,
-          minStockLevel: minStockLevel ? parseInt(minStockLevel) : undefined,
-          maxStockLevel: maxStockLevel ? parseInt(maxStockLevel) : undefined,
-        }),
-      });
-
-      const data = await res.json();
-      console.log("Add product response:", data);
-      
-      if (!data.success) throw new Error(data.message);
-
-      Alert.alert("Success", "Product added to inventory successfully!");
-      resetAddProductModal();
-      setAddProductModal(false);
-      await fetchData();
-      
-    } catch (e) {
-      console.error("Add product error:", e);
-      Alert.alert("Error", e.message || "Failed to add product to inventory");
-    } finally {
-      setAddingProduct(false);
-    }
-  };
-
-  // Reset Add Product Modal
-  const resetAddProductModal = () => {
-    setProductSearch("");
-    setSearchResults([]);
-    setSelectedProduct(null);
-    setInitialStock("");
-    setSellingPrice("");
-    setCostPrice("");
-    setMinStockLevel("");
-    setMaxStockLevel("");
-  };
-
-  // Open Add Product Modal
-  const openAddProductModal = () => {
-    resetAddProductModal();
-    setAddProductModal(true);
-  };
-
-  // Stock Update - WITH AUTO-REFRESH
-  const handleStockUpdate = async () => {
-    if (!selectedItem || !qty) {
-      Alert.alert("Error", "Please enter quantity");
-      return;
-    }
-
-    try {
-      const productId = selectedItem.product?._id || selectedItem.product;
-      
-      console.log("Updating stock for product:", productId, "Quantity:", qty);
-      
-      const res = await fetch(`${API_BASE_URL}/stock`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          productId: productId,
-          quantity: parseInt(qty),
-          transactionType,
-          reason,
-        }),
-      });
-
-      const data = await res.json();
-      console.log("Stock update response:", data);
-      
-      if (!data.success) throw new Error(data.message);
-
-      Alert.alert("Success", "Stock updated successfully!");
-      setStockModal(false);
-      resetStockModal();
-      await fetchData();
-      
-    } catch (e) {
-      console.error("Stock update error:", e);
-      Alert.alert("Error", e.message || "Failed to update stock");
-    }
-  };
-
-  const openStockModal = (item) => {
-    if (!item) {
-      console.error('Cannot open stock modal: item is null');
-      return;
-    }
-    setSelectedItem(item);
-    setQty("");
-    setTransactionType("STOCK_IN");
-    setReason("PURCHASE");
-    setStockModal(true);
-  };
-
-  const resetStockModal = () => {
-    setQty("");
-    setTransactionType("STOCK_IN");
-    setReason("PURCHASE");
-  };
-
-  // Open Detail Modal
-  const openDetailModal = (item) => {
-    if (!item) {
-      console.error('Cannot open detail modal: item is null');
-      return;
-    }
-    setSelectedItem(item);
-    setDetailModal(true);
-  };
-
-  // Open Pricing Modal
-  const openPricingModal = (item) => {
-    if (!item) {
-      console.error('Cannot open pricing modal: item is null');
-      return;
-    }
-    setSelectedItem(item);
-    setPricingModal(true);
-  };
-
-  // Render Product Detail Modal
+  // Product Detail Modal
   const renderDetailModal = () => {
     if (!selectedItem) return null;
 
@@ -1256,10 +1496,18 @@ export default function InventoryScreen() {
                     <Text style={styles.overrideNote}>(Custom Price)</Text>
                   )}
                 </View>
+                
+                {/* Show quantity pricing status */}
                 <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Default Price</Text>
-                  <Text style={styles.detailValueLarge}>₹{defaultPrice}</Text>
+                  <Text style={styles.detailLabelLarge}>Pricing Type</Text>
+                  <Text style={styles.detailValueLarge}>
+                    {hasQPricing ? 'Quantity-Based' : 'Standard'}
+                  </Text>
+                  {hasQPricing && (
+                    <Text style={styles.pricingTypeNote}>(Per-Piece Discount)</Text>
+                  )}
                 </View>
+                
                 <View style={styles.detailItemLarge}>
                   <Text style={styles.detailLabelLarge}>Cost Price</Text>
                   <Text style={styles.detailValueLarge}>₹{selectedItem.costPrice || 'N/A'}</Text>
@@ -1286,25 +1534,92 @@ export default function InventoryScreen() {
               </View>
             </View>
 
-            {/* Quantity Pricing */}
+            {/* Enhanced Quantity Pricing Section with Clear Per-Piece Examples */}
             {hasQPricing && (
               <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Quantity Pricing</Text>
+                <Text style={styles.detailSectionTitle}>Quantity Pricing (Per-Piece Discount)</Text>
                 <View style={styles.pricingSlabsPreview}>
-                  {selectedItem.pricingSlabs?.map((slab, index) => (
-                    <View key={index} style={styles.slabPreviewItem}>
-                      <View style={styles.slabRange}>
-                        <Text style={styles.slabRangeText}>
-                          {slab.minQuantity}+ units
-                        </Text>
-                      </View>
-                      <View style={styles.slabDiscount}>
-                        <Text style={styles.slabDiscountText}>
-                          ₹{slab.price} per unit
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
+                  {selectedItem.pricingSlabs
+                    ?.filter(slab => slab.isActive)
+                    .sort((a, b) => a.minQuantity - b.minQuantity)
+                    .map((slab, index) => {
+                      // Calculate per-piece discounted price
+                      const basePrice = selectedItem.sellingPrice || 0;
+                      let discountedPricePerPiece = basePrice;
+                      
+                      if (slab.discountType === 'FLAT') {
+                        discountedPricePerPiece = Math.max(0, basePrice - slab.discountValue);
+                      } else if (slab.discountType === 'PERCENTAGE') {
+                        const discountAmount = (basePrice * slab.discountValue) / 100;
+                        discountedPricePerPiece = Math.max(0, basePrice - discountAmount);
+                      }
+                      
+                      return (
+                        <View key={index} style={styles.slabPreviewItem}>
+                          <View style={styles.slabRange}>
+                            <Text style={styles.slabRangeText}>
+                              {slab.minQuantity}+ units
+                            </Text>
+                            <Text style={styles.slabDescription}>
+                              {slab.discountType === 'FLAT' 
+                                ? `₹${slab.discountValue} off per piece` 
+                                : `${slab.discountValue}% off per piece`
+                              }
+                            </Text>
+                          </View>
+                          <View style={styles.slabDiscount}>
+                            <Text style={styles.slabDiscountPrice}>₹{discountedPricePerPiece.toFixed(0)}</Text>
+                            <Text style={styles.slabDiscountLabel}>per piece</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                </View>
+                
+                {/* Enhanced Pricing Example */}
+                <View style={styles.pricingExample}>
+                  <Text style={styles.pricingExampleTitle}>📊 Price Calculation Examples:</Text>
+                  
+                  {selectedItem.pricingSlabs
+                    ?.filter(slab => slab.isActive)
+                    .sort((a, b) => a.minQuantity - b.minQuantity)
+                    .map((slab, index) => {
+                      const basePrice = selectedItem.sellingPrice || 0;
+                      const exampleQuantity = slab.minQuantity;
+                      
+                      // Calculate per-piece discounted price
+                      let discountedPricePerPiece = basePrice;
+                      if (slab.discountType === 'FLAT') {
+                        discountedPricePerPiece = Math.max(0, basePrice - slab.discountValue);
+                      } else if (slab.discountType === 'PERCENTAGE') {
+                        const discountAmount = (basePrice * slab.discountValue) / 100;
+                        discountedPricePerPiece = Math.max(0, basePrice - discountAmount);
+                      }
+                      
+                      const regularTotal = basePrice * exampleQuantity;
+                      const discountedTotal = discountedPricePerPiece * exampleQuantity;
+                      const savings = regularTotal - discountedTotal;
+                      
+                      return (
+                        <View key={index} style={styles.pricingExampleItem}>
+                          <Text style={styles.pricingExampleSubtitle}>
+                            For {exampleQuantity} units:
+                          </Text>
+                          <Text style={styles.pricingExampleText}>
+                            • Regular: ₹{basePrice} × {exampleQuantity} = ₹{regularTotal.toFixed(0)}
+                          </Text>
+                          <Text style={styles.pricingExampleText}>
+                            • Discounted: ₹{discountedPricePerPiece.toFixed(0)} per piece
+                          </Text>
+                          <Text style={styles.pricingExampleText}>
+                            • Final: ₹{discountedTotal.toFixed(0)} total
+                          </Text>
+                          <Text style={styles.pricingExampleSavings}>
+                            • You save: ₹{savings.toFixed(0)} ({slab.discountType === 'PERCENTAGE' ? slab.discountValue + '%' : '₹' + slab.discountValue} off per piece)
+                          </Text>
+                        </View>
+                      );
+                    })}
                 </View>
               </View>
             )}
@@ -1314,7 +1629,7 @@ export default function InventoryScreen() {
     );
   };
 
-  // Render Stock Management Modal
+  // Stock Management Modal
   const renderStockModal = () => {
     if (!selectedItem) return null;
 
@@ -1415,6 +1730,11 @@ export default function InventoryScreen() {
                 value={qty}
                 onChangeText={setQty}
               />
+              {transactionType === "STOCK_OUT" && (
+                <Text style={styles.availableStockHint}>
+                  Available: {availableStock} units
+                </Text>
+              )}
             </View>
 
             {/* Reason Selection */}
@@ -1479,6 +1799,36 @@ export default function InventoryScreen() {
       </Modal>
     );
   };
+
+  // ==================== MAIN RENDER ====================
+
+  // Display errors
+  if (error) {
+    return (
+      <View style={[styles.container, styles.errorContainer, { paddingTop: insets.top }]}>
+        <MaterialIcons name="error-outline" size={64} color="#F44336" />
+        <Text style={styles.errorTitle}>Unable to Load Inventory</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <View style={styles.errorButtons}>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => {
+              setError(null);
+              fetchData();
+            }}
+          >
+            <Text style={styles.retryText}>Try Again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.secondaryButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.secondaryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (authLoading || loading) {
     return (
@@ -1623,25 +1973,35 @@ export default function InventoryScreen() {
                   </Text>
                 </View>
                 
-                {/* Price Display */}
+                {/* Updated Price Display with Per-Piece Pricing */}
                 <View style={styles.priceContainer}>
                   <View style={styles.priceBackground}>
                     <Text style={styles.currentPrice}>₹{sellingPrice.toFixed(0) || '0'}</Text>
-                    {isOverridden && (
-                      <Text style={styles.defaultPrice}>₹{defaultPrice}</Text>
-                    )}
+                    
+                    {/* Show per-piece discount badge */}
                     {hasQPricing && (
                       <View style={styles.pricingBadge}>
-                        <Ionicons name="pricetag" size={12} color="#FFF" />
-                        <Text style={styles.pricingBadgeText}>Qty Pricing</Text>
+                        <Ionicons name="pricetag" size={10} color="#FFF" />
+                        <Text style={styles.pricingBadgeText}>Per-Piece Discount</Text>
                       </View>
                     )}
+                    
+                    {/* Show if price is overridden */}
                     {isOverridden && !hasQPricing && (
                       <View style={styles.customPriceBadge}>
                         <Text style={styles.customPriceBadgeText}>Custom</Text>
                       </View>
                     )}
                   </View>
+                  
+                  {/* Show discount range if quantity pricing is enabled */}
+                  {hasQPricing && item.pricingSlabs && (
+                    <View style={styles.discountRange}>
+                      <Text style={styles.discountRangeText}>
+                        Discount from {Math.min(...item.pricingSlabs.map(s => s.minQuantity))}+ units
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.stockStatusRow}>
@@ -1708,19 +2068,19 @@ export default function InventoryScreen() {
           <View style={styles.emptyContainer}>
             <MaterialIcons name="inventory-2" size={56} color={Colors.light.textSecondary} />
             <Text style={styles.emptyText}>
-              {searchQuery ? "No products found" : 
+              {debouncedSearch ? "No products found" : 
                activeFilter === FILTER_TYPES.LOW_STOCK ? "No low stock items" :
                activeFilter === FILTER_TYPES.TOP_SELLING ? "No sales data available" :
                activeFilter === FILTER_TYPES.HIGH_STOCK ? "No inventory items" :
                "No inventory items"}
             </Text>
             <Text style={styles.emptySubtext}>
-              {searchQuery ? "Try a different search term" : 
+              {debouncedSearch ? "Try a different search term" : 
                activeFilter === FILTER_TYPES.LOW_STOCK ? "All products are well stocked" :
                activeFilter === FILTER_TYPES.TOP_SELLING ? "Sales data will appear here" :
-               "Add products to get started"}
+               "Add products and set per-piece pricing"}
             </Text>
-            {!searchQuery && activeFilter === FILTER_TYPES.ALL && (
+            {!debouncedSearch && activeFilter === FILTER_TYPES.ALL && (
               <TouchableOpacity style={styles.addFirstButton} onPress={openAddProductModal}>
                 <Text style={styles.addFirstButtonText}>Add Product to Inventory</Text>
               </TouchableOpacity>
@@ -1729,13 +2089,10 @@ export default function InventoryScreen() {
         }
       />
 
-      {/* Enhanced Scanner Modal with Visual Feedback */}
+      {/* All Modals */}
       {renderScannerModal()}
-
-      {/* Product Detail Modal */}
+      {renderAddProductModal()}
       {renderDetailModal()}
-
-      {/* Stock Management Modal */}
       {renderStockModal()}
 
       {/* Pricing Slabs Modal */}
@@ -1765,6 +2122,54 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   centered: { justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
+
+  // Error Styles
+  errorContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 40,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  errorButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  retryButton: {
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  secondaryButton: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  secondaryButtonText: {
+    color: Colors.light.text,
+    fontWeight: '600',
+    fontSize: 16,
+  },
 
   // Time Filter Styles
   timeFilterContainer: {
@@ -2338,7 +2743,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  // Pricing Badge
+  // Pricing Badge - Updated for Per-Piece
   pricingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2350,7 +2755,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   pricingBadgeText: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#FFF',
     fontWeight: '600',
   },
@@ -2365,6 +2770,78 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#FFF',
     fontWeight: '600',
+  },
+
+  // New Styles for Per-Piece Pricing
+  discountRange: {
+    marginTop: 4,
+  },
+  discountRangeText: {
+    fontSize: 12,
+    color: '#FF9800',
+    fontWeight: '600',
+  },
+  pricingTypeNote: {
+    fontSize: 11,
+    color: '#4CAF50',
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  slabDescription: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  slabDiscountPrice: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2E7D32',
+    textAlign: 'center',
+  },
+  slabDiscountLabel: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  pricingExample: {
+    backgroundColor: '#F0F8FF',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.light.accent,
+  },
+  pricingExampleItem: {
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E3F2FD',
+  },
+  pricingExampleTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginBottom: 12,
+  },
+  pricingExampleSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.accent,
+    marginBottom: 6,
+  },
+  pricingExampleText: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    marginBottom: 3,
+    lineHeight: 18,
+  },
+  pricingExampleSavings: {
+    fontSize: 13,
+    color: '#2E7D32',
+    fontWeight: '600',
+    marginBottom: 3,
+    lineHeight: 18,
   },
 
   // Stock Modal Styles
@@ -2522,6 +2999,7 @@ const styles = StyleSheet.create({
   // Pricing Slabs Preview
   pricingSlabsPreview: {
     gap: 8,
+    marginBottom: 16,
   },
   slabPreviewItem: {
     flexDirection: 'row',
@@ -2540,17 +3018,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.light.text,
-  },
-  slabDiscount: {
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  slabDiscountText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2E7D32',
   },
 
   // Modal Styles
@@ -2669,6 +3136,100 @@ const styles = StyleSheet.create({
   reasonTextActive: {
     color: '#FFF',
     fontWeight: '600',
+  },
+
+  // Add Product Modal Styles
+  searchLoading: {
+    marginTop: 8,
+  },
+  searchResults: {
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  resultsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  productResult: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  productResultSelected: {
+    backgroundColor: '#E3F2FD',
+    borderColor: Colors.light.accent,
+  },
+  productResultImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  productResultInfo: {
+    flex: 1,
+  },
+  productResultName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 2,
+  },
+  productResultSku: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginBottom: 2,
+  },
+  productResultPrice: {
+    fontSize: 12,
+    color: Colors.light.accent,
+    fontWeight: '500',
+  },
+  selectedProductSection: {
+    marginBottom: 20,
+  },
+  selectedProductCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  selectedProductImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    marginRight: 16,
+  },
+  selectedProductInfo: {
+    flex: 1,
+  },
+  selectedProductName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  selectedProductSku: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 2,
+  },
+  selectedProductCategory: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
 
   // All other existing styles

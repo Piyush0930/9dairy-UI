@@ -78,7 +78,7 @@ export default function Login() {
 
       if (data.success) {
         setCurrentStep('otp');
-        showAlert('Success', 'OTP sent to your mobile number');
+        showAlert(`'Success', 'OTP sent to your mobile number'Otp is ${data.otp}`);
         setTimeout(() => otpRefs.current[0]?.focus(), 100);
       } else {
         throw new Error(data.message || 'Failed to send OTP');
@@ -157,7 +157,7 @@ export default function Login() {
             if (userRole === 'admin') {
               router.replace('/(admin)');
             } else if (userRole === 'superadmin') {
-              router.replace('/supadmin');
+              router.replace('/(superadmin)');
             } else {
               router.replace('/(tabs)');
             }
@@ -236,7 +236,7 @@ export default function Login() {
       if (data.success && data.token && data.user) {
         await login(data.user, data.token);
         showAlert('Success', 'SuperAdmin access granted!');
-        setTimeout(() => router.replace('/supadmin'), 300);
+        setTimeout(() => router.replace('/(superadmin)'), 300);
       } else {
         throw new Error(data.message || 'Invalid secret key');
       }

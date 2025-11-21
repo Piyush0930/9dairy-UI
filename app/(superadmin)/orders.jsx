@@ -1,8 +1,8 @@
 // app/(tabs)/supadmin/orders.jsx
-import 'react-native-get-random-values'; // <-- polyfill for uuid in RN/Expo
+import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -19,14 +19,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
-const API_BASE = `${process.env.EXPO_PUBLIC_API_URL || ''}/api`; // e.g. http://localhost:5000
+const API_BASE = `${process.env.EXPO_PUBLIC_API_URL || ''}/api`;
 
 export default function OrdersScreen() {
   const { authToken, isLoading: authLoading, isAuthenticated } = useAuth();
-
   const [refreshing, setRefreshing] = useState(false);
   const [ordersData, setOrdersData] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -35,14 +35,12 @@ export default function OrdersScreen() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterPayment, setFilterPayment] = useState('all');
   const [errorMsg, setErrorMsg] = useState(null);
+  const insets = useSafeAreaInsets();
   const fadeAnim = useState(new Animated.Value(0))[0];
 
-  // cache for retailer details to avoid repeated fetches
   const [retailerCache, setRetailerCache] = useState({});
 
-  // token fallback
   const getAuthToken = async () => {
     if (authToken) return authToken;
     try {
@@ -57,7 +55,7 @@ export default function OrdersScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  // ---------- Fetch orders list ----------
+  // Fetch orders list
   const fetchOrders = useCallback(async () => {
     setErrorMsg(null);
     setLoadingList(true);
@@ -76,6 +74,7 @@ export default function OrdersScreen() {
       }
       const json = await res.json();
       const rawOrders = Array.isArray(json.orders) ? json.orders : (Array.isArray(json.data?.orders) ? json.data.orders : (Array.isArray(json) ? json : []));
+      
       const mappedOrders = rawOrders.map(o => ({
         id: o._id,
         orderNumber: o.orderNumber || o._id,
@@ -92,11 +91,15 @@ export default function OrdersScreen() {
           requestedQty: it.requestedQty ?? it.qty ?? 0,
           fulfilledQty: it.fulfilledQty ?? 0,
           reservedQty: it.reservedQty ?? 0,
+          unitPrice: it.unitPrice || 0,
+          totalPrice: (it.requestedQty || 0) * (it.unitPrice || 0),
           note: it.note || '',
           raw: it,
         })) : [],
+        retailer: o.retailer,
         raw: o,
       }));
+
       setOrdersData({ orders: mappedOrders, total: json.total ?? mappedOrders.length });
     } catch (err) {
       console.error('[orders] fetchOrders error', err);
@@ -108,10 +111,9 @@ export default function OrdersScreen() {
     }
   }, [authToken]);
 
-  // ---------- Fetch retailer details by id (uses cache) ----------
+  // Fetch retailer details
   const fetchRetailerDetails = useCallback(async (retailerId) => {
     if (!retailerId) return null;
-    // return cached if exists
     if (retailerCache[retailerId]) return retailerCache[retailerId];
 
     try {
@@ -125,14 +127,11 @@ export default function OrdersScreen() {
       }
       const json = await res.json();
 
-      // many APIs wrap as { success, data: { retailer, performance, recentOrders } }
       const payload = json.data ?? json;
       const retailerObj = payload.retailer ?? payload;
-      // attach performance & recentOrders if present
       if (payload.performance) retailerObj.performance = payload.performance;
       if (Array.isArray(payload.recentOrders)) retailerObj.recentOrders = payload.recentOrders;
 
-      // cache
       setRetailerCache(prev => ({ ...prev, [retailerId]: retailerObj }));
       return retailerObj;
     } catch (err) {
@@ -141,7 +140,7 @@ export default function OrdersScreen() {
     }
   }, [retailerCache, authToken]);
 
-  // ---------- Fetch single order ----------
+  // Fetch single order
   const fetchOrderDetails = useCallback(async (orderId) => {
     setErrorMsg(null);
     setLoadingDetail(true);
@@ -153,7 +152,6 @@ export default function OrdersScreen() {
       if (!res.ok) { const txt = await res.text().catch(()=> ''); throw new Error(`HTTP ${res.status} ${txt}`); }
       const json = await res.json();
 
-      // accept many shapes
       let orderObj = null;
       if (json == null) throw new Error('Empty response');
       if (json._id) orderObj = json;
@@ -165,24 +163,23 @@ export default function OrdersScreen() {
       } else if (json.data && json.data.items && Array.isArray(json.data.items)) orderObj = json.data;
       if (!orderObj) throw new Error('Invalid order detail response');
 
-      // normalize items
       orderObj.items = Array.isArray(orderObj.items) ? orderObj.items.map(it => ({
         product: (it.product && typeof it.product === 'object') ? it.product : (typeof it.product === 'string' ? { _id: it.product, name: it.name || 'Product' } : (it.product ?? {})),
         requestedQty: it.requestedQty ?? it.qty ?? 0,
         fulfilledQty: it.fulfilledQty ?? 0,
         reservedQty: it.reservedQty ?? 0,
+        unitPrice: it.unitPrice || 0,
+        totalPrice: (it.requestedQty || 0) * (it.unitPrice || 0),
         note: it.note || '',
         raw: it,
       })) : [];
 
-      // If retailer is an ID (string), fetch full retailer info using retailer API
       if (orderObj.retailer && typeof orderObj.retailer === 'string') {
         const r = await fetchRetailerDetails(orderObj.retailer);
         if (r) orderObj.retailer = r;
       } else if (orderObj.retailer && orderObj.retailer._id) {
-        // if object already contains _id, still try to attach performance if cached
         const rid = orderObj.retailer._id;
-        const cached = await fetchRetailerDetails(rid); // fetch will return cached quickly
+        const cached = await fetchRetailerDetails(rid);
         if (cached) orderObj.retailer = { ...orderObj.retailer, ...cached };
       }
 
@@ -198,14 +195,13 @@ export default function OrdersScreen() {
     }
   }, [authToken, fetchRetailerDetails]);
 
-  // ---------- Act on order (fulfill/reject/cancel) ----------
+  // Action on order
   const actOnOrder = async ({ orderId, action, items = [], reason = '' }) => {
     const token = await getAuthToken();
     if (!token) { Alert.alert('Auth', 'Not authenticated'); return; }
     const idempotencyKey = uuidv4();
     const url = `${API_BASE}/superadmin/stock-orders/${encodeURIComponent(orderId)}/action`;
     try {
-      // confirm for destructive actions
       if (action === 'reject' || action === 'cancel') {
         const ok = await new Promise(resolve => Alert.alert(`${action}`, `Are you sure you want to ${action} this order?`, [
           { text: 'No', style: 'cancel', onPress: () => resolve(false) },
@@ -213,7 +209,6 @@ export default function OrdersScreen() {
         ]));
         if (!ok) return;
       }
-      // optimistic spinner
       setLoadingDetail(true);
       const body = { action, items, reason, idempotencyKey };
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
@@ -222,10 +217,8 @@ export default function OrdersScreen() {
         throw new Error(`HTTP ${res.status} ${txt}`);
       }
       const json = await res.json();
-      // backend returns the updated order (or message)
       const updatedOrder = json.order || json || null;
       if (updatedOrder && updatedOrder._id) {
-        // If retailer is an ID, try to fetch retailer details to attach
         if (updatedOrder.retailer && typeof updatedOrder.retailer === 'string') {
           const r = await fetchRetailerDetails(updatedOrder.retailer);
           if (r) updatedOrder.retailer = r;
@@ -234,7 +227,6 @@ export default function OrdersScreen() {
         await fetchOrders();
         Alert.alert('Success', `${action} completed`);
       } else {
-        // fallback - re-fetch details and list
         await fetchOrderDetails(orderId);
         await fetchOrders();
         Alert.alert('Success', `${action} completed`);
@@ -247,7 +239,7 @@ export default function OrdersScreen() {
     }
   };
 
-  // ---------- Lock / Release ----------
+  // Lock order
   const lockOrder = async (orderId) => {
     const token = await getAuthToken();
     if (!token) { Alert.alert('Auth', 'Not authenticated'); return; }
@@ -255,7 +247,6 @@ export default function OrdersScreen() {
       const res = await fetch(`${API_BASE}/superadmin/stock-orders/${encodeURIComponent(orderId)}/lock`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
       if (!res.ok) { const txt = await res.text().catch(()=> ''); throw new Error(`HTTP ${res.status} ${txt}`); }
       const updated = await res.json();
-      // attach retailer details if returned as id
       if (updated.retailer && typeof updated.retailer === 'string') {
         const r = await fetchRetailerDetails(updated.retailer);
         if (r) updated.retailer = r;
@@ -269,6 +260,7 @@ export default function OrdersScreen() {
     }
   };
 
+  // Release lock
   const releaseOrderLock = async (orderId, note = '') => {
     const token = await getAuthToken();
     if (!token) { Alert.alert('Auth', 'Not authenticated'); return; }
@@ -289,7 +281,7 @@ export default function OrdersScreen() {
     }
   };
 
-  // initial fetch
+  // Initial fetch
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated && !authToken) {
@@ -304,27 +296,49 @@ export default function OrdersScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchOrders();
-    setRefreshing(false);
-    Alert.alert('✅ Refreshed', 'Orders list updated');
+  };
+
+  // Summary statistics
+  const getOrderStats = () => {
+    const orders = ordersData?.orders || [];
+    return {
+      total: orders.length,
+      pending: orders.filter(o => o.status === 'pending').length,
+      processing: orders.filter(o => o.status === 'processing').length,
+      fulfilled: orders.filter(o => o.status === 'fulfilled').length,
+      locked: orders.filter(o => o.isLocked).length,
+    };
   };
 
   const filteredOrders = (ordersData?.orders || []).filter(order => {
     const q = searchQuery.trim().toLowerCase();
-    const matchesSearch = !q || (order.orderNumber || '').toLowerCase().includes(q) || (order.items?.[0]?.name || '').toLowerCase().includes(q);
+    const matchesSearch = !q || 
+      (order.orderNumber || '').toLowerCase().includes(q) || 
+      (order.items?.[0]?.name || '').toLowerCase().includes(q);
     const matchesStatus = filterStatus === 'all' || order.status === filterStatus;
-    const matchesPayment = filterPayment === 'all' || true;
-    return matchesSearch && matchesStatus && matchesPayment;
+    return matchesSearch && matchesStatus;
   });
 
-  // Reuse your styles and components from previous file
-  const StatusBadge = ({ status, type = 'order' }) => {
+  // Calculate order totals
+  const calculateOrderTotals = (order) => {
+    const subtotal = order.items?.reduce((sum, item) => sum + (item.totalPrice || 0), 0) || 0;
+    return {
+      subtotal,
+      tax: 0, // You can add tax calculation if needed
+      total: subtotal
+    };
+  };
+
+  // UI Components
+  const StatusBadge = ({ status }) => {
     const getStatusConfig = (status) => {
       switch (status) {
         case 'pending': return { color: '#F59E0B', bgColor: '#FEF3C7', text: 'Pending', icon: 'pending' };
         case 'fulfilled': return { color: '#10B981', bgColor: '#D1FAE5', text: 'Fulfilled', icon: 'check-circle' };
-        case 'processing': return { color: '#8B5CF6', bgColor: '#EDE9FE', text: 'Processing', icon: 'settings' };
-        case 'locked': return { color: '#F59E0B', bgColor: '#FEF3C7', text: 'Locked', icon: 'lock' };
-        case 'cancelled': return { color: '#EF4444', bgColor: '#FEE2E2', text: 'Cancelled', icon: 'cancel' };
+        case 'processing': return { color: '#3B82F6', bgColor: '#DBEAFE', text: 'Processing', icon: 'settings' };
+        case 'locked': return { color: '#DC2626', bgColor: '#FEE2E2', text: 'Locked', icon: 'lock' };
+        case 'cancelled': return { color: '#6B7280', bgColor: '#F3F4F6', text: 'Cancelled', icon: 'cancel' };
+        case 'partially_fulfilled': return { color: '#8B5CF6', bgColor: '#EDE9FE', text: 'Partial', icon: 'partially' };
         default: return { color: '#6B7280', bgColor: '#F3F4F6', text: status || 'Unknown', icon: 'help' };
       }
     };
@@ -338,376 +352,787 @@ export default function OrdersScreen() {
   };
 
   const OrderCard = ({ order }) => {
-    const scaleAnim = useState(new Animated.Value(1))[0];
-    const handlePressIn = () => Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true }).start();
-    const handlePressOut = () => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
+    const handleViewDetails = () => {
+      fetchOrderDetails(order.id);
+    };
+
+    const totals = calculateOrderTotals(order);
+
     return (
-      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <TouchableOpacity
-          style={styles.orderCard}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          onPress={() => fetchOrderDetails(order.id)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.orderHeader}>
-            <View style={styles.orderInfo}>
-              <Text style={styles.orderId}>{order.orderNumber}</Text>
-              <Text style={styles.orderDate}>
-                {order.createdAt ? new Date(order.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-              </Text>
-            </View>
-            <View style={styles.statusContainer}>
-              <StatusBadge status={order.status} />
-              {order.isLocked && <StatusBadge status={'locked'} />}
-            </View>
+      <TouchableOpacity style={styles.orderCard} onPress={handleViewDetails} activeOpacity={0.8}>
+        {/* Header Section */}
+        <View style={styles.orderHeader}>
+          <View style={styles.orderInfo}>
+            <Text style={styles.orderId}>{order.orderNumber}</Text>
+            <Text style={styles.orderDate}>
+              {order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { 
+                day: 'numeric', 
+                month: 'short',
+                year: 'numeric'
+              }) : '—'}
+            </Text>
           </View>
-
-          <View style={styles.orderDetails}>
-            <View style={styles.detailRow}>
-              <View style={styles.detailItem}>
-                <Feather name="layers" size={14} color="#64748B" />
-                <Text style={styles.detailText}>{order.items?.length ?? 0} items</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Feather name="hash" size={14} color="#64748B" />
-                <Text style={styles.detailText}>Qty: {order.totalRequestedQty}</Text>
-              </View>
-            </View>
-            <View style={styles.detailRow}>
-              <View style={styles.detailItem}>
-                <Feather name="clock" size={14} color="#64748B" />
-                <Text style={styles.detailText}>Updated {order.updatedAt ? new Date(order.updatedAt).toLocaleString() : '—'}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Feather name="flag" size={14} color="#64748B" />
-                <Text style={styles.detailText}>{order.priority}</Text>
-              </View>
-            </View>
+          <View style={styles.badgeContainer}>
+            <StatusBadge status={order.status} />
+            {order.isLocked && <StatusBadge status={'locked'} />}
           </View>
+        </View>
 
-          <View style={styles.orderFooter}>
-            <View style={styles.amountSection}>
-              <Text style={styles.amountLabel}>Fulfilled</Text>
-              <Text style={styles.amountValue}>{order.totalFulfilledQty}/{order.totalRequestedQty}</Text>
-            </View>
-
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={[styles.actionButton, styles.contactButton]} onPress={() => fetchOrderDetails(order.id)}>
-                <Feather name="eye" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.actionButton, styles.updateButton]} onPress={() => {
-                Alert.alert('Quick Action', `Toggle lock for ${order.orderNumber}`, [{ text: 'OK' }]);
-              }}>
-                <Feather name="lock" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        {/* Order Summary */}
+        <View style={styles.orderSummary}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Items:</Text>
+            <Text style={styles.summaryValue}>{order.items?.length || 0}</Text>
           </View>
-        </TouchableOpacity>
-      </Animated.View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Total Amount:</Text>
+            <Text style={styles.summaryValue}>₹{totals.total.toFixed(2)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Priority:</Text>
+            <Text style={[styles.summaryValue, { 
+              color: order.priority === 'high' ? '#DC2626' : order.priority === 'low' ? '#10B981' : '#3B82F6',
+              fontWeight: '600'
+            }]}>
+              {order.priority || 'normal'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.viewButton]} 
+            onPress={handleViewDetails}
+          >
+            <Feather name="eye" size={14} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>View Details</Text>
+          </TouchableOpacity>
+
+          {order.isLocked ? (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.unlockButton]} 
+              onPress={() => releaseOrderLock(order.id)}
+            >
+              <Feather name="unlock" size={14} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Unlock</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.lockButton]} 
+              onPress={() => lockOrder(order.id)}
+            >
+              <Feather name="lock" size={14} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Lock</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
     );
   };
 
   const StatusFilter = () => {
-    const counts = (ordersData?.orders || []).reduce((acc, o) => { acc[o.status] = (acc[o.status] || 0) + 1; return acc; }, {});
-    const statusFilters = [
-      { key: 'all', label: 'All', count: ordersData?.total ?? (ordersData?.orders?.length ?? 0) },
-      { key: 'pending', label: 'Pending', count: counts['pending'] ?? 0 },
-      { key: 'fulfilled', label: 'Fulfilled', count: counts['fulfilled'] ?? 0 },
-      { key: 'processing', label: 'Processing', count: counts['processing'] ?? 0 },
-      { key: 'cancelled', label: 'Cancelled', count: counts['cancelled'] ?? 0 },
+    const stats = getOrderStats();
+    const filters = [
+      { key: 'all', label: 'All', count: stats.total },
+      { key: 'pending', label: 'Pending', count: stats.pending },
+      { key: 'processing', label: 'Processing', count: stats.processing },
+      { key: 'partially_fulfilled', label: 'Partial', count: stats.processing },
+      { key: 'fulfilled', label: 'Fulfilled', count: stats.fulfilled },
     ];
+
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
-        {statusFilters.map((filter) => (
-          <TouchableOpacity key={filter.key} style={[styles.filterButton, filterStatus === filter.key && styles.filterButtonActive]} onPress={() => setFilterStatus(filter.key)}>
-            <Text style={[styles.filterText, filterStatus === filter.key && styles.filterTextActive]}>{filter.label}</Text>
-            <View style={[styles.filterCount, filterStatus === filter.key && styles.filterCountActive]}><Text style={styles.filterCountText}>{filter.count}</Text></View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.filterContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
+          {filters.map(filter => (
+            <TouchableOpacity 
+              key={filter.key} 
+              style={[styles.filterButton, filterStatus === filter.key && styles.filterButtonActive]} 
+              onPress={() => setFilterStatus(filter.key)}
+            >
+              <Text style={[styles.filterText, filterStatus === filter.key && styles.filterTextActive]}>
+                {filter.label}
+              </Text>
+              <View style={[styles.filterCount, filterStatus === filter.key && styles.filterCountActive]}>
+                <Text style={styles.filterCountText}>{filter.count}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
     );
   };
 
+  const OrderDetailModal = () => {
+    if (!selectedOrder) return null;
+
+    const totals = calculateOrderTotals(selectedOrder);
+
+    return (
+      <Modal
+        visible={showDetailsModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowDetailsModal(false)}
+      >
+        <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Order Details</Text>
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setShowDetailsModal(false)}
+            >
+              <Ionicons name="close" size={24} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.orderDetailContent}>
+            {loadingDetail ? (
+              <View style={styles.centered}>
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <Text style={styles.loadingText}>Loading order details...</Text>
+              </View>
+            ) : (
+              <>
+                {/* Basic Info */}
+                <View style={styles.detailSection}>
+                  <View style={styles.detailHeader}>
+                    <Text style={styles.detailOrderNumber}>{selectedOrder.orderNumber}</Text>
+                    <View style={styles.badgeContainer}>
+                      <StatusBadge status={selectedOrder.status} />
+                      {selectedOrder.isLocked && <StatusBadge status={'locked'} />}
+                    </View>
+                  </View>
+                  <Text style={styles.detailDate}>
+                    Created {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    }) : '—'}
+                  </Text>
+                  <Text style={styles.detailPriority}>Priority: {selectedOrder.priority || 'normal'}</Text>
+                </View>
+
+                {/* Retailer Information */}
+                {selectedOrder.retailer && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.sectionTitle}>Retailer Information</Text>
+                    <View style={styles.retailerInfo}>
+                      <Text style={styles.retailerName}>
+                        {selectedOrder.retailer.shopName || selectedOrder.retailer.name || selectedOrder.retailer.ownerName || '—'}
+                      </Text>
+                      <Text style={styles.retailerContact}>{selectedOrder.retailer.email || selectedOrder.retailer.mobile || ''}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Order Items Table */}
+                <View style={styles.detailSection}>
+                  <Text style={styles.sectionTitle}>Order Items</Text>
+                  <View style={styles.tableContainer}>
+                    {/* Table Header */}
+                    <View style={styles.tableHeader}>
+                      <Text style={[styles.tableHeaderText, styles.tableColProduct]}>Product</Text>
+                      <Text style={[styles.tableHeaderText, styles.tableColQty]}>Qty</Text>
+                      <Text style={[styles.tableHeaderText, styles.tableColPrice]}>Price</Text>
+                      <Text style={[styles.tableHeaderText, styles.tableColTotal]}>Total</Text>
+                    </View>
+                    
+                    {/* Table Rows */}
+                    {(selectedOrder.items || []).map((item, index) => (
+                      <View key={index} style={styles.tableRow}>
+                        <View style={[styles.tableCell, styles.tableColProduct]}>
+                          <Text style={styles.productName}>{item.name}</Text>
+                          {item.note ? <Text style={styles.productNote}>{item.note}</Text> : null}
+                        </View>
+                        <View style={[styles.tableCell, styles.tableColQty]}>
+                          <Text style={styles.quantityText}>{item.requestedQty}</Text>
+                          {item.fulfilledQty > 0 && (
+                            <Text style={styles.fulfilledText}>Fulfilled: {item.fulfilledQty}</Text>
+                          )}
+                        </View>
+                        <View style={[styles.tableCell, styles.tableColPrice]}>
+                          <Text style={styles.priceText}>₹{item.unitPrice?.toFixed(2)}</Text>
+                        </View>
+                        <View style={[styles.tableCell, styles.tableColTotal]}>
+                          <Text style={styles.totalText}>₹{item.totalPrice?.toFixed(2)}</Text>
+                        </View>
+                      </View>
+                    ))}
+                    
+                    {/* Table Footer */}
+                    <View style={styles.tableFooter}>
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Subtotal:</Text>
+                        <Text style={styles.totalValue}>₹{totals.subtotal.toFixed(2)}</Text>
+                      </View>
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Total:</Text>
+                        <Text style={styles.grandTotal}>₹{totals.total.toFixed(2)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.modalActions}>
+                  <TouchableOpacity 
+                    style={[styles.modalButton, styles.fulfillButton]}
+                    onPress={() => {
+                      const items = (selectedOrder.items || []).map(it => ({ 
+                        product: it.product?._id || it.productId || it.product, 
+                        fulfilledQty: Math.max(0, (it.requestedQty || 0) - (it.fulfilledQty || 0)) 
+                      }));
+                      actOnOrder({ 
+                        orderId: selectedOrder._id, 
+                        action: 'fulfill', 
+                        items, 
+                        reason: 'Fulfilled from SuperAdmin panel' 
+                      });
+                    }}
+                  >
+                    <Feather name="check-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.modalButtonText}>Fulfill Remaining</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.modalButton, styles.rejectButton]}
+                    onPress={() => {
+                      actOnOrder({ 
+                        orderId: selectedOrder._id, 
+                        action: 'reject', 
+                        items: [], 
+                        reason: 'Rejected by SuperAdmin' 
+                      });
+                    }}
+                  >
+                    <Feather name="x-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.modalButtonText}>Reject Order</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
+    );
+  };
+
+  const stats = getOrderStats();
+
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      {/* Header */}
+    <Animated.View style={[styles.container, { opacity: fadeAnim, paddingTop: insets.top }]}>
+      {/* Header Section */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Stock Orders</Text>
-          <Text style={styles.headerSubtitle}>Manage internal stock orders</Text>
         </View>
-        <TouchableOpacity style={styles.exportButton} onPress={() => fetchOrders()}>
-          <Feather name="refresh-ccw" size={18} color="#FFFFFF" />
-          <Text style={styles.exportButtonText}>Reload</Text>
-        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} refreshControl={<RefreshControl refreshing={refreshing || loadingList} onRefresh={onRefresh} />} showsVerticalScrollIndicator={false}>
-        {errorMsg ? <View style={styles.errorBanner}><Text style={styles.errorTitle}>Error</Text><Text style={styles.errorText}>{errorMsg}</Text></View> : null}
+      <ScrollView 
+        style={styles.scrollView} 
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={['#3B82F6']}
+            tintColor="#3B82F6"
+          />
+        } 
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Status Filter */}
+        <StatusFilter />
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Orders Overview</Text>
-            <TouchableOpacity onPress={fetchOrders}><MaterialIcons name="refresh" size={20} color="#3B82F6" /></TouchableOpacity>
+        {/* Search Bar */}
+        <View style={styles.searchSection}>
+          <View style={styles.searchInputContainer}>
+            <Feather name="search" size={16} color="#64748B" />
+            <TextInput 
+              style={styles.searchInput} 
+              placeholder="Search orders by number or product..." 
+              value={searchQuery} 
+              onChangeText={setSearchQuery} 
+              placeholderTextColor="#94A3B8" 
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <MaterialIcons name="clear" size={16} color="#64748B" />
+              </TouchableOpacity>
+            )}
           </View>
-
-          {loadingList && !ordersData ? <View style={styles.centered}><ActivityIndicator size="large" /></View> : (!ordersData ? (
-            <View style={styles.emptyState}><Text style={styles.emptyStateTitle}>No orders available</Text><Text style={styles.emptyStateText}>No stock orders were returned by the server.</Text></View>
-          ) : (
-            <>
-              <View style={styles.searchContainer}>
-                <View style={styles.searchInputContainer}>
-                  <Feather name="search" size={20} color="#64748B" />
-                  <TextInput style={styles.searchInput} placeholder="Search orders by number or product..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor="#94A3B8" />
-                  {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')}><MaterialIcons name="clear" size={20} color="#64748B" /></TouchableOpacity>}
-                </View>
-              </View>
-
-              <Text style={styles.filterLabel}>Status</Text>
-              <StatusFilter />
-
-              <View style={styles.ordersList}>
-                {filteredOrders.length === 0 ? (
-                  <View style={styles.emptyState}><Feather name="package" size={48} color="#E2E8F0" /><Text style={styles.emptyStateTitle}>No orders match filters</Text><Text style={styles.emptyStateText}>Try clearing filters or refreshing the list.</Text></View>
-                ) : (filteredOrders.map(order => <OrderCard key={order.id} order={order} />))}
-              </View>
-            </>
-          ))}
         </View>
 
-        <View style={styles.bottomSpacer} />
+        {/* Orders List */}
+        <View style={styles.ordersSection}>
+          {loadingList ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color="#3B82F6" />
+              <Text style={styles.loadingText}>Loading orders...</Text>
+            </View>
+          ) : filteredOrders.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Feather name="package" size={48} color="#CBD5E1" />
+              <Text style={styles.emptyTitle}>No orders found</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery ? 'Try adjusting your search terms' : `No ${filterStatus === 'all' ? '' : filterStatus} orders found`}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.ordersList}>
+              {filteredOrders.map(order => (
+                <OrderCard key={order.id} order={order} />
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Order Details Modal */}
-      <Modal visible={showDetailsModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowDetailsModal(false)}>
-        {loadingDetail && !selectedOrder ? <View style={[styles.modalContainer, styles.centered]}><ActivityIndicator size="large" /></View> : selectedOrder ? (
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedOrder.orderNumber || selectedOrder._id}</Text>
-              <TouchableOpacity style={styles.closeButton} onPress={() => setShowDetailsModal(false)}><MaterialIcons name="close" size={24} color="#000" /></TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalContent}>
-              <View style={styles.modalSection}>
-                <View style={styles.orderHeaderModal}>
-                  <Text style={styles.modalOrderId}>{selectedOrder.orderNumber || selectedOrder._id}</Text>
-                  <View style={styles.statusContainer}>
-                    <StatusBadge status={selectedOrder.status} />
-                    {selectedOrder.isLocked && <StatusBadge status={'locked'} />}
-                  </View>
-                </View>
-                <Text style={styles.orderDateModal}>Created {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString('en-IN') : '—'}</Text>
-                <Text style={[styles.detailText, { marginTop: 6 }]}>Priority: {selectedOrder.priority || 'normal'}</Text>
-                <Text style={[styles.detailText]}>Requested: {selectedOrder.totalRequestedQty ?? selectedOrder.items.reduce((s, it) => s + (it.requestedQty || 0), 0)} • Fulfilled: {selectedOrder.totalFulfilledQty ?? selectedOrder.items.reduce((s, it) => s + (it.fulfilledQty || 0), 0)}</Text>
-
-                {selectedOrder.retailer && (
-                  <View style={{ marginTop: 10 }}>
-                    <Text style={styles.sectionTitle}>Retailer</Text>
-                    <Text style={styles.detailText}>{selectedOrder.retailer.shopName || selectedOrder.retailer.retailerName || selectedOrder.retailer.ownerName || '—'}</Text>
-                    <Text style={styles.detailText}>{selectedOrder.retailer.mobile || ''}</Text>
-                    <Text style={styles.detailText}>{selectedOrder.retailer.address || selectedOrder.retailer.location?.formattedAddress || ''}</Text>
-
-                    {/* show performance if available */}
-                    {selectedOrder.retailer.performance && (
-                      <View style={{ marginTop: 8 }}>
-                        <Text style={[styles.detailText, { fontWeight: '700' }]}>Performance</Text>
-                        <Text style={styles.detailText}>Total Orders: {selectedOrder.retailer.performance.totalOrders ?? '—'}</Text>
-                        <Text style={styles.detailText}>Total Revenue: ₹{(selectedOrder.retailer.performance.totalRevenue ?? 0).toLocaleString()}</Text>
-                        <Text style={styles.detailText}>Completed: {selectedOrder.retailer.performance.completedOrders ?? 0} • Pending: {selectedOrder.retailer.performance.pendingOrders ?? 0}</Text>
-                      </View>
-                    )}
-
-                    {/* recent orders if present */}
-                    {Array.isArray(selectedOrder.retailer.recentOrders) && selectedOrder.retailer.recentOrders.length > 0 && (
-                      <View style={{ marginTop: 8 }}>
-                        <Text style={[styles.detailText, { fontWeight: '700' }]}>Recent Orders</Text>
-                        {selectedOrder.retailer.recentOrders.slice(0,5).map((ro, i) => (
-                          <Text key={i} style={styles.detailText}>
-                            {ro.orderId} — ₹{ro.amount} — {ro.status} — {ro.customerName} • {new Date(ro.createdAt).toLocaleString()}
-                          </Text>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {selectedOrder.createdBy && <Text style={[styles.detailText, { marginTop: 8 }]}>Created by: {selectedOrder.createdBy}</Text>}
-              </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.sectionTitle}>Items</Text>
-                {(selectedOrder.items || []).map((it, idx) => {
-                  const product = it.product || it.raw?.product || {};
-                  const name = product.name || it.name || 'Unknown product';
-                  return (
-                    <View key={idx} style={styles.productItem}>
-                      <View style={styles.productInfo}>
-                        <Text style={styles.productName}>{name}</Text>
-                        <Text style={styles.productQuantity}>Requested: {it.requestedQty} • Fulfilled: {it.fulfilledQty}</Text>
-                        {it.note ? <Text style={[styles.detailText, { marginTop: 4 }]}>Note: {it.note}</Text> : null}
-                      </View>
-                      <Text style={styles.productPrice}>ID: {product._id || it.productId || '—'}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.sectionTitle}>Notes</Text>
-                {(selectedOrder.notes || []).length === 0 ? <Text style={styles.emptySubtext}>No notes available</Text> : (selectedOrder.notes || []).map((n, i) => (
-                  <View key={i} style={{ marginBottom: 8 }}>
-                    <Text style={styles.detailText}>{n.text || JSON.stringify(n)}</Text>
-                    <Text style={styles.timelineTime}>{n.at ? new Date(n.at).toLocaleString('en-IN') : ''}</Text>
-                  </View>
-                ))}
-              </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.sectionTitle}>Logs</Text>
-                {(selectedOrder.logs || selectedOrder.raw?.logs || []).length === 0 ? <Text style={styles.emptySubtext}>No logs available</Text> : (selectedOrder.logs || selectedOrder.raw?.logs || []).map((log, i) => (
-                  <View key={i} style={styles.timelineItem}>
-                    <View style={styles.timelineIconContainer}><View style={[styles.timelineIcon, { backgroundColor: '#3B82F6' }]}><MaterialIcons name="history" size={16} color="#fff" /></View></View>
-                    <View style={styles.timelineContent}>
-                      <Text style={styles.timelineDescription}>{log.action} {log.note ? `— ${log.note}` : ''}</Text>
-                      <Text style={styles.timelineTime}>{log.at ? new Date(log.at).toLocaleString('en-IN') : (log._id || '')}</Text>
-                      {log.by ? <Text style={[styles.detailText, { marginTop: 4 }]}>By: {log.by}</Text> : null}
-                    </View>
-                  </View>
-                ))}
-              </View>
-
-              <View style={styles.modalActions}>
-                {/* Example action buttons */}
-                <TouchableOpacity style={[styles.modalButton, styles.primaryButton]} onPress={() => {
-                  // Build items array for fulfill with remaining qtys
-                  const items = (selectedOrder.items || []).map(it => ({ product: it.product._id || it.productId || it.product, fulfilledQty: Math.max(0, (it.requestedQty || 0) - (it.fulfilledQty || 0)) }));
-                  actOnOrder({ orderId: selectedOrder._id, action: 'fulfill', items, reason: 'Fulfilled from SuperAdmin panel' });
-                }}>
-                  <Text style={styles.modalButtonText}>Fulfill Remaining</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={() => {
-                  actOnOrder({ orderId: selectedOrder._id, action: 'reject', items: [], reason: 'Rejected by SuperAdmin' });
-                }}>
-                  <Text style={[styles.modalButtonText, { color: '#3B82F6' }]}>Reject</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={[styles.modalActions, { marginTop: 0 }]}>
-                {selectedOrder.isLocked ? (
-                  <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={() => releaseOrderLock(selectedOrder._id, 'Released from UI')}>
-                    <Text style={[styles.modalButtonText, { color: '#3B82F6' }]}>Release Lock</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity style={[styles.modalButton, styles.primaryButton]} onPress={() => lockOrder(selectedOrder._id)}>
-                    <Text style={styles.modalButtonText}>Lock Order</Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={() => setShowDetailsModal(false)}>
-                  <Text style={[styles.modalButtonText, { color: '#3B82F6' }]}>Close</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        ) : (
-          <View style={[styles.modalContainer, styles.centered]}>
-            <Text style={styles.emptyStateTitle}>No details</Text>
-            <TouchableOpacity onPress={() => setShowDetailsModal(false)} style={styles.cancelButton}><Text style={styles.cancelButtonText}>Close</Text></TouchableOpacity>
-          </View>
-        )}
-      </Modal>
+      <OrderDetailModal />
     </Animated.View>
   );
 }
 
-// Styles (kept from your original file)
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  scrollView: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
-  headerContent: { flex: 1 },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
-  headerSubtitle: { fontSize: 16, color: '#64748B' },
-  exportButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, gap: 6 },
-  exportButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
-  section: { backgroundColor: '#FFFFFF', margin: 16, marginBottom: 0, borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1E293B' },
-  searchContainer: { marginBottom: 16 },
-  searchInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  searchInput: { flex: 1, fontSize: 16, color: '#1E293B' },
-  filterLabel: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  filterContainer: { marginBottom: 8 },
-  filterButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#E2E8F0' },
-  filterButtonActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
-  filterText: { fontSize: 14, color: '#64748B', fontWeight: '600', marginRight: 6 },
-  filterTextActive: { color: '#FFFFFF' },
-  filterCount: { backgroundColor: '#E2E8F0', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  filterCountActive: { backgroundColor: '#1D4ED8' },
-  filterCountText: { fontSize: 11, color: '#64748B', fontWeight: '700' },
-  ordersList: { gap: 12 },
-  orderCard: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, marginBottom: 12 },
-  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  orderInfo: { flex: 1 },
-  orderId: { fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginBottom: 2 },
-  orderDate: { fontSize: 14, color: '#64748B' },
-  statusContainer: { flexDirection: 'row', gap: 6 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
-  statusText: { fontSize: 11, fontWeight: '700' },
-  orderDetails: { gap: 6, marginBottom: 12 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  detailItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  detailText: { fontSize: 13, color: '#64748B' },
-  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  amountSection: { flex: 1 },
-  amountLabel: { fontSize: 12, color: '#64748B', marginBottom: 2 },
-  amountValue: { fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginBottom: 2 },
-  actionButtons: { flexDirection: 'row', gap: 6 },
-  actionButton: { paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
-  contactButton: { backgroundColor: '#3B82F6' },
-  updateButton: { backgroundColor: '#F59E0B' },
-  emptyState: { alignItems: 'center', paddingVertical: 40 },
-  emptyStateTitle: { fontSize: 18, fontWeight: 'bold', color: '#64748B', marginTop: 12, marginBottom: 8 },
-  emptyStateText: { fontSize: 14, color: '#94A3B8', textAlign: 'center' },
-  bottomSpacer: { height: 20 },
-
-  // Modal styles same as earlier
-  modalContainer: { flex: 1, backgroundColor: '#FFFFFF' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1E293B' },
-  closeButton: { padding: 4 },
-  modalContent: { flex: 1 },
-  modalSection: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  orderHeaderModal: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  modalOrderId: { fontSize: 24, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
-  orderDateModal: { fontSize: 16, color: '#64748B' },
-  productItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  productInfo: { flex: 1 },
-  productName: { fontSize: 16, color: '#1E293B', marginBottom: 2 },
-  productQuantity: { fontSize: 14, color: '#64748B' },
-  productPrice: { fontSize: 16, fontWeight: '600', color: '#1E293B' },
-
-  timelineItem: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  timelineIconContainer: { alignItems: 'center' },
-  timelineIcon: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  timelineContent: { flex: 1 },
-  timelineDescription: { fontSize: 16, color: '#1E293B', marginBottom: 4 },
-  timelineTime: { fontSize: 14, color: '#64748B' },
-
-  modalActions: { flexDirection: 'row', gap: 12, padding: 20 },
-  modalButton: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  primaryButton: { backgroundColor: '#3B82F6' },
-  secondaryButton: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3B82F6' },
-  modalButtonText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
-
-  centered: { padding: 24, alignItems: 'center' },
-  errorBanner: { backgroundColor: '#fee2e2', padding: 12, margin: 16, borderRadius: 8 },
-  errorTitle: { color: '#7f1d1d', fontWeight: '800' },
-  errorText: { color: '#7f1d1d', marginTop: 6 },
-  cancelButton: { backgroundColor: '#F5F5F5', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, marginTop: 12 },
-  cancelButtonText: { color: '#374151', fontWeight: '700' },
-  emptySubtext: { color: '#64748B' },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F8FAFC' 
+  },
+  scrollView: { 
+    flex: 1 
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  headerContent: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  filterContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  filterScrollContent: {
+    gap: 8,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginRight: 8,
+  },
+  filterButtonActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  filterText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  filterTextActive: {
+    color: '#FFFFFF',
+  },
+  filterCount: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  filterCountActive: {
+    backgroundColor: '#1D4ED8',
+  },
+  filterCountText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '700',
+  },
+  searchSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1E293B',
+    paddingVertical: 4,
+  },
+  ordersSection: {
+    paddingHorizontal: 20,
+  },
+  ordersList: {
+    gap: 12,
+  },
+  orderCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  orderInfo: {
+    flex: 1,
+  },
+  orderId: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  orderDate: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  badgeContainer: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  orderSummary: {
+    marginBottom: 16,
+    gap: 6,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  viewButton: {
+    backgroundColor: '#3B82F6',
+  },
+  lockButton: {
+    backgroundColor: '#DC2626',
+  },
+  unlockButton: {
+    backgroundColor: '#10B981',
+  },
+  actionButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  centered: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 6,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  orderDetailContent: {
+    flex: 1,
+  },
+  detailSection: {
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    marginBottom: 0,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  detailOrderNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1E293B',
+    flex: 1,
+  },
+  detailDate: {
+    fontSize: 16,
+    color: '#64748B',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  detailPriority: {
+    fontSize: 14,
+    color: '#94A3B8',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  retailerInfo: {
+    gap: 6,
+  },
+  retailerName: {
+    fontSize: 18,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  retailerContact: {
+    fontSize: 16,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  // Table Styles
+  tableContainer: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  tableHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  tableCell: {
+    justifyContent: 'center',
+  },
+  tableColProduct: {
+    flex: 4,
+  },
+  tableColQty: {
+    flex: 2,
+    alignItems: 'center',
+  },
+  tableColPrice: {
+    flex: 2,
+    alignItems: 'flex-end',
+  },
+  tableColTotal: {
+    flex: 2,
+    alignItems: 'flex-end',
+  },
+  productName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  productNote: {
+    fontSize: 12,
+    color: '#64748B',
+    fontStyle: 'italic',
+  },
+  quantityText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  fulfilledText: {
+    fontSize: 11,
+    color: '#10B981',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  priceText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  totalText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  tableFooter: {
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  totalLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  totalValue: {
+    fontSize: 14,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  grandTotal: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  modalActions: {
+    padding: 16,
+    gap: 12,
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+    justifyContent: 'center',
+  },
+  fulfillButton: {
+    backgroundColor: '#10B981',
+  },
+  rejectButton: {
+    backgroundColor: '#DC2626',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
 });

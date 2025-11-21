@@ -10,7 +10,7 @@ export default function AdminLayout() {
   const { logout } = useAuth();
   const { openScanner } = useScanner();
   const router = useRouter();
-  const insets = useSafeAreaInsets(); // Now this will work
+  const insets = useSafeAreaInsets();
 
   const handleLogout = () => {
     Alert.alert(
@@ -34,11 +34,6 @@ export default function AdminLayout() {
     );
   };
 
-  // open scanner on the Orders screen
- const handleOpenScanner = () => {
-  openScanner();
-};
-
   return (
     <Tabs
       screenOptions={{
@@ -56,41 +51,54 @@ export default function AdminLayout() {
         tabBarLabelStyle: { fontSize: 12, fontWeight: "600" },
       }}
     >
+
+      {/* ---------------- ORDER FIXED ---------------- */}
       <Tabs.Screen
         name="orders"
         options={{
           title: "Orders",
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="list-alt" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) =>
+            <MaterialIcons name="list-alt" size={size} color={color} />,
         }}
       />
+
       <Tabs.Screen
         name="products"
         options={{
           title: "Products",
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="inventory" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) =>
+            <MaterialIcons name="inventory" size={size} color={color} />,
         }}
       />
+
       <Tabs.Screen
         name="inventory"
         options={{
           title: "Inventory",
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="inventory-2" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) =>
+            <MaterialIcons name="inventory-2" size={size} color={color} />,
         }}
       />
+
       <Tabs.Screen
-        name="categories"
+        name="stock"
         options={{
-          title: "Categories",
-          tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} />,
+          title: "Stock",
+          tabBarIcon: ({ color, size }) =>
+            <Ionicons name="grid" size={size} color={color} />,
         }}
       />
+
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="person" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) =>
+            <MaterialIcons name="person" size={size} color={color} />,
         }}
       />
+
+      {/* HIDDEN ROUTES */}
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="offline-order" options={{ href: null }} />
     </Tabs>

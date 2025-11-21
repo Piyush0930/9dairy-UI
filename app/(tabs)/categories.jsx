@@ -1,10 +1,13 @@
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
+import { useProfile } from "@/contexts/ProfileContext";
 import { Feather, FontAwesome, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   Alert,
+  Animated,
   Dimensions,
   Image,
   Modal,
@@ -17,11 +20,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAuth } from "@/contexts/AuthContext";
-import { useProfile } from "@/contexts/ProfileContext";
 
 const getImageSource = (imageName) => {
-  // If it's a full URL (from Cloudinary/database), use it directly
   if (
     imageName &&
     (imageName.startsWith("http") || imageName.startsWith("https"))
@@ -29,7 +29,6 @@ const getImageSource = (imageName) => {
     return { uri: imageName };
   }
 
-  // Otherwise, use local asset mapping
   const imageMap = {
     "MilkCategory.png": require("../../assets/images/MilkCategory.png"),
     "ButterCategoryCategory.png": require("../../assets/images/ButterCategoryCategory.png"),
@@ -44,7 +43,7 @@ const getImageSource = (imageName) => {
     "flavored-milk.png": require("../../assets/images/milk.png"),
     "Dairy-SweetCategory.png": require("../../assets/images/Dairy-SweetCategory.png"),
   };
-  return imageMap[imageName] || require("../../assets/images/MilkCategory.png"); // fallback
+  return imageMap[imageName] || require("../../assets/images/MilkCategory.png");
 };
 
 const { width } = Dimensions.get("window");
@@ -55,75 +54,47 @@ export default function CategoriesScreen() {
   const [sortOption, setSortOption] = useState("relevance");
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [showProductModal, setShowProductModal] = useState(false);
   const { getTotalItems, items, addToCart, removeFromCart, getItemQuantity } =
     useCart();
   const cartCount = getTotalItems();
   const insets = useSafeAreaInsets();
 
-  // Context hooks for auth and retailer data
   const { authToken } = useAuth();
   const token = authToken;
   const { assignedRetailer } = useProfile();
 
-  //for favourite products ---
-  const [favoriteProducts, setFavoriteProducts] = useState([]);
-  const toggleFavorite = (productId) => {
-    setFavoriteProducts((prev) => {
-      if (prev.includes(productId)) {
-        // If already favorited → remove it
-        return prev.filter((id) => id !== productId);
-      } else {
-        // If not favorited → add it
-        return [...prev, productId];
-      }
-    });
-  };
-
-  // State for dynamic data
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // API Base URL
   const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
-  // Fetch categories from API
   const fetchCategories = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/catalog/categories`);
       const data = await response.json();
-
-      if (response.ok && Array.isArray(data)) {
-        return data;
-      } else {
-        return [];
-      }
+      return response.ok && Array.isArray(data) ? data : [];
     } catch (error) {
       console.error("Error fetching categories:", error);
       return [];
     }
   };
 
-  // Fetch products from API
   const fetchProducts = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/catalog/products`);
       const data = await response.json();
-
-      if (response.ok && Array.isArray(data)) {
-        return data;
-      } else {
-        return [];
-      }
+      return response.ok && Array.isArray(data) ? data : [];
     } catch (error) {
       console.error("Error fetching products:", error);
       return [];
     }
   };
 
-  // Fetch inventory for assigned retailer
   const fetchInventory = async () => {
     try {
       if (!token) {
@@ -139,21 +110,175 @@ export default function CategoriesScreen() {
       });
 
       const payload = await res.json();
-
-      if (!res.ok) {
-        console.warn("Inventory error:", payload);
-        return [];
-      }
-      
-      return payload?.data?.inventory || [];
-      
+      return res.ok ? payload?.data?.inventory || [] : [];
     } catch (err) {
       console.error("Inventory fetch error:", err);
       return [];
     }
   };
 
-  // Attach inventory to products
+  // Enhanced pricing calculation with null checks
+  const calculateProductPricing = (product, inventoryItem, currentCartQuantity = 0) => {
+    if (!product) {
+      console.warn("calculateProductPricing called with null product");
+      return {
+        basePrice: 0,
+        currentPrice: 0,
+        hasDiscount: false,
+        discountPercentage: 0,
+        savings: 0,
+        bulkPricingTiers: [],
+        currentAppliedSlab: null,
+        totalCartQuantity: currentCartQuantity,
+        isExtendedRange: false,
+        singlePieceDiscount: false
+      };
+    }
+
+    const basePrice = inventoryItem?.sellingPrice || product.price || 0;
+    let currentPrice = basePrice;
+    let hasDiscount = false;
+    let discountPercentage = 0;
+    let savings = 0;
+    const bulkPricingTiers = [];
+    let currentAppliedSlab = null;
+    let isExtendedRange = false;
+    let singlePieceDiscount = false;
+    let singlePieceDiscountPercentage = 0;
+
+    // Get active pricing slabs
+    if (inventoryItem?.enableQuantityPricing && inventoryItem.pricingSlabs) {
+      const activeSlabs = inventoryItem.pricingSlabs
+        .filter(slab => slab.isActive)
+        .sort((a, b) => a.minQuantity - b.minQuantity);
+
+      // Check for single piece discount (minQuantity = 1)
+      const singlePieceSlab = activeSlabs.find(slab => slab.minQuantity === 1);
+      if (singlePieceSlab) {
+        singlePieceDiscount = true;
+        singlePieceDiscountPercentage = singlePieceSlab.discountType === 'PERCENTAGE' 
+          ? singlePieceSlab.discountValue 
+          : Math.round(((basePrice - (basePrice - singlePieceSlab.discountValue)) / basePrice) * 100);
+        
+        if (singlePieceSlab.discountType === 'FLAT') {
+          currentPrice = Math.max(0, basePrice - singlePieceSlab.discountValue);
+        } else if (singlePieceSlab.discountType === 'PERCENTAGE') {
+          const discountAmount = (basePrice * singlePieceSlab.discountValue) / 100;
+          currentPrice = Math.max(0, basePrice - discountAmount);
+        }
+        
+        hasDiscount = currentPrice < basePrice;
+        discountPercentage = singlePieceDiscountPercentage;
+      }
+
+      if (activeSlabs.length > 0) {
+        // Find applicable slab - with extended range logic
+        let applicableSlab = activeSlabs.find(slab => 
+          currentCartQuantity >= slab.minQuantity && currentCartQuantity <= slab.maxQuantity
+        );
+
+        // ✅ EXTENDED RANGE LOGIC: Use last slab if quantity exceeds all ranges
+        if (!applicableSlab && currentCartQuantity > 0) {
+          applicableSlab = activeSlabs[activeSlabs.length - 1];
+          isExtendedRange = currentCartQuantity >= applicableSlab.minQuantity;
+          
+          if (!isExtendedRange) {
+            applicableSlab = null;
+          }
+        }
+
+        if (applicableSlab && applicableSlab.minQuantity > 1) {
+          currentAppliedSlab = applicableSlab;
+          
+          if (applicableSlab.discountType === 'FLAT') {
+            currentPrice = Math.max(0, basePrice - applicableSlab.discountValue);
+          } else if (applicableSlab.discountType === 'PERCENTAGE') {
+            const discountAmount = (basePrice * applicableSlab.discountValue) / 100;
+            currentPrice = Math.max(0, basePrice - discountAmount);
+          }
+          
+          hasDiscount = currentPrice < basePrice;
+          discountPercentage = applicableSlab.discountType === 'PERCENTAGE' 
+            ? applicableSlab.discountValue 
+            : Math.round(((basePrice - currentPrice) / basePrice) * 100);
+          savings = (basePrice - currentPrice) * currentCartQuantity;
+        }
+
+        // Create bulk pricing tiers for display - with extended range info
+        const tierQuantities = [1, 6, 15];
+        
+        tierQuantities.forEach(quantity => {
+          let applicableTierSlab = activeSlabs.find(slab => 
+            quantity >= slab.minQuantity && quantity <= slab.maxQuantity
+          );
+
+          if (!applicableTierSlab && quantity > activeSlabs[activeSlabs.length - 1].maxQuantity) {
+            applicableTierSlab = activeSlabs[activeSlabs.length - 1];
+          }
+
+          let discountedPrice = basePrice;
+          let tierDiscountPercentage = 0;
+          let tierSavings = 0;
+          let tierIsExtendedRange = false;
+
+          if (applicableTierSlab) {
+            tierIsExtendedRange = quantity > applicableTierSlab.maxQuantity;
+            
+            if (applicableTierSlab.discountType === 'FLAT') {
+              discountedPrice = Math.max(0, basePrice - applicableTierSlab.discountValue);
+            } else if (applicableTierSlab.discountType === 'PERCENTAGE') {
+              const discountAmount = (basePrice * applicableTierSlab.discountValue) / 100;
+              discountedPrice = Math.max(0, basePrice - discountAmount);
+            }
+            tierDiscountPercentage = applicableTierSlab.discountType === 'PERCENTAGE' 
+              ? applicableTierSlab.discountValue 
+              : Math.round(((basePrice - discountedPrice) / basePrice) * 100);
+            tierSavings = (basePrice - discountedPrice) * quantity;
+          }
+
+          bulkPricingTiers.push({
+            quantity,
+            pricePerPiece: Math.round(discountedPrice * 100) / 100,
+            totalPrice: Math.round(discountedPrice * quantity * 100) / 100,
+            savings: Math.round(tierSavings * 100) / 100,
+            discountPercentage: Math.round(tierDiscountPercentage),
+            slabRange: tierIsExtendedRange ? `${quantity}+ pieces` : `${quantity} piece${quantity > 1 ? 's' : ''}`,
+            hasDiscount: applicableTierSlab !== null,
+            isExtendedRange: tierIsExtendedRange
+          });
+        });
+      }
+    } else {
+      // For non-discount products, show same price for all tiers
+      const tierQuantities = [1, 6, 15];
+      tierQuantities.forEach(quantity => {
+        bulkPricingTiers.push({
+          quantity,
+          pricePerPiece: basePrice,
+          totalPrice: Math.round(basePrice * quantity * 100) / 100,
+          savings: 0,
+          discountPercentage: 0,
+          slabRange: `${quantity} piece${quantity > 1 ? 's' : ''}`,
+          hasDiscount: false,
+          isExtendedRange: false
+        });
+      });
+    }
+
+    return {
+      basePrice,
+      currentPrice: Math.round(currentPrice * 100) / 100,
+      hasDiscount,
+      discountPercentage,
+      savings: Math.round(savings * 100) / 100,
+      bulkPricingTiers,
+      currentAppliedSlab,
+      totalCartQuantity: currentCartQuantity,
+      isExtendedRange,
+      singlePieceDiscount
+    };
+  };
+
   const attachInventoryToProducts = (products, inventory) => {
     if (!Array.isArray(products)) return [];
     if (!Array.isArray(inventory)) return products;
@@ -165,71 +290,48 @@ export default function CategoriesScreen() {
       if (!product) return;
       
       const productId = product?.id || product?._id;
-      const productName = product?.name?.toLowerCase().trim();
       
       if (productId) {
         inventoryMap.set(productId, {
           ...inv,
           currentStock: inv.currentStock,
           sellingPrice: inv.sellingPrice,
-          isActive: inv.isActive
-        });
-      }
-      
-      if (productName) {
-        inventoryMap.set(productName, {
-          ...inv,
-          currentStock: inv.currentStock,
-          sellingPrice: inv.sellingPrice,
-          isActive: inv.isActive
+          isActive: inv.isActive,
+          enableQuantityPricing: inv.enableQuantityPricing,
+          pricingSlabs: inv.pricingSlabs || [],
+          soldByRetailer: true
         });
       }
     });
 
     return products.map(product => {
       const productId = product?.id || product?._id;
-      const productName = product?.name?.toLowerCase().trim();
       
       let matchedInventory = null;
       
-      // Try ID match first
       if (productId && inventoryMap.has(productId)) {
         matchedInventory = inventoryMap.get(productId);
-      } 
-      // Then try name match
-      else if (productName && inventoryMap.has(productName)) {
-        matchedInventory = inventoryMap.get(productName);
       }
       
-      // Determine if retailer sells this product
       const soldByRetailer = matchedInventory !== null;
-      
-      // Stock status: Only mark as out of stock if retailer sells it AND has zero stock
       const retailerStock = matchedInventory?.currentStock;
       const isOutOfStock = soldByRetailer && retailerStock !== undefined && Number(retailerStock) <= 0;
       
-      // Price priority: retailer price first, then product price
-      const price = matchedInventory?.sellingPrice ?? 
-                   product?.discountedPrice ?? 
-                   product?.price ?? 0;
-
       return {
         ...product,
         _inventory: matchedInventory,
         outOfStock: isOutOfStock,
-        price: price,
+        basePrice: matchedInventory?.sellingPrice || product.price || 0,
         stock: product?.stock,
         currentStock: matchedInventory?.currentStock,
         soldByRetailer: soldByRetailer,
         retailerPrice: matchedInventory?.sellingPrice,
-        // Add availability info
         availableFromRetailer: soldByRetailer && !isOutOfStock,
         availableFromCatalog: !soldByRetailer,
       };
     });
   };
 
-  // Fetch data on component mount
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -241,15 +343,12 @@ export default function CategoriesScreen() {
         ]);
 
         setCategories(categoriesData);
-        
-        // Attach inventory to products and set them
         const productsWithInventory = attachInventoryToProducts(productsData, inventoryData);
         setProducts(productsWithInventory);
         setInventory(inventoryData);
 
       } catch (error) {
         console.error("Error fetching data:", error);
-        // Fallback to products without inventory
         const productsData = await fetchProducts();
         setProducts(productsData);
       } finally {
@@ -260,7 +359,6 @@ export default function CategoriesScreen() {
     fetchData();
   }, [token, assignedRetailer]);
 
-  // Handle pull to refresh
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -271,8 +369,6 @@ export default function CategoriesScreen() {
       ]);
 
       setCategories(categoriesData);
-      
-      // Attach inventory to products
       const productsWithInventory = attachInventoryToProducts(productsData, inventoryData);
       setProducts(productsWithInventory);
       setInventory(inventoryData);
@@ -284,13 +380,11 @@ export default function CategoriesScreen() {
     }
   };
 
-  // Filter and sort products
   let filteredProducts =
     selectedCategory === "all"
       ? products
       : products.filter((p) => p.category?._id?.toString() === selectedCategory);
 
-  // Apply search filter
   if (searchQuery.trim()) {
     const query = searchQuery.toLowerCase();
     filteredProducts = filteredProducts.filter((p) =>
@@ -299,50 +393,623 @@ export default function CategoriesScreen() {
   }
 
   if (sortOption === "pricelow") {
-    filteredProducts = [...filteredProducts].sort((a, b) => a.price - b.price);
+    filteredProducts = [...filteredProducts].sort((a, b) => a.basePrice - b.basePrice);
   } else if (sortOption === "pricehigh") {
-    filteredProducts = [...filteredProducts].sort((a, b) => b.price - a.price);
+    filteredProducts = [...filteredProducts].sort((a, b) => b.basePrice - a.basePrice);
   } else if (sortOption === "rating") {
     filteredProducts = [...filteredProducts].sort(
       (a, b) => (b.rating?.average || 0) - (a.rating?.average || 0)
     );
   }
 
-  const cartTotal = items.reduce(
-    (total, item) => total + item.product.price * item.quantity,
-    0
-  );
+  const handleAddToCart = (product, quantity = 1) => {
+    if (!product) {
+      console.warn("Attempted to add null product to cart");
+      return;
+    }
 
-  // Handle add to cart with inventory check
-  const handleAddToCart = (product) => {
-    // Check if product is out of stock at retailer
     if (product.outOfStock) {
-      if (product.soldByRetailer) {
-        Alert.alert("Out of stock", "This product is currently out of stock at your assigned retailer.");
-      } else {
-        Alert.alert("Not available", "This product is not currently available from your assigned retailer.");
-      }
+      Alert.alert("Out of stock", "This product is currently out of stock.");
       return;
     }
     
-    // If product is not sold by retailer but has catalog price, allow adding to cart
     if (!product.soldByRetailer) {
       Alert.alert(
         "Product Not Available", 
-        "This product is not available from your assigned retailer, but you can browse it in our catalog.",
+        "This product is not available from your assigned retailer.",
         [{ text: "OK" }]
       );
       return;
     }
     
-    addToCart(product);
+    for (let i = 0; i < quantity; i++) {
+      addToCart(product);
+    }
   };
 
-  // Get availability status for styling
   const getAvailabilityStatus = (product) => {
-    if (!product.soldByRetailer) return 'catalog';
+    if (!product) return 'not_available';
+    if (!product.soldByRetailer) return 'not_available';
     if (product.outOfStock) return 'out_of_stock';
     return 'available';
+  };
+
+  const openProductDetail = (product) => {
+    if (!product) {
+      console.warn("Attempted to open null product detail");
+      return;
+    }
+    setSelectedProduct(product);
+    setShowProductModal(true);
+  };
+
+  const getSimilarProducts = (currentProduct) => {
+    if (!currentProduct) return [];
+    return products
+      .filter(product => 
+        product._id !== currentProduct._id && 
+        product.category?._id === currentProduct.category?._id &&
+        getAvailabilityStatus(product) === 'available'
+      )
+      .slice(0, 4);
+  };
+
+  // Product Card Component
+  const ProductCard = ({ product }) => {
+    if (!product) {
+      console.warn("ProductCard rendered with null product");
+      return null;
+    }
+
+    const cartQuantity = getItemQuantity(product._id);
+    const pricing = calculateProductPricing(product, product._inventory, cartQuantity);
+    const availabilityStatus = getAvailabilityStatus(product);
+    const [savingsScale] = useState(new Animated.Value(1));
+    const [savingsOpacity] = useState(new Animated.Value(0));
+    const [buttonScale] = useState(new Animated.Value(1));
+
+    // Enhanced animation for savings pop effect - Show for single piece discount too
+    useEffect(() => {
+      if (pricing.savings > 0 || (pricing.singlePieceDiscount && cartQuantity > 0)) {
+        savingsOpacity.setValue(0);
+        savingsScale.setValue(0.8);
+        
+        Animated.parallel([
+          Animated.spring(savingsScale, {
+            toValue: 1,
+            tension: 100,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+          Animated.timing(savingsOpacity, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          })
+        ]).start();
+      } else {
+        Animated.timing(savingsOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    }, [pricing.savings, pricing.singlePieceDiscount, cartQuantity]);
+
+    const animateButton = () => {
+      Animated.sequence([
+        Animated.spring(buttonScale, {
+          toValue: 0.95,
+          tension: 100,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+        Animated.spring(buttonScale, {
+          toValue: 1,
+          tension: 100,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
+
+    const handleAddPress = () => {
+      animateButton();
+      handleAddToCart(product);
+    };
+
+    const handleRemovePress = () => {
+      animateButton();
+      removeFromCart(product._id);
+    };
+
+    // Calculate savings for single piece discount
+    const singlePieceSavings = pricing.singlePieceDiscount && cartQuantity > 0 
+      ? (pricing.basePrice - pricing.currentPrice) * cartQuantity 
+      : 0;
+
+    return (
+      <TouchableOpacity 
+        style={styles.productCard}
+        onPress={() => openProductDetail(product)}
+        activeOpacity={0.9}
+      >
+        {/* Blue Discount Badge - Top Right Corner */}
+        {pricing.hasDiscount && availabilityStatus === 'available' && (
+          <View style={styles.discountBadge}>
+            <Text style={styles.discountBadgeText}>
+              {pricing.discountPercentage}% OFF
+            </Text>
+            {pricing.isExtendedRange && (
+              <Text style={styles.extendedRangeText}>EXTENDED</Text>
+            )}
+          </View>
+        )}
+
+        {/* Status Badge - Short Titles */}
+        {availabilityStatus === 'out_of_stock' && (
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>OUT OF STOCK</Text>
+          </View>
+        )}
+        {availabilityStatus === 'not_available' && (
+          <View style={[styles.statusBadge, styles.notAvailableBadge]}>
+            <Text style={styles.statusBadgeText}>NOT AVAILABLE</Text>
+          </View>
+        )}
+
+        {/* Product Content */}
+        <View style={styles.productContent}>
+          <View style={styles.productLeft}>
+            <Text style={styles.productName}>{product.name}</Text>
+            <Text style={styles.productUnit}>{product.unit}</Text>
+
+            {/* Dynamic Price Display */}
+            <View style={styles.mainPriceContainer}>
+              <View style={styles.priceRow}>
+                <Text style={styles.price}>₹{pricing.currentPrice}</Text>
+                {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && (
+                  <Text style={styles.priceOriginal}>₹{pricing.basePrice}</Text>
+                )}
+              </View>
+              
+              {/* Savings Badge - Show for both single piece and bulk discounts */}
+              {(pricing.savings > 0 || singlePieceSavings > 0) && (
+                <Animated.View 
+                  style={[
+                    styles.savingsBadge,
+                    { 
+                      transform: [{ scale: savingsScale }],
+                      opacity: savingsOpacity 
+                    }
+                  ]}
+                >
+                  <Text style={styles.savingsBadgeText}>
+                    You saved ₹{pricing.savings > 0 ? pricing.savings : singlePieceSavings}
+                  </Text>
+                </Animated.View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.productRight}>
+            {product.image || product.imageUrl ? (
+              <Image
+                source={getImageSource(product.image || product.imageUrl)}
+                style={styles.productImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.productImagePlaceholder}>
+                <Text style={styles.productImageText}>📦</Text>
+              </View>
+            )}
+            
+            {/* Quantity Controls - Below Image */}
+            {availabilityStatus === 'available' && (
+              <View style={styles.quantitySection}>
+                {cartQuantity > 0 ? (
+                  <Animated.View 
+                    style={[
+                      styles.quantityControls,
+                      { transform: [{ scale: buttonScale }] }
+                    ]}
+                  >
+                    <TouchableOpacity 
+                      style={styles.qtyBtn} 
+                      onPress={handleRemovePress}
+                    >
+                      <Ionicons name="remove" size={20} color={Colors.light.tint} />
+                    </TouchableOpacity>
+                    <Text style={styles.qtyText}>{cartQuantity}</Text>
+                    <TouchableOpacity 
+                      style={styles.qtyBtn} 
+                      onPress={handleAddPress}
+                    >
+                      <Ionicons name="add" size={20} color={Colors.light.tint} />
+                    </TouchableOpacity>
+                  </Animated.View>
+                ) : (
+                  <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+                    <TouchableOpacity
+                      style={styles.addButton}
+                      onPress={handleAddPress}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.addButtonText}>ADD</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Bulk Pricing Tiers */}
+        {availabilityStatus === 'available' && pricing.bulkPricingTiers.length > 0 && (
+          <View style={styles.bulkPricingSection}>
+            <View style={styles.bulkPricingHeader}>
+              <Text style={styles.bulkPricingTitle}>BULK SAVINGS</Text>
+              {pricing.isExtendedRange && (
+                <View style={styles.extendedRangeIndicator}>
+                  <Ionicons name="infinite" size={12} color="#3B82F6" />
+                  <Text style={styles.extendedRangeIndicatorText}>
+                    Extended discounts
+                  </Text>
+                </View>
+              )}
+            </View>
+            {pricing.bulkPricingTiers.filter(tier => tier.quantity > 1).map((tier, index) => (
+              <View key={index}>
+                <View style={styles.bulkTier}>
+                  <View style={styles.tierInfo}>
+                    <View style={styles.tierHeader}>
+                      <Text style={styles.tierPriceText}>
+                        ₹{tier.pricePerPiece}/pc for {tier.slabRange}
+                      </Text>
+                      {tier.isExtendedRange && (
+                        <View style={styles.tierExtendedBadge}>
+                          <Text style={styles.tierExtendedText}>EXTENDED</Text>
+                        </View>
+                      )}
+                    </View>
+                    {tier.hasDiscount && (
+                      <Text style={styles.tierDiscountText}>
+                        {tier.discountPercentage}% OFF • Save ₹{tier.savings}
+                      </Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.tierAddButton,
+                      tier.isExtendedRange && styles.tierAddButtonExtended
+                    ]}
+                    onPress={() => handleAddToCart(product, tier.quantity)}
+                  >
+                    <Text style={styles.tierAddButtonText}>
+                      ADD {tier.quantity}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {index < pricing.bulkPricingTiers.filter(tier => tier.quantity > 1).length - 1 && (
+                  <View style={styles.tierSeparator} />
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  // Product Detail Modal Component
+  const ProductDetailModal = ({ product, visible, onClose }) => {
+    if (!product) {
+      return (
+        <Modal
+          visible={visible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={onClose}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.productInfoSection}>
+              <Text style={styles.errorText}>Product information not available</Text>
+            </View>
+          </View>
+        </Modal>
+      );
+    }
+
+    const cartQuantity = getItemQuantity(product._id);
+    const pricing = calculateProductPricing(product, product._inventory, cartQuantity);
+    const availabilityStatus = getAvailabilityStatus(product);
+    const similarProducts = getSimilarProducts(product);
+    const [buttonScale] = useState(new Animated.Value(1));
+
+    const animateButton = () => {
+      Animated.sequence([
+        Animated.spring(buttonScale, {
+          toValue: 0.95,
+          tension: 100,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+        Animated.spring(buttonScale, {
+          toValue: 1,
+          tension: 100,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
+
+    const handleAddPress = () => {
+      animateButton();
+      handleAddToCart(product);
+    };
+
+    const handleRemovePress = () => {
+      animateButton();
+      removeFromCart(product._id);
+    };
+
+    return (
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
+        <View style={styles.modalContainer}>
+          <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
+            {/* Header with Close Button */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Product Image */}
+            <View style={styles.productImageContainer}>
+              {product.image || product.imageUrl ? (
+                <Image
+                  source={getImageSource(product.image || product.imageUrl)}
+                  style={styles.largeProductImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.largeProductImagePlaceholder}>
+                  <Text style={styles.largeProductImageText}>📦</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Product Info */}
+            <View style={styles.productInfoSection}>
+              <View style={styles.productHeaderRow}>
+                <View style={styles.productTitleContainer}>
+                  <Text style={styles.productDetailName}>{product.name}</Text>
+                  <Text style={styles.productDetailUnit}>{product.unit}</Text>
+                </View>
+                
+                {/* Price and Add Counter - Top Right */}
+                <View style={styles.priceCounterContainer}>
+                  <View style={styles.detailPriceContainer}>
+                    <Text style={styles.detailPrice}>₹{pricing.currentPrice}</Text>
+                    {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && (
+                      <Text style={styles.detailPriceOriginal}>₹{pricing.basePrice}</Text>
+                    )}
+                  </View>
+
+                  {/* Add to Cart Controls */}
+                  {availabilityStatus === 'available' && (
+                    <View style={styles.detailQuantitySection}>
+                      {cartQuantity > 0 ? (
+                        <Animated.View 
+                          style={[
+                            styles.detailQuantityControls,
+                            { transform: [{ scale: buttonScale }] }
+                          ]}
+                        >
+                          <TouchableOpacity 
+                            style={styles.detailQtyBtn} 
+                            onPress={handleRemovePress}
+                          >
+                            <Ionicons name="remove" size={20} color={Colors.light.tint} />
+                          </TouchableOpacity>
+                          <Text style={styles.detailQtyText}>{cartQuantity}</Text>
+                          <TouchableOpacity 
+                            style={styles.detailQtyBtn} 
+                            onPress={handleAddPress}
+                          >
+                            <Ionicons name="add" size={20} color={Colors.light.tint} />
+                          </TouchableOpacity>
+                        </Animated.View>
+                      ) : (
+                        <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+                          <TouchableOpacity
+                            style={styles.detailAddButton}
+                            onPress={handleAddPress}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.detailAddButtonText}>ADD</Text>
+                          </TouchableOpacity>
+                        </Animated.View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {pricing.hasDiscount && (
+                <View style={styles.detailDiscountBadge}>
+                  <Text style={styles.detailDiscountBadgeText}>
+                    {pricing.discountPercentage}% OFF
+                  </Text>
+                </View>
+              )}
+
+              {/* Bulk Savings Section */}
+              {availabilityStatus === 'available' && pricing.bulkPricingTiers.length > 0 && (
+                <View style={styles.detailBulkSection}>
+                  <Text style={styles.detailBulkTitle}>Bulk Savings</Text>
+                  {pricing.bulkPricingTiers.map((tier, index) => (
+                    <View key={index} style={styles.detailBulkTier}>
+                      <View style={styles.detailTierInfo}>
+                        <Text style={styles.detailTierRange}>{tier.slabRange}</Text>
+                        <Text style={styles.detailTierPrice}>₹{tier.pricePerPiece}/piece</Text>
+                        {tier.hasDiscount && (
+                          <Text style={styles.detailTierDiscount}>
+                            Save {tier.discountPercentage}% • ₹{tier.savings} total
+                          </Text>
+                        )}
+                      </View>
+                      <TouchableOpacity
+                        style={styles.detailTierAddButton}
+                        onPress={() => handleAddToCart(product, tier.quantity)}
+                      >
+                        <Text style={styles.detailTierAddButtonText}>
+                          ADD {tier.quantity}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Description */}
+              <View style={styles.descriptionSection}>
+                <Text style={styles.sectionTitle}>Description</Text>
+                <Text style={styles.descriptionText}>
+                  {product.description || 'No description available for this product.'}
+                </Text>
+              </View>
+
+              {/* Similar Products - Larger Cards */}
+              {similarProducts.length > 0 && (
+                <View style={styles.similarProductsSection}>
+                  <Text style={styles.sectionTitle}>Similar Products</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.similarProductsList}>
+                      {similarProducts.map(similarProduct => {
+                        const similarPricing = calculateProductPricing(similarProduct, similarProduct._inventory);
+                        const similarCartQuantity = getItemQuantity(similarProduct._id);
+                        
+                        return (
+                          <View key={similarProduct._id} style={styles.similarProductCard}>
+                            <TouchableOpacity 
+                              onPress={() => {
+                                setSelectedProduct(similarProduct);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Image
+                                source={getImageSource(similarProduct.image || similarProduct.imageUrl)}
+                                style={styles.similarProductImage}
+                                resizeMode="cover"
+                              />
+                              <View style={styles.similarProductInfo}>
+                                <Text style={styles.similarProductName} numberOfLines={2}>
+                                  {similarProduct.name}
+                                </Text>
+                                <Text style={styles.similarProductUnit}>{similarProduct.unit}</Text>
+                                <View style={styles.similarProductPriceRow}>
+                                  <Text style={styles.similarProductPrice}>
+                                    ₹{similarPricing.currentPrice}
+                                  </Text>
+                                  {similarPricing.hasDiscount && similarPricing.currentPrice < similarPricing.basePrice && (
+                                    <Text style={styles.similarProductPriceOriginal}>
+                                      ₹{similarPricing.basePrice}
+                                    </Text>
+                                  )}
+                                </View>
+                                
+                                {/* Add to Cart in Similar Products */}
+                                <View style={styles.similarProductActions}>
+                                  {similarCartQuantity > 0 ? (
+                                    <View style={styles.similarQuantityControls}>
+                                      <TouchableOpacity 
+                                        style={styles.similarQtyBtn} 
+                                        onPress={() => removeFromCart(similarProduct._id)}
+                                      >
+                                        <Ionicons name="remove" size={16} color={Colors.light.tint} />
+                                      </TouchableOpacity>
+                                      <Text style={styles.similarQtyText}>{similarCartQuantity}</Text>
+                                      <TouchableOpacity 
+                                        style={styles.similarQtyBtn} 
+                                        onPress={() => handleAddToCart(similarProduct)}
+                                      >
+                                        <Ionicons name="add" size={16} color={Colors.light.tint} />
+                                      </TouchableOpacity>
+                                    </View>
+                                  ) : (
+                                    <TouchableOpacity
+                                      style={styles.similarAddButton}
+                                      onPress={() => handleAddToCart(similarProduct)}
+                                      activeOpacity={0.7}
+                                    >
+                                      <Text style={styles.similarAddButtonText}>ADD</Text>
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
+
+                                {/* Bulk Pricing in Similar Products */}
+                                {similarPricing.bulkPricingTiers.length > 0 && similarPricing.bulkPricingTiers.some(tier => tier.quantity > 1) && (
+                                  <View style={styles.similarBulkSection}>
+                                    <Text style={styles.similarBulkTitle}>Bulk Save</Text>
+                                    {similarPricing.bulkPricingTiers
+                                      .filter(tier => tier.quantity > 1)
+                                      .slice(0, 2)
+                                      .map((tier, tierIndex) => (
+                                        <TouchableOpacity
+                                          key={tierIndex}
+                                          style={styles.similarBulkButton}
+                                          onPress={() => handleAddToCart(similarProduct, tier.quantity)}
+                                        >
+                                          <Text style={styles.similarBulkButtonText}>
+                                            ADD {tier.quantity} • ₹{tier.pricePerPiece}/pc
+                                          </Text>
+                                        </TouchableOpacity>
+                                      ))}
+                                  </View>
+                                )}
+                              </View>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+
+          {/* Fixed Continue to Cart Button - Solid Red */}
+          {cartQuantity > 0 && (
+            <View style={styles.continueToCartContainer}>
+              <TouchableOpacity 
+                style={styles.continueToCartButton}
+                onPress={() => {
+                  onClose();
+                  router.push("/cart");
+                }}
+              >
+                <Text style={styles.continueButtonText}>
+                  Continue to Cart • {cartQuantity} items • ₹{pricing.currentPrice * cartQuantity}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </Modal>
+    );
   };
 
   return (
@@ -353,18 +1020,16 @@ export default function CategoriesScreen() {
           <View style={styles.headerIcons}>
             <TouchableOpacity
               style={styles.iconButton}
-              onPress={() => {
-                setShowSearch(!showSearch);
-              }}
+              onPress={() => setShowSearch(!showSearch)}
               activeOpacity={0.7}
             >
-              <Ionicons name="search" size={22} color="#1A1A1A" />
+              <Ionicons name="search" size={24} color="#1A1A1A" />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.iconButton}
+              style={styles.cartButton}
               onPress={() => router.push("/cart")}
             >
-              <Ionicons name="cart-outline" size={22} color="#1A1A1A" />
+              <Ionicons name="cart-outline" size={24} color="#1A1A1A" />
               {cartCount > 0 && (
                 <View style={styles.cartBadge}>
                   <Text style={styles.cartBadgeText}>{cartCount}</Text>
@@ -373,16 +1038,6 @@ export default function CategoriesScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Retailer Info */}
-        {/* {assignedRetailer && (
-          <View style={styles.retailerInfo}>
-            <Ionicons name="storefront" size={14} color={Colors.light.tint} />
-            <Text style={styles.retailerInfoText}>
-              Shopping from: {assignedRetailer.shopName}
-            </Text>
-          </View>
-        )} */}
 
         {showSearch && (
           <View style={styles.searchContainer}>
@@ -403,26 +1058,14 @@ export default function CategoriesScreen() {
           </View>
         )}
 
+        {/* Compact Save Tip */}
         <View style={styles.saveTip}>
-          <Text style={styles.saveTipIcon}>💰</Text>
           <Text style={styles.saveTipText}>
-            Save more — try sort by &apos;Price per Kg&apos;
+            💰 Save more with quantity discounts - Extended discounts apply automatically!
           </Text>
         </View>
 
         <View style={styles.filterRow}>
-          <TouchableOpacity
-            style={styles.gridButton}
-            onPress={() => {
-              console.log("Grid view toggled");
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.gridIcon} />
-            <View style={styles.gridIcon} />
-            <View style={styles.gridIcon} />
-            <View style={styles.gridIcon} />
-          </TouchableOpacity>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -430,9 +1073,7 @@ export default function CategoriesScreen() {
           >
             <TouchableOpacity
               style={styles.filterButton}
-              onPress={() => {
-                setShowSortModal(true);
-              }}
+              onPress={() => setShowSortModal(true)}
               activeOpacity={0.7}
             >
               <Text style={styles.filterButtonText}>Sort</Text>
@@ -440,9 +1081,7 @@ export default function CategoriesScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.filterButton}
-              onPress={() => {
-                console.log("Rated 4.0+ filter toggled");
-              }}
+              onPress={() => console.log("Rated 4.0+ filter toggled")}
               activeOpacity={0.7}
             >
               <FontAwesome name="star" size={14} color="#F59E0B" />
@@ -463,12 +1102,12 @@ export default function CategoriesScreen() {
                 styles.categoryItem,
                 selectedCategory === "all" && styles.categoryItemActive,
               ]}
-              onPress={() => {
-                console.log("All categories selected");
-                setSelectedCategory("all");
-              }}
+              onPress={() => setSelectedCategory("all")}
               activeOpacity={0.7}
             >
+              <View style={styles.categoryIconContainer}>
+                <Text style={styles.allCategoryIcon}>📦</Text>
+              </View>
               <Text
                 style={[
                   styles.categoryName,
@@ -484,13 +1123,9 @@ export default function CategoriesScreen() {
                 key={`category-${category._id}-${index}`}
                 style={[
                   styles.categoryItem,
-                  selectedCategory === category._id &&
-                    styles.categoryItemActive,
+                  selectedCategory === category._id && styles.categoryItemActive,
                 ]}
-                onPress={() => {
-                  console.log(`Category ${category.name} selected`);
-                  setSelectedCategory(category._id);
-                }}
+                onPress={() => setSelectedCategory(category._id)}
                 activeOpacity={0.7}
               >
                 <View
@@ -508,8 +1143,7 @@ export default function CategoriesScreen() {
                 <Text
                   style={[
                     styles.categoryName,
-                    selectedCategory === category._id &&
-                      styles.categoryNameActive,
+                    selectedCategory === category._id && styles.categoryNameActive,
                   ]}
                   numberOfLines={3}
                 >
@@ -529,235 +1163,9 @@ export default function CategoriesScreen() {
             }
           >
             {filteredProducts.length > 0 ? (
-              filteredProducts.map((product) => {
-                const availabilityStatus = getAvailabilityStatus(product);
-                
-                return (
-                  <View key={product._id} style={[
-                    styles.productCard,
-                    availabilityStatus === 'out_of_stock' && styles.productCardOutOfStock,
-                    availabilityStatus === 'catalog' && styles.productCardCatalog
-                  ]}>
-                    {/* Availability Badge */}
-                    {availabilityStatus === 'out_of_stock' && (
-                      <View style={styles.availabilityBadge}>
-                        <Text style={styles.availabilityBadgeText}>OUT OF STOCK</Text>
-                      </View>
-                    )}
-                    {availabilityStatus === 'catalog' && (
-                      <View style={styles.catalogBadge}>
-                        <Text style={styles.catalogBadgeText}>CATALOG</Text>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={styles.heartButton}
-                      onPress={() => toggleFavorite(product._id)}
-                      activeOpacity={0.6}
-                    >
-                      <FontAwesome
-                        name={
-                          favoriteProducts.includes(product._id)
-                            ? "heart"
-                            : "heart-o"
-                        }
-                        size={20}
-                        color="#EF4444"
-                      />
-                    </TouchableOpacity>
-                    <View style={styles.productHeader}>
-                      {product.discount > 0 ? (
-                        <View style={styles.offerBadge}>
-                          <Text style={styles.offerBadgeText}>
-                            {product.discount}% OFF MRP
-                          </Text>
-                        </View>
-                      ) : (
-                        // Empty placeholder to maintain spacing
-                        <View style={{ height: 22 }} />
-                      )}
-                    </View>
-
-                    <View style={styles.productContent}>
-                      <View style={styles.productInfo}>
-                        <Text style={styles.productName}>{product.name}</Text>
-                        <Text style={styles.productUnit}>{product.unit}</Text>
-
-                        {/* Retailer Stock Info */}
-                        {product.soldByRetailer && product.currentStock !== undefined && (
-                          <Text style={[
-                            styles.stockInfo,
-                            availabilityStatus === 'out_of_stock' && styles.stockInfoOut
-                          ]}>
-                            Stock: {product.currentStock}
-                          </Text>
-                        )}
-
-                        {/* Catalog Notice */}
-                        {availabilityStatus === 'catalog' && (
-                          <Text style={styles.catalogNotice}>
-                            Available in catalog
-                          </Text>
-                        )}
-
-                        {product.rating && product.rating.average > 0 && (
-                          <View style={styles.ratingRow}>
-                            <View style={styles.ratingBadge}>
-                              <FontAwesome
-                                name="star"
-                                size={12}
-                                color="#FFFFFF"
-                              />
-                              <Text style={styles.ratingText}>
-                                {product.rating.average}
-                              </Text>
-                            </View>
-                            <Text style={styles.reviewsText}>
-                              ({product.rating.count})
-                            </Text>
-                          </View>
-                        )}
-
-                        <View style={styles.priceRow}>
-                          <View style={styles.priceContainer}>
-                            {/* Retailer Price Indicator */}
-                            {product.soldByRetailer && product.retailerPrice && (
-                              <Text style={styles.retailerPriceIndicator}>Retailer Price</Text>
-                            )}
-                            
-                            <Text style={styles.price}>
-                              ₹{product.price}
-                            </Text>
-                            {product.discount > 0 && product.discountedPrice && (
-                              <Text style={styles.priceOriginal}>
-                                ₹{product.discountedPrice}
-                              </Text>
-                            )}
-                          </View>
-                          {product.bulkPrices &&
-                            (product.bulkPrices[6] || product.bulkPrices[15]) && (
-                              <>
-                                <View style={styles.priceSeparator} />
-                                <View style={styles.bulkContainer}>
-                                  {product.bulkPrices[6] && (
-                                    <Text style={styles.bulkPrice}>
-                                      6+ @ ₹{product.bulkPrices[6]}
-                                    </Text>
-                                  )}
-                                  {product.bulkPrices[15] && (
-                                    <Text style={styles.bulkPrice}>
-                                      15+ @ ₹{product.bulkPrices[15]}
-                                    </Text>
-                                  )}
-                                </View>
-                              </>
-                            )}
-                        </View>
-                      </View>
-
-                      <View style={styles.productRight}>
-                        {product.image || product.imageUrl ? (
-                          <Image
-                            source={getImageSource(
-                              product.image || product.imageUrl
-                            )}
-                            style={[
-                              styles.productImage,
-                              availabilityStatus === 'out_of_stock' && styles.productImageOut,
-                              availabilityStatus === 'catalog' && styles.productImageCatalog
-                            ]}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.productImagePlaceholder}>
-                            <Text style={styles.productImageText}>📦</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-
-                    <View style={styles.productActions}>
-
-                    {/* OUT OF STOCK or CATALOG → same grey disabled UI */}
-                    {(availabilityStatus === 'out_of_stock' || availabilityStatus === 'catalog') ? (
-                      <View style={styles.outOfStockButton}>
-                        <Text style={styles.outOfStockButtonText}>Out of Stock</Text>
-                      </View>
-                    ) : getItemQuantity(product._id) === 0 ? (
-                      
-                      /* AVAILABLE → ADD BUTTON */
-                      <TouchableOpacity
-                        style={styles.addButton}
-                        onPress={() => handleAddToCart(product)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.addButtonText}>ADD</Text>
-                        <Text style={styles.addButtonPlus}>+</Text>
-                      </TouchableOpacity>
-
-                    ) : (
-
-                      /* AVAILABLE → QUANTITY CONTROLS */
-                      <View style={styles.addButton}>
-                        <TouchableOpacity
-                          onPress={() => removeFromCart(product._id)}
-                          style={styles.qtyBtn}
-                          activeOpacity={0.7}
-                        >
-                          <Feather
-                            name="minus"
-                            size={16}
-                            color={Colors.light.tint}
-                          />
-                        </TouchableOpacity>
-
-                        <Text style={styles.qtyText}>{getItemQuantity(product._id)}</Text>
-
-                        <TouchableOpacity
-                          onPress={() => handleAddToCart(product)}
-                          style={styles.qtyBtn}
-                          activeOpacity={0.7}
-                        >
-                          <Feather
-                            name="plus"
-                            size={16}
-                            color={Colors.light.tint}
-                          />
-                        </TouchableOpacity>
-                      </View>
-
-  )}
-
-  {/* Bulk actions only if AVAILABLE */}
-  {availabilityStatus === 'available' && (
-    <>
-      <TouchableOpacity
-        style={styles.bulkAction}
-        onPress={() => {
-          for (let i = 0; i < 6; i++) handleAddToCart(product);
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.bulkActionText}>Add 6</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.bulkAction}
-        onPress={() => {
-          for (let i = 0; i < 15; i++) handleAddToCart(product);
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.bulkActionText}>Add 15</Text>
-      </TouchableOpacity>
-    </>
-  )}
-
-</View>
-
-                  </View>
-                );
-              })
+              filteredProducts.map((product) => (
+                <ProductCard key={product._id} product={product} />
+              ))
             ) : (
               <View style={styles.requestSection}>
                 <View style={styles.requestIcon}>
@@ -768,13 +1176,11 @@ export default function CategoriesScreen() {
                     Looking for something else?
                   </Text>
                   <Text style={styles.requestSubtitle}>
-                    Tell us and we&apos;ll add it to the shop
+                    Tell us and we'll add it to the shop
                   </Text>
                   <TouchableOpacity
                     style={styles.requestButton}
-                    onPress={() => {
-                      console.log("Request a product clicked");
-                    }}
+                    onPress={() => console.log("Request a product clicked")}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.requestButtonText}>
@@ -788,6 +1194,7 @@ export default function CategoriesScreen() {
         </View>
       </View>
 
+      {/* Sort Modal */}
       <Modal
         visible={showSortModal}
         transparent
@@ -807,90 +1214,43 @@ export default function CategoriesScreen() {
               </TouchableOpacity>
             </View>
             <View style={styles.sortOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.sortOption,
-                  sortOption === "relevance" && styles.sortOptionActive,
-                ]}
-                onPress={() => {
-                  setSortOption("relevance");
-                  setShowSortModal(false);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
+              {["relevance", "pricelow", "pricehigh", "rating"].map((option) => (
+                <TouchableOpacity
+                  key={option}
                   style={[
-                    styles.sortOptionText,
-                    sortOption === "relevance" && styles.sortOptionTextActive,
+                    styles.sortOption,
+                    sortOption === option && styles.sortOptionActive,
                   ]}
+                  onPress={() => {
+                    setSortOption(option);
+                    setShowSortModal(false);
+                  }}
+                  activeOpacity={0.7}
                 >
-                  Relevance
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.sortOption,
-                  sortOption === "pricelow" && styles.sortOptionActive,
-                ]}
-                onPress={() => {
-                  setSortOption("pricelow");
-                  setShowSortModal(false);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.sortOptionText,
-                    sortOption === "pricelow" && styles.sortOptionTextActive,
-                  ]}
-                >
-                  Price: Low to High
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.sortOption,
-                  sortOption === "pricehigh" && styles.sortOptionActive,
-                ]}
-                onPress={() => {
-                  setSortOption("pricehigh");
-                  setShowSortModal(false);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.sortOptionText,
-                    sortOption === "pricehigh" && styles.sortOptionTextActive,
-                  ]}
-                >
-                  Price: High to Low
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.sortOption,
-                  sortOption === "rating" && styles.sortOptionActive,
-                ]}
-                onPress={() => {
-                  setSortOption("rating");
-                  setShowSortModal(false);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.sortOptionText,
-                    sortOption === "rating" && styles.sortOptionTextActive,
-                  ]}
-                >
-                  Rating
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.sortOptionText,
+                      sortOption === option && styles.sortOptionTextActive,
+                    ]}
+                  >
+                    {option === "pricelow" && "Price: Low to High"}
+                    {option === "pricehigh" && "Price: High to Low"}
+                    {option === "rating" && "Rating"}
+                    {option === "relevance" && "Relevance"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* Product Detail Modal */}
+      <ProductDetailModal
+        product={selectedProduct}
+        visible={showProductModal}
+        onClose={() => setShowProductModal(false)}
+      />
     </View>
   );
 }
@@ -919,12 +1279,20 @@ const styles = StyleSheet.create({
   },
   headerIcons: {
     flexDirection: "row",
-    gap: 8,
+    gap: 12,
   },
   iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.light.backgroundLight,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cartButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: Colors.light.backgroundLight,
     justifyContent: "center",
     alignItems: "center",
@@ -932,15 +1300,14 @@ const styles = StyleSheet.create({
   },
   cartBadge: {
     position: "absolute",
-    top: 6,
-    right: 6,
+    top: 8,
+    right: 8,
     backgroundColor: Colors.light.tint,
-    borderRadius: 10,
+    borderRadius: 12,
     minWidth: 20,
     height: 20,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 6,
   },
   cartBadgeText: {
     color: "#FFFFFF",
@@ -955,36 +1322,31 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 8,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
     color: Colors.light.text,
   },
   searchIcon: {
     padding: 4,
   },
+  // Compact Save Tip
   saveTip: {
-    flexDirection: "row",
-    alignItems: "center",
     backgroundColor: "#FFFAEB",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     marginHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 8,
     marginBottom: 12,
-    gap: 8,
-  },
-  saveTipIcon: {
-    fontSize: 18,
   },
   saveTipText: {
-    flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     color: "#92400E",
     fontWeight: "500",
+    textAlign: 'center',
   },
   filterRow: {
     flexDirection: "row",
@@ -992,26 +1354,9 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: "center",
   },
-  gridButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "#FFF0F5",
-    padding: 10,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-  },
-  gridIcon: {
-    width: 6,
-    height: 6,
-    borderRadius: 2,
-    backgroundColor: "#1A1A1A",
-  },
   filterButtons: {
     flexDirection: "row",
     gap: 8,
-    paddingRight: 16,
   },
   filterButton: {
     flexDirection: "row",
@@ -1040,8 +1385,6 @@ const styles = StyleSheet.create({
   sidebar: {
     width: 90,
     backgroundColor: Colors.light.white,
-    borderRightWidth: 4,
-    borderRightColor: Colors.light.tint,
   },
   sidebarContent: {
     paddingVertical: 8,
@@ -1062,7 +1405,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
-  categoryIcon: {
+  allCategoryIcon: {
     fontSize: 24,
   },
   categoryImage: {
@@ -1085,113 +1428,100 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   productsList: {
-    padding: 16,
+    paddingHorizontal: 4,
     paddingBottom: 100,
-    gap: 16,
+    gap: 8,
   },
   productCard: {
     backgroundColor: Colors.light.white,
     borderRadius: 16,
     padding: 16,
+    marginHorizontal: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
     position: "relative",
+    minHeight: 220,
   },
-  productCardOutOfStock: {
-    backgroundColor: "#FFF7F7",
-    borderColor: "#F3D3D3",
-  },
-  productCardCatalog: {
-    backgroundColor: "#F8FAFF",
-    borderColor: "#E3F2FD",
-  },
-  productHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  buyersInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  buyersIcon: {
-    fontSize: 14,
-  },
-  buyersText: {
-    fontSize: 12,
-    color: "#7C3AED",
-    fontWeight: "600",
-  },
-  offerBadge: {
+  // Blue Discount Badge
+  discountBadge: {
+    position: "absolute",
+    right: 12,
+    top: 12,
     backgroundColor: "#3B82F6",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    zIndex: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+    alignItems: 'center',
   },
-  offerBadgeText: {
+  discountBadgeText: {
     color: "#FFFFFF",
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  extendedRangeText: {
+    color: "#FFFFFF",
+    fontSize: 8,
     fontWeight: "700",
-    letterSpacing: 0.3,
+    marginTop: 2,
+    opacity: 0.9,
+  },
+  // Status Badges - Short Titles
+  statusBadge: {
+    position: "absolute",
+    right: 12,
+    top: 12,
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    zIndex: 2,
+  },
+  notAvailableBadge: {
+    backgroundColor: "#F59E0B",
+  },
+  statusBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
   productContent: {
     flexDirection: "row",
-    gap: 12,
+    gap: 16,
+    marginTop: 8,
   },
-  productInfo: {
+  productLeft: {
     flex: 1,
+    justifyContent: "space-between",
   },
   productName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
     color: Colors.light.text,
     marginBottom: 4,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   productUnit: {
-    fontSize: 13,
+    fontSize: 14,
     color: Colors.light.textSecondary,
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 8,
-  },
-  ratingBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#10B981",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 3,
-  },
-  ratingText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  reviewsText: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-  },
-  vegIcon: {
-    fontSize: 12,
-    marginBottom: 8,
+  mainPriceContainer: {
+    marginBottom: 12,
   },
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginBottom: 8,
-    marginTop: 10,
+    marginBottom: 12,
   },
   price: {
     fontSize: 20,
@@ -1199,116 +1529,173 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
   },
   priceOriginal: {
-    fontSize: 14,
+    fontSize: 16,
     color: Colors.light.textSecondary,
     textDecorationLine: "line-through",
   },
-  priceContainer: {
-    alignItems: "flex-start",
-    minWidth: 100,
+  // Light Savings Badge
+  savingsBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
-  priceSeparator: {
-    width: 1,
-    height: 40,
-    backgroundColor: "#E8E8E8",
-    marginHorizontal: 4,
-  },
-  bulkContainer: {
-    alignItems: "flex-start",
-    gap: 4,
-  },
-  bulkPrice: {
-    fontSize: 14,
-    color: "#1E40AF",
-    fontWeight: "700",
-    letterSpacing: 0.2,
+  savingsBadgeText: {
+    color: "#065F46",
+    fontSize: 12,
+    fontWeight: "600",
   },
   productRight: {
     alignItems: "center",
-    gap: 8,
+    justifyContent: "space-between",
   },
   productImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
+    width: 90,
+    height: 90,
+    borderRadius: 8,
     backgroundColor: "#F5F5F5",
-  },
-  productImageOut: {
-    opacity: 0.45,
-  },
-  productImageCatalog: {
-    opacity: 0.7,
   },
   productImagePlaceholder: {
-    width: 100,
-    height: 100,
+    width: 90,
+    height: 90,
     backgroundColor: "#F5F5F5",
-    borderRadius: 12,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
   },
   productImageText: {
-    fontSize: 36,
+    fontSize: 24,
   },
-  heartButton: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 36,
-    height: 36,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 1,
-  },
-  productActions: {
-    flexDirection: "row",
-    gap: width < 400 ? 4 : 8,
+  // Quantity Section - Compact Add Button
+  quantitySection: {
     marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F0F0F0",
+    width: '100%',
+    alignItems: 'center',
   },
-  addButton: {
-    flex: 1,
+  quantityControls: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: Colors.light.tint,
+    justifyContent: "space-between",
+    backgroundColor: "#F0F9FF",
     borderRadius: 8,
-    paddingVertical: width < 400 ? 6 : 10,
-    gap: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    width: 120,
   },
   qtyBtn: {
     padding: 4,
   },
   qtyText: {
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "600",
     color: Colors.light.text,
-    minWidth: 28,
+    minWidth: 30,
     textAlign: "center",
   },
-  addButtonText: {
-    fontSize: width < 400 ? 14 : 16,
-    fontWeight: "700",
-    color: Colors.light.tint,
-  },
-  addButtonPlus: {
-    fontSize: width < 400 ? 14 : 16,
-    fontWeight: "700",
-    color: Colors.light.tint,
-  },
-  bulkAction: {
-    paddingHorizontal: width < 400 ? 8 : 16,
+  addButton: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 8,
     paddingVertical: 10,
-    justifyContent: "center",
+    paddingHorizontal: 16,
     alignItems: "center",
+    width: 80,
   },
-  bulkActionText: {
+  addButtonText: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.light.tint,
+    color: "#DC2626",
+  },
+  // Enhanced Bulk Pricing Section
+  bulkPricingSection: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: "#F8F9FA",
+    borderRadius: 8,
+  },
+  bulkPricingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  bulkPricingTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.light.text,
+  },
+  extendedRangeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  extendedRangeIndicatorText: {
+    fontSize: 10,
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  bulkTier: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  tierInfo: {
+    flex: 1,
+  },
+  tierHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  tierPriceText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E40AF",
+  },
+  tierExtendedBadge: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  tierExtendedText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '700',
+  },
+  tierDiscountText: {
+    fontSize: 12,
+    color: "#10B981",
+    fontWeight: "600",
+  },
+  tierSeparator: {
+    height: 1,
+    backgroundColor: "#E5E7EB",
+    marginVertical: 6,
+  },
+  tierAddButton: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    minWidth: 70,
+  },
+  tierAddButtonExtended: {
+    backgroundColor: "#EFF6FF",
+  },
+  tierAddButtonText: {
+    color: "#DC2626",
+    fontWeight: "600",
+    fontSize: 12,
+    textAlign: "center",
   },
   requestSection: {
     backgroundColor: Colors.light.white,
@@ -1317,6 +1704,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 16,
     alignItems: "center",
+    marginHorizontal: 8,
   },
   requestIcon: {
     width: 60,
@@ -1355,52 +1743,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: Colors.light.tint,
-  },
-  cartSummary: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.light.white,
-    borderTopWidth: 1,
-    borderTopColor: "#E8E8E8",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  cartSummaryContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  cartSummaryLeft: {
-    flex: 1,
-  },
-  cartSummaryItems: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.light.textSecondary,
-    marginBottom: 2,
-  },
-  cartSummaryTotal: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  viewCartButton: {
-    backgroundColor: Colors.light.tint,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 8,
-  },
-  viewCartText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
   },
   modalOverlay: {
     flex: 1,
@@ -1453,107 +1795,345 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.light.tint,
   },
-  // New styles for retailer-specific features
-  retailerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F0F9FF',
-    padding: 8,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E0F2FE',
-  },
-  retailerInfoText: {
-    fontSize: 12,
-    color: Colors.light.tint,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  // Availability badges
-  availabilityBadge: {
-    position: "absolute",
-    left: 16,
-    top: 16,
-    backgroundColor: "#EF4444",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    zIndex: 1,
-  },
-  availabilityBadgeText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 10,
-  },
-  catalogBadge: {
-    position: "absolute",
-    left: 16,
-    top: 16,
-    backgroundColor: "#3B82F6",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    zIndex: 1,
-  },
-  catalogBadgeText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 10,
-  },
-  // Stock information
-  stockInfo: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-    fontStyle: "italic",
-  },
-  stockInfoOut: {
-    color: "#EF4444",
-  },
-  // Catalog notice
-  catalogNotice: {
-    fontSize: 12,
-    color: "#3B82F6",
-    marginBottom: 6,
-    fontStyle: "italic",
-  },
-  // Retailer price indicator
-  retailerPriceIndicator: {
-    fontSize: 10,
-    color: Colors.light.tint,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  // Button variations
-  outOfStockButton: {
+  // Product Detail Modal Styles - Updated Layout
+  modalContainer: {
     flex: 1,
-    alignItems: "center",
+    backgroundColor: Colors.light.white,
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 16,
+    paddingTop: 60,
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  productImageContainer: {
+    height: 300,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+  },
+  largeProductImage: {
+    width: '80%',
+    height: '80%',
+    borderRadius: 12,
+  },
+  largeProductImagePlaceholder: {
+    width: 200,
+    height: 200,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 12,
     justifyContent: "center",
+    alignItems: "center",
+  },
+  largeProductImageText: {
+    fontSize: 48,
+  },
+  productInfoSection: {
+    padding: 20,
+  },
+  // New Layout for Product Header Row
+  productHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  productTitleContainer: {
+    flex: 1,
+    marginRight: 16,
+  },
+  productDetailName: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  productDetailUnit: {
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+  },
+  priceCounterContainer: {
+    alignItems: 'flex-end',
+    minWidth: 120,
+  },
+  detailPriceContainer: {
+    alignItems: 'flex-end',
+    marginBottom: 12,
+  },
+  detailPrice: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: Colors.light.text,
+  },
+  detailPriceOriginal: {
+    fontSize: 20,
+    color: Colors.light.textSecondary,
+    textDecorationLine: "line-through",
+  },
+  detailDiscountBadge: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 20,
+  },
+  detailDiscountBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  detailQuantitySection: {
+    marginBottom: 0,
+  },
+  detailQuantityControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F0F9FF",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    width: 120,
+  },
+  detailQtyBtn: {
+    padding: 4,
+  },
+  detailQtyText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.light.text,
+    minWidth: 30,
+    textAlign: "center",
+  },
+  detailAddButton: {
     backgroundColor: "#FEE2E2",
     borderRadius: 8,
     paddingVertical: 10,
-  },
-  outOfStockButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#B91C1C",
-  },
-  catalogButton: {
-    flex: 1,
+    paddingHorizontal: 16,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#E3F2FD",
-    borderWidth: 1,
-    borderColor: "#3B82F6",
-    borderRadius: 8,
-    paddingVertical: 10,
+    width: 80,
   },
-  catalogButtonText: {
+  detailAddButtonText: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#3B82F6",
+    color: "#DC2626",
+  },
+  detailBulkSection: {
+    backgroundColor: "#F8F9FA",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  detailBulkTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.light.text,
+    marginBottom: 16,
+  },
+  detailBulkTier: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  detailTierInfo: {
+    flex: 1,
+  },
+  detailTierRange: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  detailTierPrice: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E40AF",
+    marginBottom: 4,
+  },
+  detailTierDiscount: {
+    fontSize: 12,
+    color: "#10B981",
+    fontWeight: "500",
+  },
+  detailTierAddButton: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  detailTierAddButtonText: {
+    color: "#DC2626",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  descriptionSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.light.text,
+    marginBottom: 12,
+  },
+  descriptionText: {
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+    lineHeight: 24,
+  },
+  // Enhanced Similar Products Section
+  similarProductsSection: {
+    marginBottom: 100,
+  },
+  similarProductsList: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  similarProductCard: {
+    width: 200,
+    backgroundColor: Colors.light.white,
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  similarProductImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  similarProductInfo: {
+    flex: 1,
+  },
+  similarProductName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.light.text,
+    marginBottom: 4,
+    height: 40,
+  },
+  similarProductUnit: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginBottom: 8,
+  },
+  similarProductPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  similarProductPrice: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.light.text,
+  },
+  similarProductPriceOriginal: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    textDecorationLine: "line-through",
+  },
+  similarProductActions: {
+    marginBottom: 8,
+  },
+  similarQuantityControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F0F9FF",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  similarQtyBtn: {
+    padding: 2,
+  },
+  similarQtyText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.light.text,
+    minWidth: 20,
+    textAlign: "center",
+  },
+  similarAddButton: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  similarAddButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#DC2626",
+  },
+  similarBulkSection: {
+    marginTop: 8,
+  },
+  similarBulkTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  similarBulkButton: {
+    backgroundColor: "#F8F9FA",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  similarBulkButtonText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#1E40AF",
+    textAlign: 'center',
+  },
+  // Continue to Cart Button - Solid Red
+  continueToCartContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: Colors.light.white,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  continueToCartButton: {
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  continueButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  errorText: {
+    fontSize: 16,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+    marginTop: 20,
   },
 });

@@ -6,7 +6,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,11 +22,18 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const defaultCategoryForm = {
+  name: '',
+  description: '',
+  image: '',
+  displayOrder: 0,
+};
 
 export default function ProductsManagement() {
   const insets = useSafeAreaInsets();
@@ -51,6 +58,7 @@ export default function ProductsManagement() {
 
   // Categories Modal State
   const [categoriesModalVisible, setCategoriesModalVisible] = useState(false);
+  const [categoryFormModalVisible, setCategoryFormModalVisible] = useState(false);
   const [categoryFormData, setCategoryFormData] = useState({
     name: '',
     description: '',
@@ -83,6 +91,8 @@ export default function ProductsManagement() {
     isAvailable: true,
     nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' },
     tags: '',
+    scannedBarcodeId: '',
+    cloudinaryImages: []
   });
   const [imageUri, setImageUri] = useState('');
 
@@ -159,7 +169,7 @@ export default function ProductsManagement() {
       image: '',
       displayOrder: categories.length,
     });
-    setCategoriesModalVisible(true);
+    setCategoryFormModalVisible(true);
   };
 
   const openCategoryEditModal = (category) => {
@@ -170,11 +180,16 @@ export default function ProductsManagement() {
       image: category.image || '',
       displayOrder: category.displayOrder || 0,
     });
-    setCategoriesModalVisible(true);
+    setCategoryFormModalVisible(true);
   };
 
   const closeCategoryModal = () => {
     setCategoriesModalVisible(false);
+    setEditingCategory(null);
+  };
+
+  const closeCategoryFormModal = () => {
+    setCategoryFormModalVisible(false);
     setEditingCategory(null);
     setCategoryFormData({
       name: '',
@@ -184,8 +199,11 @@ export default function ProductsManagement() {
     });
   };
 
-  const handleCategorySubmit = async () => {
-    if (!categoryFormData.name.trim()) {
+  const handleCategorySubmit = async (formValuesFromChild) => {
+    // If you’re using local form state inside CategoryForm, it will pass values here:
+    const formData = formValuesFromChild ?? categoryFormData;
+
+    if (!formData.name.trim()) {
       Alert.alert('Error', 'Category name is required.');
       return;
     }
@@ -196,79 +214,68 @@ export default function ProductsManagement() {
     setIsSubmittingCategory(true);
 
     try {
-      let imageUrl = categoryFormData.image;
+      // Build multipart form-data
+      const body = new FormData();
 
-      // If image is a local URI, upload it first
-      if (categoryFormData.image && categoryFormData.image.startsWith('file:')) {
-        startOperation('Uploading category image...');
-        
-        const uploadFormData = new FormData();
-        uploadFormData.append('image', {
-          uri: categoryFormData.image,
-          type: 'image/jpeg',
+      body.append('name', formData.name.trim());
+      body.append('description', formData.description?.trim() || '');
+      body.append('displayOrder', String(formData.displayOrder ?? 0));
+
+      // Only append file if it's a local URI (file picked from gallery/camera)
+      if (formData.image && formData.image.startsWith('file:')) {
+        body.append('image', {
+          uri: formData.image,
+          type: 'image/jpeg',                 // or detect mime if you want
           name: `category-${Date.now()}.jpg`,
         });
-
-        const uploadResponse = await fetch(`${API_BASE_URL}/api/upload`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-          },
-          body: uploadFormData,
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error('Failed to upload image');
-        }
-
-        const uploadData = await uploadResponse.json();
-        imageUrl = uploadData.imageUrl;
       }
+      // If image is just a URL string, your current controller ignores it.
+      // The backend will fall back to default '/images/default-category.jpg'.
 
       const url = editingCategory
-        ? `${API_BASE_URL}/api/catalog/categories/${editingCategory._id}`
-        : `${API_BASE_URL}/api/catalog/categories`;
+        ? `${API_BASE_URL}/api/superadmin/categories/${editingCategory._id}`
+        : `${API_BASE_URL}/api/superadmin/categories`;
 
       const method = editingCategory ? 'PUT' : 'POST';
-
-      const payload = {
-        name: categoryFormData.name.trim(),
-        description: categoryFormData.description?.trim() || '',
-        displayOrder: categoryFormData.displayOrder,
-        image: imageUrl || '',
-      };
 
       const response = await fetch(url, {
         method,
         headers: {
           'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
+          // ❌ DO NOT set 'Content-Type' here for FormData
         },
-        body: JSON.stringify(payload),
+        body,
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert('Success', `Category ${editingCategory ? 'updated' : 'created'} successfully!`);
-        closeCategoryModal();
+        Alert.alert(
+          'Success',
+          `Category ${editingCategory ? 'updated' : 'created'} successfully!`
+        );
+        closeCategoryFormModal();
         fetchCategories();
       } else {
         throw new Error(data.message || 'Failed to save category');
       }
     } catch (error) {
       console.error('Category submit error:', error);
-      Alert.alert('Error', error.message || 'Failed to save category. Please try again.');
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to save category. Please try again.'
+      );
     } finally {
       setIsSubmittingCategory(false);
       endOperation();
     }
   };
 
+
   const handleCategoryDelete = async (categoryId, categoryName) => {
     Alert.alert(
       'Delete Category',
-      `Are you sure you want to delete "${categoryName}"?`,
+      `Are you sure you want to delete "${categoryName}"? This will remove the category from all associated products.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -276,11 +283,11 @@ export default function ProductsManagement() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const response = await fetch(`${API_BASE_URL}/api/catalog/categories/${categoryId}`, {
+              const response = await fetch(`${API_BASE_URL}/api/superadmin/categories/${categoryId}`, {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
               });
-              
+
               if (response.ok) {
                 Alert.alert('Success', 'Category deleted successfully.');
                 fetchCategories();
@@ -325,12 +332,65 @@ export default function ProductsManagement() {
   };
 
   // ──────────────────────────────────────────────────────────────
+  // ENHANCED SCAN & FAB FUNCTIONS
+  // ──────────────────────────────────────────────────────────────
+
+  const handleScanForNewProduct = () => {
+    setBarcodeScannerVisible(true);
+    setEditingProduct(null); // Ensure we're in create mode
+  };
+
+  // Update the FAB to show scan option
+  const renderFab = () => (
+    <View style={styles.fabContainer}>
+      {/* Scan FAB */}
+      <TouchableOpacity
+        style={[styles.fab, styles.scanFab]}
+        onPress={handleScanForNewProduct}
+      >
+        <Ionicons name="barcode-outline" size={24} color="#FFF" />
+      </TouchableOpacity>
+
+      {/* Add Product FAB */}
+      <TouchableOpacity
+        style={[styles.fab, styles.addFab]}
+        onPress={openCreateModal}
+      >
+        <Ionicons name="add" size={28} color="#FFF" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Update the minimal scan section in the modal to work properly
+  const renderScanSection = () => (
+    <View style={styles.scanSection}>
+      <TouchableOpacity
+        style={styles.minimalScanButton}
+        onPress={() => setBarcodeScannerVisible(true)}
+      >
+        <Ionicons name="barcode-outline" size={20} color={Colors.light.accent} />
+        <Text style={styles.minimalScanButtonText}>
+          {formData.scannedBarcodeId ? `Scanned: ${formData.scannedBarcodeId}` : 'Scan Barcode'}
+        </Text>
+        {formData.scannedBarcodeId && (
+          <TouchableOpacity
+            style={styles.clearScanButton}
+            onPress={() => setFormData(prev => ({ ...prev, scannedBarcodeId: '' }))}
+          >
+            <Ionicons name="close" size={16} color="#F44336" />
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+
+  // ──────────────────────────────────────────────────────────────
   // SIMPLIFIED IMAGE PICKER FUNCTIONS
   // ──────────────────────────────────────────────────────────────
   const pickImage = async () => {
     try {
       startOperation('Loading image picker...');
-      
+
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission required', 'Permission to access camera roll is required!');
@@ -347,17 +407,21 @@ export default function ProductsManagement() {
       if (!result.canceled && result.assets?.length > 0) {
         setImageLoading(true);
         const selectedImage = result.assets[0];
-        
+
+        // FIX: Set both the image URI for preview and form data properly
+        const imageData = {
+          uri: selectedImage.uri,
+          type: 'image/jpeg',
+          name: selectedImage.fileName || `product-${Date.now()}.jpg`,
+        };
+
         setFormData(prev => ({
           ...prev,
-          image: {
-            uri: selectedImage.uri,
-            type: 'image/jpeg',
-            name: selectedImage.fileName || `product-${Date.now()}.jpg`,
-          }
+          image: imageData,
+          cloudinaryImages: [] // Clear cloudinary images when using local image
         }));
-        setImageUri(selectedImage.uri);
-        
+        setImageUri(selectedImage.uri); // This is crucial for preview
+
         setTimeout(() => setImageLoading(false), 500);
       }
     } catch (error) {
@@ -371,7 +435,7 @@ export default function ProductsManagement() {
   const takePhoto = async () => {
     try {
       startOperation('Opening camera...');
-      
+
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission required', 'Camera permission is required!');
@@ -387,17 +451,21 @@ export default function ProductsManagement() {
       if (!result.canceled && result.assets?.length > 0) {
         setImageLoading(true);
         const selectedImage = result.assets[0];
-        
+
+        // FIX: Set both the image URI for preview and form data properly
+        const imageData = {
+          uri: selectedImage.uri,
+          type: 'image/jpeg',
+          name: `product-photo-${Date.now()}.jpg`,
+        };
+
         setFormData(prev => ({
           ...prev,
-          image: {
-            uri: selectedImage.uri,
-            type: 'image/jpeg',
-            name: `product-photo-${Date.now()}.jpg`,
-          }
+          image: imageData,
+          cloudinaryImages: [] // Clear cloudinary images when using local image
         }));
-        setImageUri(selectedImage.uri);
-        
+        setImageUri(selectedImage.uri); // This is crucial for preview
+
         setTimeout(() => setImageLoading(false), 500);
       }
     } catch (error) {
@@ -411,133 +479,122 @@ export default function ProductsManagement() {
   // ──────────────────────────────────────────────────────────────
   // ENHANCED OPENFOODFACTS INTEGRATION WITH PROGRESS INDICATORS
   // ──────────────────────────────────────────────────────────────
-  
+
   const fetchProductDataFromBarcode = async (barcode) => {
-  try {
-    setFetchingProductData(true);
-    startOperation('Scanning barcode...');
-    updateProgress(10);
-    
-    console.log('🔍 Scanning barcode:', barcode);
+    try {
+      setFetchingProductData(true);
+      startOperation('Scanning barcode...');
+      updateProgress(10);
 
-    // Validate barcode
-    if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
-      throw new Error('Invalid barcode');
+      console.log('🔍 Scanning barcode:', barcode);
+
+      updateProgress(30);
+      const response = await fetch(`${API_BASE_URL}/api/catalog/products/scan-barcode`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ barcode })
+      });
+
+      updateProgress(60);
+      const data = await response.json();
+      console.log('📦 Scan Response:', data);
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to scan barcode');
+      }
+
+      if (data.productExists && data.existingProduct) {
+        Alert.alert(
+          'Product Already Exists',
+          `"${data.existingProduct.name}" already uses this barcode. Would you like to edit it?`,
+          [
+            { text: 'Edit Product', onPress: () => openEditModal(data.existingProduct) },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+        return;
+      }
+
+      if (!data.success) {
+        throw new Error(data.message || 'Scan failed');
+      }
+
+      updateProgress(80);
+      const productData = {
+        found: Boolean(data.openFoodFactsData?.found),
+        barcode: (data.openFoodFactsData?.barcode || barcode || '').toString(),
+        name: data.suggestedData?.name || `Product ${barcode}`,
+        description: data.suggestedData?.description || '',
+        brand: data.openFoodFactsData?.brand || '',
+        categories: Array.isArray(data.openFoodFactsData?.categories)
+          ? data.openFoodFactsData.categories
+          : [],
+        unit: data.suggestedData?.unit || 'piece',
+        unitSize: data.suggestedData?.unitSize || '1',
+        nutritionalInfo: data.suggestedData?.nutritionalInfo || {
+          fat: '',
+          protein: '',
+          calories: '',
+          carbohydrates: ''
+        },
+        images: Array.isArray(data.imageInfo?.images) && data.imageInfo.images.length > 0
+          ? data.imageInfo.images.filter(img => img && img.url)
+          : [],
+        milkType: data.suggestedData?.milkType || 'Cow',
+        tags: data.suggestedData?.tags || '',
+        price: data.suggestedData?.price || 0,
+        category: data.suggestedData?.category || '',
+        autoFilledFields: data.autoFilledFields || {},
+        missingRequiredFields: data.missingRequiredFields || {},
+        dataSource: data.openFoodFactsData?.found ? 'openfoodfacts' : 'manual',
+        requiresUserInput: Boolean(data.requiresConfirmation),
+        availableCategories: Array.isArray(data.availableCategories)
+          ? data.availableCategories
+          : []
+      };
+
+      updateProgress(100);
+      console.log('📸 Final product data:', {
+        totalImages: productData.images.length,
+        hasImages: productData.images.length > 0,
+        imageUrls: productData.images.map(img => img.url)
+      });
+
+      setFetchedProductData(productData);
+      setScannedBarcode(productData.barcode);
+      setProductDataPreviewVisible(true);
+
+    } catch (error) {
+      console.error('❌ Barcode Scan Error:', error);
+
+      setFetchedProductData(null);
+      setScannedBarcode('');
+
+      let errorMessage = 'Failed to scan barcode. Please try again.';
+
+      if (error.message.includes('Network request failed')) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else if (error.message.includes('401')) {
+        errorMessage = 'Session expired. Please login again.';
+        logout();
+      } else if (error.message.includes('500')) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert('Scan Error', errorMessage, [
+        { text: 'Try Again', onPress: () => setBarcodeScannerVisible(true) },
+        { text: 'Cancel', onPress: () => setBarcodeScannerVisible(false) }
+      ]);
+    } finally {
+      setFetchingProductData(false);
+      endOperation();
     }
-
-    const cleanBarcode = barcode.trim();
-    console.log('📦 Sending barcode to backend:', cleanBarcode);
-
-    updateProgress(30);
-    
-    // 🎯 FIX: Use the correct endpoint for scanning new barcodes
-    const response = await fetch(`${API_BASE_URL}/api/catalog/products/scan-barcode`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        barcode: cleanBarcode  // ✅ Correct field name
-      })
-    });
-
-    updateProgress(60);
-    const data = await response.json();
-    console.log('📦 Scan Response:', data);
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to scan barcode');
-    }
-
-    // 🎯 FIX: Handle the actual response structure from scan-barcode endpoint
-    if (data.productExists && data.existingProduct) {
-      Alert.alert(
-        'Product Already Exists',
-        `"${data.existingProduct.name}" already uses this barcode. Would you like to edit it?`,
-        [
-          { text: 'Edit Product', onPress: () => openEditModal(data.existingProduct) },
-          { text: 'Cancel', style: 'cancel' }
-        ]
-      );
-      return;
-    }
-
-    updateProgress(80);
-    
-    // 🎯 FIX: Process the actual response structure from scan-barcode endpoint
-    const productData = {
-      found: Boolean(data.openFoodFactsData?.found),
-      barcode: (data.openFoodFactsData?.barcode || cleanBarcode || '').toString(),
-      name: data.suggestedData?.name || `Product ${cleanBarcode}`,
-      description: data.suggestedData?.description || '',
-      brand: data.openFoodFactsData?.brand || '',
-      categories: Array.isArray(data.openFoodFactsData?.categories) 
-        ? data.openFoodFactsData.categories 
-        : [],
-      unit: data.suggestedData?.unit || 'piece',
-      unitSize: data.suggestedData?.unitSize || '1',
-      nutritionalInfo: data.suggestedData?.nutritionalInfo || {
-        fat: '',
-        protein: '',
-        calories: '',
-        carbohydrates: ''
-      },
-      images: Array.isArray(data.imageInfo?.images) && data.imageInfo.images.length > 0
-        ? data.imageInfo.images.filter(img => img && img.url)
-        : [],
-      milkType: data.suggestedData?.milkType || 'Cow',
-      tags: data.suggestedData?.tags || '',
-      price: data.suggestedData?.price || 0,
-      category: data.suggestedData?.category || '',
-      autoFilledFields: data.autoFilledFields || {},
-      missingRequiredFields: data.missingRequiredFields || {},
-      dataSource: data.openFoodFactsData?.found ? 'openfoodfacts' : 'manual',
-      requiresUserInput: Boolean(data.requiresConfirmation),
-      availableCategories: Array.isArray(data.availableCategories) 
-        ? data.availableCategories 
-        : []
-    };
-
-    updateProgress(100);
-    console.log('📸 Final product data:', {
-      totalImages: productData.images.length,
-      hasImages: productData.images.length > 0,
-      imageUrls: productData.images.map(img => img.url)
-    });
-    
-    setFetchedProductData(productData);
-    setScannedBarcode(productData.barcode);
-    setProductDataPreviewVisible(true);
-
-  } catch (error) {
-    console.error('❌ Barcode Scan Error:', error);
-    
-    setFetchedProductData(null);
-    setScannedBarcode('');
-    
-    let errorMessage = 'Failed to scan barcode. Please try again.';
-    
-    if (error.message.includes('Network request failed')) {
-      errorMessage = 'Network error. Please check your internet connection.';
-    } else if (error.message.includes('401')) {
-      errorMessage = 'Session expired. Please login again.';
-      logout();
-    } else if (error.message.includes('500')) {
-      errorMessage = 'Server error. Please try again later.';
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
-    Alert.alert('Scan Error', errorMessage, [
-      { text: 'Try Again', onPress: () => setBarcodeScannerVisible(true) },
-      { text: 'Cancel', onPress: () => setBarcodeScannerVisible(false) }
-    ]);
-  } finally {
-    setFetchingProductData(false);
-    endOperation();
-  }
-};
+  };
 
   const handleBarcodeScannedForProduct = (barcode) => {
     if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
@@ -563,7 +620,7 @@ export default function ProductsManagement() {
       setApplyingProductData(true);
       startOperation('Applying product data...');
       console.log('🔄 Applying scanned data to form...');
-      
+
       updateProgress(20);
       const downloadedImages = fetchedProductData.images || [];
       console.log('📸 Using already downloaded images:', downloadedImages.length);
@@ -576,59 +633,50 @@ export default function ProductsManagement() {
         updates.name = fetchedProductData.name;
         newAutoFilledFields.add('name');
       }
-      
+
       if (fetchedProductData.description && fetchedProductData.description.trim()) {
         updates.description = fetchedProductData.description;
         newAutoFilledFields.add('description');
       }
-      
+
       if (fetchedProductData.unit) {
         updates.unit = fetchedProductData.unit;
         newAutoFilledFields.add('unit');
       }
-      
+
       if (fetchedProductData.unitSize) {
         updates.unitSize = fetchedProductData.unitSize;
         newAutoFilledFields.add('unitSize');
       }
-      
+
       if (fetchedProductData.nutritionalInfo && typeof fetchedProductData.nutritionalInfo === 'object') {
         updates.nutritionalInfo = fetchedProductData.nutritionalInfo;
         newAutoFilledFields.add('nutritionalInfo');
       }
-      
+
       if (fetchedProductData.tags) {
-        updates.tags = Array.isArray(fetchedProductData.tags) 
-          ? fetchedProductData.tags.join(', ') 
+        updates.tags = Array.isArray(fetchedProductData.tags)
+          ? fetchedProductData.tags.join(', ')
           : String(fetchedProductData.tags);
         newAutoFilledFields.add('tags');
       }
-      
+
       if (fetchedProductData.price !== undefined && fetchedProductData.price !== null) {
         updates.price = fetchedProductData.price.toString();
       }
-      
+
       if (fetchedProductData.milkType) {
         updates.milkType = fetchedProductData.milkType;
       }
-      
+
       if (fetchedProductData.category) {
         updates.category = fetchedProductData.category;
         newAutoFilledFields.add('category');
       }
 
       updateProgress(60);
-      let mainImageUri = '';
-      
-      if (downloadedImages.length > 0) {
-        const frontImage = downloadedImages.find(img => img && img.type === 'front') || downloadedImages[0];
-        if (frontImage && frontImage.url) {
-          mainImageUri = frontImage.url;
-          console.log('✅ Main image set:', mainImageUri);
-        }
-      }
 
-      updateProgress(80);
+      // 🎯 CRITICAL FIX: Properly handle Cloudinary images
       const cloudinaryImages = downloadedImages
         .filter(img => img && img.url)
         .map(img => ({
@@ -637,34 +685,46 @@ export default function ProductsManagement() {
           type: img.type || 'product'
         }));
 
-      setFormData(prev => ({ 
-        ...prev, 
+      // 🎯 CRITICAL FIX: Set the scanned barcode in form data
+      const scannedBarcodeValue = scannedBarcode || fetchedProductData.barcode;
+
+      // 🎯 CRITICAL FIX: Set form data with proper image handling
+      setFormData(prev => ({
+        ...prev,
         ...updates,
-        scannedBarcodeId: scannedBarcode || fetchedProductData.barcode,
-        cloudinaryImages: cloudinaryImages
+        scannedBarcodeId: scannedBarcodeValue,
+        cloudinaryImages: cloudinaryImages,
+        image: null // Clear local image when using cloudinary images
       }));
-      
-      if (mainImageUri) {
-        setImageUri(mainImageUri);
-        console.log('🖼️ Image URI set for preview');
+
+      // 🎯 CRITICAL FIX: Set imageUri for preview from cloudinary images
+      if (cloudinaryImages.length > 0) {
+        const mainImage = cloudinaryImages.find(img => img.type === 'front') || cloudinaryImages[0];
+        if (mainImage && mainImage.url) {
+          setImageUri(mainImage.url);
+          console.log('🖼️ Cloudinary image URI set for preview:', mainImage.url);
+        } else {
+          console.log('⚠️ No valid main image found in cloudinaryImages');
+          setImageUri('');
+        }
       } else {
-        console.log('⚠️ No main image available');
+        console.log('⚠️ No images available from scan');
         setImageUri('');
       }
-      
+
       setAutoFilledFields(newAutoFilledFields);
 
       updateProgress(100);
       setProductDataPreviewVisible(false);
       setModalVisible(true);
-      
-      const imageMessage = cloudinaryImages.length > 0 
-        ? `${cloudinaryImages.length} images ready.` 
+
+      const imageMessage = cloudinaryImages.length > 0
+        ? `${cloudinaryImages.length} images ready.`
         : 'No images available.';
-      
+
       Alert.alert(
-        'Success', 
-        `Product data applied! ${imageMessage} Please review and save.`
+        'Success',
+        `Product data applied! ${imageMessage} Please review and save. Scanned barcode will be automatically assigned.`
       );
 
     } catch (error) {
@@ -736,7 +796,7 @@ export default function ProductsManagement() {
     try {
       setLoading(true);
       startOperation('Loading products...');
-      
+
       updateProgress(30);
       const [productsRes, categoriesRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/catalog/products`, {
@@ -753,6 +813,17 @@ export default function ProductsManagement() {
       const productsData = await productsRes.json();
       const categoriesData = await categoriesRes.json();
 
+      // FIX: Map backend 'images' to frontend 'cloudinaryImages'
+      const productsWithMappedImages = Array.isArray(productsData)
+        ? productsData.map(product => ({
+          ...product,
+          cloudinaryImages: product.images || [] // Map backend images to cloudinaryImages
+        }))
+        : (productsData.products || []).map(product => ({
+          ...product,
+          cloudinaryImages: product.images || []
+        }));
+
       setProducts(
         Array.isArray(productsData) ? productsData : productsData.products || []
       );
@@ -761,7 +832,7 @@ export default function ProductsManagement() {
           ? categoriesData
           : categoriesData.categories || []
       );
-      
+
       updateProgress(100);
     } catch (error) {
       handleApiError(error, 'Failed to load data.');
@@ -775,7 +846,7 @@ export default function ProductsManagement() {
 
   const filteredProducts = useMemo(() => {
     let filtered = products;
-    
+
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -786,14 +857,14 @@ export default function ProductsManagement() {
           p.tags?.some((tag) => tag.toLowerCase().includes(query))
       );
     }
-    
+
     // Filter by selected category
     if (selectedCategory) {
       filtered = filtered.filter(
         (p) => p.category?._id === selectedCategory
       );
     }
-    
+
     return filtered;
   }, [products, searchQuery, selectedCategory]);
 
@@ -830,8 +901,10 @@ export default function ProductsManagement() {
       tags: Array.isArray(product.tags)
         ? product.tags.join(', ')
         : typeof product.tags === 'string'
-        ? product.tags
-        : '',
+          ? product.tags
+          : '',
+      scannedBarcodeId: product.scannedBarcodeId || '',
+      cloudinaryImages: []
     });
     setImageUri(product.image || '');
     setModalVisible(true);
@@ -852,6 +925,7 @@ export default function ProductsManagement() {
       isAvailable: true,
       nutritionalInfo: { fat: '', protein: '', calories: '', carbohydrates: '' },
       tags: '',
+      scannedBarcodeId: '', // 🎯 Initialize scannedBarcodeId
       cloudinaryImages: []
     });
     setImageUri('');
@@ -879,9 +953,9 @@ export default function ProductsManagement() {
     try {
       setUploading(true);
       startOperation(editingProduct ? 'Updating product...' : 'Creating product...');
-      
+
       const submitFormData = new FormData();
-      
+
       // Append basic fields
       submitFormData.append('name', formData.name.trim());
       submitFormData.append('description', formData.description.trim());
@@ -894,35 +968,27 @@ export default function ProductsManagement() {
       submitFormData.append('isFeatured', formData.isFeatured);
       submitFormData.append('isAvailable', formData.isAvailable);
       submitFormData.append('tags', formData.tags);
-      
+
       // Append nutritional info
       submitFormData.append('nutritionalInfo[fat]', formData.nutritionalInfo.fat || '');
       submitFormData.append('nutritionalInfo[protein]', formData.nutritionalInfo.protein || '');
       submitFormData.append('nutritionalInfo[calories]', formData.nutritionalInfo.calories || '');
       submitFormData.append('nutritionalInfo[carbohydrates]', formData.nutritionalInfo.carbohydrates || '');
-      
-      // Append barcode if available
-      if (scannedBarcode && !editingProduct) {
-        submitFormData.append('scannedBarcodeId', scannedBarcode);
+
+      // 🎯 FIX: Append scanned barcode for NEW products
+      if (formData.scannedBarcodeId && !editingProduct) {
+        submitFormData.append('scannedBarcodeId', formData.scannedBarcodeId);
+        console.log('📦 Adding scanned barcode to form data:', formData.scannedBarcodeId);
       }
 
       updateProgress(30);
-      
+
       // Handle image upload - use cloudinaryImages if available, otherwise use local image
       if (formData.cloudinaryImages && formData.cloudinaryImages.length > 0) {
         console.log('📤 Using Cloudinary images:', formData.cloudinaryImages.length);
-        // For Cloudinary images, we'll send them as part of the form data
-        formData.cloudinaryImages.forEach((img, index) => {
-          if (img.url) {
-            submitFormData.append(`cloudinaryImages[${index}][url]`, img.url);
-            if (img.publicId) {
-              submitFormData.append(`cloudinaryImages[${index}][publicId]`, img.publicId);
-            }
-            if (img.type) {
-              submitFormData.append(`cloudinaryImages[${index}][type]`, img.type);
-            }
-          }
-        });
+        console.log('📤 Cloudinary images URLs:', formData.cloudinaryImages.map(img => img.url));
+        // For Cloudinary images, we need to send them as JSON string
+        submitFormData.append('cloudinaryImages', JSON.stringify(formData.cloudinaryImages));
       } else if (formData.image && formData.image.uri) {
         console.log('📤 Uploading local image');
         submitFormData.append('image', {
@@ -933,9 +999,9 @@ export default function ProductsManagement() {
       }
 
       updateProgress(60);
-      const url = editingProduct 
-        ? `${API_BASE_URL}/api/catalog/products/${editingProduct._id}`
-        : `${API_BASE_URL}/api/catalog/products`;
+      const url = editingProduct
+        ? `${API_BASE_URL}/api/superadmin/products/${editingProduct._id}`
+        : `${API_BASE_URL}/api/superadmin/products`;
 
       const response = await fetch(url, {
         method: editingProduct ? 'PUT' : 'POST',
@@ -953,11 +1019,18 @@ export default function ProductsManagement() {
       }
 
       updateProgress(100);
-      Alert.alert('Success!', `Product ${editingProduct ? 'updated' : 'created'} successfully.`, [
-        { text: 'OK', onPress: () => {
-          closeModal();
-          fetchData();
-        }}
+
+      const successMessage = formData.scannedBarcodeId && !editingProduct
+        ? `Product created successfully with barcode: ${formData.scannedBarcodeId}`
+        : `Product ${editingProduct ? 'updated' : 'created'} successfully.`;
+
+      Alert.alert('Success!', successMessage, [
+        {
+          text: 'OK', onPress: () => {
+            closeModal();
+            fetchData();
+          }
+        }
       ]);
 
     } catch (error) {
@@ -1048,198 +1121,175 @@ export default function ProductsManagement() {
   };
 
   const updateProductState = (productId, updates) => {
-    setProducts(prev => 
-      prev.map(p => 
+    setProducts(prev =>
+      prev.map(p =>
         p._id === productId ? { ...p, ...updates } : p
       )
     );
-    
+
     if (selectedProductForBarcode?._id === productId) {
       setSelectedProductForBarcode(prev => ({ ...prev, ...updates }));
     }
   };
 
   const onBarcodeScanned = async ({ data }) => {
-  if (!data || !selectedProductForBarcode) return;
+    if (!data || !selectedProductForBarcode) return;
 
-  try {
-    setBarcodeScanning(false);
-    startOperation('Assigning barcode...');
+    try {
+      setBarcodeScanning(false);
+      startOperation('Assigning barcode...');
 
-    console.log('🔍 DEBUG - Barcode Assignment Details:', {
-      productId: selectedProductForBarcode._id,
-      productName: selectedProductForBarcode.name,
-      productObject: selectedProductForBarcode,
-      barcode: data,
-      apiUrl: `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`
-    });
+      const response = await fetch(
+        `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ scannedBarcodeId: data }),
+        }
+      );
 
-    // 🎯 FIX: Use the correct product ID from selectedProductForBarcode
-    const response = await fetch(
-      `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scan-barcode`,
-      {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ scannedBarcodeId: data }),
+      const result = await response.json();
+
+      if (response.ok) {
+        Alert.alert('Success', 'Scanned barcode assigned successfully!');
+
+        updateProductState(selectedProductForBarcode._id, {
+          scannedBarcodeId: data,
+        });
+
+      } else {
+        Alert.alert('Error', result.message || 'Failed to assign scanned barcode');
       }
-    );
-
-    console.log('🔍 DEBUG - Response Status:', response.status);
-    
-    const result = await response.json();
-    console.log('🔍 DEBUG - Response Data:', result);
-    
-    if (response.ok) {
-      Alert.alert('Success', 'Scanned barcode assigned successfully!');
-      
-      updateProductState(selectedProductForBarcode._id, {
-        scannedBarcodeId: data,
-      });
-      
-      closeBarcodeModal();
-    } else {
-      Alert.alert('Error', result.message || 'Failed to assign scanned barcode');
+    } catch (error) {
+      console.error('Barcode Assignment Error:', error);
+      handleApiError(error, 'Failed to assign scanned barcode');
+    } finally {
+      setShowCamera(false);
+      endOperation();
     }
-  } catch (error) {
-    console.error('❌ Barcode Assignment Error:', error);
-    console.log('🔍 DEBUG - Error Details:', {
-      message: error.message,
-      productId: selectedProductForBarcode?._id,
-      apiUrl: `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode?._id}/scan-barcode`
-    });
-    handleApiError(error, 'Failed to assign scanned barcode');
-  } finally {
-    setShowCamera(false);
-    endOperation();
-  }
-};
+  };
 
   const removeScannedBarcode = async () => {
-  if (!selectedProductForBarcode?._id) return;
+    if (!selectedProductForBarcode?._id) return;
 
-  Alert.alert('Remove Scanned Barcode', 'Are you sure you want to remove the scanned barcode?', [
-    { text: 'Cancel', style: 'cancel' },
-    {
-      text: 'Remove',
-      style: 'destructive',
-      onPress: async () => {
-        try {
-          startOperation('Removing barcode...');
-          
-          // 🎯 FIX: Use the correct product ID
-          const response = await fetch(
-            `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scanned-barcode`,
-            {
-              method: 'DELETE',
-              headers: getAuthHeaders(),
+    Alert.alert('Remove Scanned Barcode', 'Are you sure you want to remove the scanned barcode?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            startOperation('Removing barcode...');
+            const response = await fetch(
+              `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/scanned-barcode`,
+              {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+              }
+            );
+
+            if (response.ok) {
+              Alert.alert('Success', 'Scanned barcode removed successfully!');
+
+              updateProductState(selectedProductForBarcode._id, {
+                scannedBarcodeId: null
+              });
+
+            } else {
+              const result = await response.json();
+              Alert.alert('Error', result.message || 'Failed to remove scanned barcode');
             }
-          );
-
-          if (response.ok) {
-            Alert.alert('Success', 'Scanned barcode removed successfully!');
-            
-            updateProductState(selectedProductForBarcode._id, {
-              scannedBarcodeId: null
-            });
-            
-          } else {
-            const result = await response.json();
-            Alert.alert('Error', result.message || 'Failed to remove scanned barcode');
+          } catch (error) {
+            handleApiError(error, 'Failed to remove scanned barcode');
+          } finally {
+            endOperation();
           }
-        } catch (error) {
-          handleApiError(error, 'Failed to remove scanned barcode');
-        } finally {
-          endOperation();
-        }
+        },
       },
-    },
-  ]);
-};
+    ]);
+  };
 
   const removeGeneratedBarcode = async () => {
-  if (!selectedProductForBarcode?._id) return;
+    if (!selectedProductForBarcode?._id) return;
 
-  Alert.alert('Remove Generated Barcode', 'Are you sure you want to remove the generated barcode?', [
-    { text: 'Cancel', style: 'cancel' },
-    {
-      text: 'Remove',
-      style: 'destructive',
-      onPress: async () => {
-        try {
-          startOperation('Removing generated barcode...');
-          
-          // 🎯 FIX: Use the correct product ID
-          const response = await fetch(
-            `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generated-barcode`,
-            {
-              method: 'DELETE',
-              headers: getAuthHeaders(),
+    Alert.alert('Remove Generated Barcode', 'Are you sure you want to remove the generated barcode?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            startOperation('Removing generated barcode...');
+            const response = await fetch(
+              `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generated-barcode`,
+              {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+              }
+            );
+
+            if (response.ok) {
+              Alert.alert('Success', 'Generated barcode removed successfully!');
+
+              updateProductState(selectedProductForBarcode._id, {
+                barcodeId: null,
+                barcodeUrl: null
+              });
+
+            } else {
+              const result = await response.json();
+              Alert.alert('Error', result.message || 'Failed to remove generated barcode');
             }
-          );
-
-          if (response.ok) {
-            Alert.alert('Success', 'Generated barcode removed successfully!');
-            
-            updateProductState(selectedProductForBarcode._id, {
-              barcodeId: null,
-              barcodeUrl: null
-            });
-            
-          } else {
-            const result = await response.json();
-            Alert.alert('Error', result.message || 'Failed to remove generated barcode');
+          } catch (error) {
+            handleApiError(error, 'Failed to remove generated barcode');
+          } finally {
+            endOperation();
           }
-        } catch (error) {
-          handleApiError(error, 'Failed to remove generated barcode');
-        } finally {
-          endOperation();
-        }
+        },
       },
-    },
-  ]);
-};
+    ]);
+  };
 
   const generateBarcode = async () => {
-  if (!selectedProductForBarcode?._id) return;
-  const ok = await validateAuthBeforeCall();
-  if (!ok) return;
+    if (!selectedProductForBarcode?._id) return;
+    const ok = await validateAuthBeforeCall();
+    if (!ok) return;
 
-  try {
-    setBarcodeScanning(true);
-    startOperation('Generating barcode...');
-    
-    // 🎯 FIX: Use the correct product ID
-    const res = await fetch(
-      `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generate-barcode`,
-      {
-        method: 'POST',
-        headers: getAuthHeaders(),
+    try {
+      setBarcodeScanning(true);
+      startOperation('Generating barcode...');
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/catalog/products/${selectedProductForBarcode._id}/generate-barcode`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }
+      );
+
+      const data = await res.json();
+      if (res.ok && data.barcodeUrl) {
+        updateProductState(selectedProductForBarcode._id, {
+          barcodeUrl: data.barcodeUrl,
+          barcodeId: selectedProductForBarcode._id.toString()
+        });
+        Alert.alert('Success', 'Barcode generated successfully!');
+      } else {
+        Alert.alert('Info', data.message || 'Barcode already exists.');
       }
-    );
-    
-    const data = await res.json();
-    if (res.ok && data.barcodeUrl) {
-      updateProductState(selectedProductForBarcode._id, {
-        barcodeUrl: data.barcodeUrl,
-        barcodeId: selectedProductForBarcode._id.toString()
-      });
-      Alert.alert('Success', 'Barcode generated successfully!');
-    } else {
-      Alert.alert('Info', data.message || 'Barcode already exists.');
+    } catch (e) {
+      handleApiError(e, 'Failed to generate barcode.');
+    } finally {
+      setBarcodeScanning(false);
+      endOperation();
     }
-  } catch (e) {
-    handleApiError(e, 'Failed to generate barcode.');
-  } finally {
-    setBarcodeScanning(false);
-    endOperation();
-  }
-};
+  };
 
   const downloadBarcode = async () => {
     if (!selectedProductForBarcode?.barcodeUrl) return;
     try {
       startOperation('Preparing barcode for download...');
-      
+
       const capturedUri = await viewShotRef.current?.capture?.();
       if (!capturedUri) throw new Error('Capture failed');
 
@@ -1278,14 +1328,14 @@ export default function ProductsManagement() {
   // ──────────────────────────────────────────────────────────────
   const ProgressBar = ({ progress, color = Colors.light.accent, height = 6 }) => (
     <View style={[styles.progressBarContainer, { height }]}>
-      <View 
+      <View
         style={[
-          styles.progressBar, 
-          { 
+          styles.progressBar,
+          {
             width: `${progress}%`,
             backgroundColor: color
           }
-        ]} 
+        ]}
       />
     </View>
   );
@@ -1315,21 +1365,21 @@ export default function ProductsManagement() {
     <View style={styles.categoriesSection}>
       <View style={styles.categoriesHeader}>
         <Text style={styles.categoriesTitle}>Categories</Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.manageCategoriesButton}
           onPress={() => setCategoriesModalVisible(true)}
         >
           <Text style={styles.manageCategoriesText}>Manage</Text>
         </TouchableOpacity>
       </View>
-      
-      <ScrollView 
-        horizontal 
+
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoriesScrollContent}
       >
         {/* All Categories Option */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.categoryCircle}
           onPress={() => setSelectedCategory(null)}
         >
@@ -1355,8 +1405,8 @@ export default function ProductsManagement() {
         </TouchableOpacity>
 
         {categories.map((category) => (
-          <TouchableOpacity 
-            key={category._id} 
+          <TouchableOpacity
+            key={category._id}
             style={styles.categoryCircle}
             onPress={() => setSelectedCategory(category._id)}
           >
@@ -1365,8 +1415,8 @@ export default function ProductsManagement() {
               selectedCategory === category._id && styles.categorySelected
             ]}>
               {category.image ? (
-                <Image 
-                  source={{ uri: category.image }} 
+                <Image
+                  source={{ uri: category.image }}
                   style={styles.categoryCircleImage}
                   resizeMode="cover"
                 />
@@ -1389,9 +1439,9 @@ export default function ProductsManagement() {
             </Text>
           </TouchableOpacity>
         ))}
-        
+
         {/* Add Category Button */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.addCategoryCircle}
           onPress={openCategoryCreateModal}
         >
@@ -1411,9 +1461,9 @@ export default function ProductsManagement() {
     const isOutOfStock = item.stock <= 0;
     const discount = item.discount > 0 ? `${item.discount}% off` : null;
     const unitDisplay = item.unitSize ? `${item.unitSize}${item.unit}` : item.unit;
-    
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.productCard}
         onPress={() => openEditModal(item)}
         activeOpacity={0.7}
@@ -1421,7 +1471,7 @@ export default function ProductsManagement() {
         {/* Product Image */}
         <View style={styles.imageContainer}>
           <Image
-            source={{ 
+            source={{
               uri: item.image || 'https://via.placeholder.com/100'
             }}
             style={styles.productImage}
@@ -1504,7 +1554,7 @@ export default function ProductsManagement() {
               )}
             </View>
             <Text style={[
-              styles.stockText, 
+              styles.stockText,
               isOutOfStock && styles.outOfStockText
             ]}>
               {item.stock} in stock
@@ -1547,8 +1597,8 @@ export default function ProductsManagement() {
         {searchQuery
           ? 'Try a different search term'
           : selectedCategory
-          ? 'No products in this category'
-          : 'Add your first product to get started'}
+            ? 'No products in this category'
+            : 'Add your first product to get started'}
       </Text>
       {!searchQuery && !selectedCategory && (
         <TouchableOpacity style={styles.addFirstButton} onPress={openCreateModal}>
@@ -1564,16 +1614,15 @@ export default function ProductsManagement() {
   const CategoriesList = () => (
     <View style={styles.categoriesListContainer}>
       <Text style={styles.categoriesListTitle}>Manage Categories</Text>
-      <Text style={styles.categoriesListSubtitle}>Tap to edit, long press to delete</Text>
-      
+      <Text style={styles.categoriesListSubtitle}>Tap to edit or use actions</Text>
+
       <FlatList
         data={categories}
         keyExtractor={(item) => item._id}
         renderItem={({ item }) => (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.categoryListItem}
             onPress={() => openCategoryEditModal(item)}
-            onLongPress={() => handleCategoryDelete(item._id, item.name)}
           >
             <View style={styles.categoryListImageContainer}>
               {item.image ? (
@@ -1584,7 +1633,7 @@ export default function ProductsManagement() {
                 </View>
               )}
             </View>
-            
+
             <View style={styles.categoryListInfo}>
               <Text style={styles.categoryListName}>{item.name}</Text>
               {item.description ? (
@@ -1596,13 +1645,19 @@ export default function ProductsManagement() {
               )}
               <Text style={styles.categoryListOrder}>Order: {item.displayOrder}</Text>
             </View>
-            
+
             <View style={styles.categoryListActions}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.categoryEditButton}
                 onPress={() => openCategoryEditModal(item)}
               >
                 <Feather name="edit" size={18} color={Colors.light.accent} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.categoryDeleteButton}
+                onPress={() => handleCategoryDelete(item._id, item.name)}
+              >
+                <Feather name="trash-2" size={18} color="#F44336" />
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -1621,13 +1676,193 @@ export default function ProductsManagement() {
   );
 
   // ──────────────────────────────────────────────────────────────
+  // CATEGORY FORM COMPONENT
+  // ──────────────────────────────────────────────────────────────
+  const CategoryForm = React.memo(({
+  initialData,
+  onSubmit,
+  onCancel,
+  isSubmittingCategory,
+  categories,
+  pickCategoryImage,
+}) => {
+
+  const defaultForm = {
+    name: '',
+    description: '',
+    image: '',
+    displayOrder: 0,
+  };
+
+  const [localForm, setLocalForm] = React.useState({
+    ...defaultForm,
+    ...(initialData || {}),
+  });
+
+  React.useEffect(() => {
+    setLocalForm({
+      ...defaultForm,
+      ...(initialData || {}),
+    });
+  }, [initialData?._id, initialData?.id, initialData?.name]);
+
+  const updateField = (field, value) => {
+    setLocalForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = () => {
+    onSubmit(localForm);
+  };
+
+  return (
+    <>
+      <KeyboardAwareScrollView
+        style={styles.modalBody}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid={true}
+        extraScrollHeight={20}
+      >
+
+        {/* 🔼 IMAGE SECTION IS NOW ABOVE CATEGORY NAME 🔼 */}
+
+        {/* Category Image Preview */}
+        {localForm.image ? (
+          <View style={styles.imagePreviewContainer}>
+            <Image source={{ uri: localForm.image }} style={styles.imagePreview} />
+            <TouchableOpacity
+              style={styles.removeImageButton}
+              onPress={() => updateField('image', '')}
+              disabled={isSubmittingCategory}
+            >
+              <Ionicons name="close" size={16} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Image Input + Picker */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Category Image</Text>
+          <View style={styles.imageInputContainer}>
+            <TextInput
+              style={[styles.textInput, styles.imageInput]}
+              value={localForm.image}
+              onChangeText={(text) => updateField('image', text)}
+              placeholder="Image URL or select from gallery"
+              editable={!isSubmittingCategory}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={styles.imagePickerButton}
+              onPress={pickCategoryImage}
+              disabled={isSubmittingCategory}
+            >
+              <Ionicons name="image" size={20} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 🔽 CATEGORY NAME (now moved below Image) 🔽 */}
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Category Name *</Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              localForm.name.trim() && styles.inputValid,
+            ]}
+            value={localForm.name}
+            onChangeText={(text) => updateField('name', text)}
+            placeholder="e.g., Dairy Products, Fresh Milk"
+            editable={!isSubmittingCategory}
+            autoCapitalize="words"
+            autoCorrect={true}
+            blurOnSubmit={false}
+            maxLength={50}
+          />
+          <Text style={styles.charCount}>{localForm.name.length}/50</Text>
+        </View>
+
+        {/* Description */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Description</Text>
+          <TextInput
+            style={[styles.textInput, styles.textArea]}
+            value={localForm.description}
+            onChangeText={(text) => updateField('description', text)}
+            placeholder="Optional category description..."
+            multiline
+            numberOfLines={4}
+            editable={!isSubmittingCategory}
+            autoCapitalize="sentences"
+            autoCorrect={true}
+            blurOnSubmit={false}
+            maxLength={200}
+          />
+          <Text style={styles.charCount}>{localForm.description.length}/200</Text>
+        </View>
+
+        {/* Display Order */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Display Order</Text>
+          <TextInput
+            style={styles.textInput}
+            value={localForm.displayOrder?.toString() ?? '0'}
+            onChangeText={(text) => {
+              const num = parseInt(text, 10) || 0;
+              updateField('displayOrder', Math.max(0, num));
+            }}
+            placeholder="0"
+            keyboardType="numeric"
+            editable={!isSubmittingCategory}
+          />
+          <Text style={styles.helperText}>Lower numbers appear first in listings</Text>
+        </View>
+      </KeyboardAwareScrollView>
+
+      {/* Footer */}
+      <View style={styles.modalFooter}>
+        <TouchableOpacity
+          style={[styles.cancelButton, isSubmittingCategory && styles.buttonDisabled]}
+          onPress={onCancel}
+          disabled={isSubmittingCategory}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.submitButton,
+            (isSubmittingCategory || !localForm.name.trim()) && styles.buttonDisabled,
+          ]}
+          onPress={handleSubmit}
+          disabled={isSubmittingCategory || !localForm.name.trim()}
+        >
+          {isSubmittingCategory ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Text style={styles.submitButtonText}>
+              {initialData?._id ? 'Update Category' : 'Create Category'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+});
+
+
+
+
+  // ──────────────────────────────────────────────────────────────
   // LOADING STATES
   // ──────────────────────────────────────────────────────────────
   if (authLoading || loading) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top + 16 }]}>
-        <LoadingOverlay 
-          message="Loading your products..." 
+        <LoadingOverlay
+          message="Loading your products..."
           progress={submissionProgress}
           showProgress={operationInProgress !== ''}
         />
@@ -1642,7 +1877,7 @@ export default function ProductsManagement() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Global Loading Overlay */}
       {operationInProgress !== '' && (
-        <LoadingOverlay 
+        <LoadingOverlay
           message={operationInProgress}
           progress={submissionProgress}
           showProgress={true}
@@ -1711,10 +1946,8 @@ export default function ProductsManagement() {
         }
       />
 
-      {/* FAB */}
-      <TouchableOpacity style={styles.fab} onPress={openCreateModal}>
-        <Ionicons name="add" size={28} color="#FFF" />
-      </TouchableOpacity>
+      {/* Enhanced FAB with Scan Option */}
+      {renderFab()}
 
       {/* Product Form Modal */}
       <Modal visible={modalVisible} animationType="slide" onRequestClose={closeModal}>
@@ -1729,7 +1962,7 @@ export default function ProductsManagement() {
                   {editingProduct ? 'Update product information' : 'Create a new product entry'}
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.closeButton}
                 onPress={closeModal}
               >
@@ -1741,13 +1974,24 @@ export default function ProductsManagement() {
               {/* Minimal Scan Barcode Section - Only for new products */}
               {!editingProduct && (
                 <View style={styles.scanSection}>
-                  <TouchableOpacity
-                    style={styles.minimalScanButton}
-                    onPress={() => setBarcodeScannerVisible(true)}
-                  >
-                    <Ionicons name="barcode-outline" size={20} color={Colors.light.accent} />
-                    <Text style={styles.minimalScanButtonText}>Scan Barcode</Text>
-                  </TouchableOpacity>
+                  {formData.scannedBarcodeId ? (
+                    <View style={styles.barcodeInfoSection}>
+                      <Text style={styles.barcodeInfoText}>
+                        📦 Scanned Barcode: {formData.scannedBarcodeId}
+                      </Text>
+                      <Text style={[styles.barcodeInfoText, { fontSize: 12, marginTop: 4 }]}>
+                        This barcode will be automatically assigned to the product
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.minimalScanButton}
+                      onPress={() => setBarcodeScannerVisible(true)}
+                    >
+                      <Ionicons name="barcode-outline" size={20} color={Colors.light.accent} />
+                      <Text style={styles.minimalScanButtonText}>Scan Barcode to Auto-Fill</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -1759,11 +2003,13 @@ export default function ProductsManagement() {
                 </View>
 
                 {/* Improved Image Upload with Loading */}
+                {/* Improved Image Upload with Loading */}
+                {/* Improved Image Upload with Loading - FIXED LOGIC */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Product Image</Text>
-                  
-                  {/* Image Preview with Loading */}
-                  {(imageUri || (formData.image && formData.image.uri)) && (
+
+                  {/* Image Preview with Loading - FIXED LOGIC */}
+                  {(imageUri || (formData.cloudinaryImages && formData.cloudinaryImages.length > 0)) && (
                     <View style={styles.imagePreviewContainer}>
                       {imageLoading && (
                         <View style={styles.imageLoadingOverlay}>
@@ -1771,20 +2017,42 @@ export default function ProductsManagement() {
                           <Text style={styles.imageLoadingText}>Processing Image...</Text>
                         </View>
                       )}
-                      <Image
-                        source={{ uri: imageUri || formData.image?.uri }}
-                        style={styles.imagePreview}
-                        resizeMode="cover"
-                        onError={(e) => {
-                          console.log('Image preview error:', e.nativeEvent.error);
-                          setImageUri('');
-                          setFormData(prev => ({ ...prev, image: null }));
-                        }}
-                      />
+
+                      {/* Show local image if available, otherwise show first cloudinary image */}
+                      {imageUri ? (
+                        <Image
+                          source={{ uri: imageUri }}
+                          style={styles.imagePreview}
+                          resizeMode="cover"
+                          onError={(e) => {
+                            console.log('Local image preview error:', e.nativeEvent.error);
+                            setImageUri('');
+                          }}
+                        />
+                      ) : formData.cloudinaryImages && formData.cloudinaryImages.length > 0 && formData.cloudinaryImages[0].url ? (
+                        <Image
+                          source={{ uri: formData.cloudinaryImages[0].url }}
+                          style={styles.imagePreview}
+                          resizeMode="cover"
+                          onError={(e) => {
+                            console.log('Cloudinary image preview error:', e.nativeEvent.error);
+                            // Remove the faulty image from cloudinaryImages
+                            setFormData(prev => ({
+                              ...prev,
+                              cloudinaryImages: prev.cloudinaryImages.filter((_, index) => index !== 0)
+                            }));
+                          }}
+                        />
+                      ) : null}
+
                       <TouchableOpacity
                         style={styles.removeImageButton}
                         onPress={() => {
-                          setFormData(prev => ({ ...prev, image: null, cloudinaryImages: [] }));
+                          setFormData(prev => ({
+                            ...prev,
+                            image: null,
+                            cloudinaryImages: []
+                          }));
                           setImageUri('');
                         }}
                       >
@@ -1795,8 +2063,8 @@ export default function ProductsManagement() {
 
                   {/* Image Selection Buttons */}
                   <View style={styles.imageButtonsRow}>
-                    <TouchableOpacity 
-                      style={[styles.imageButton, styles.galleryButton]} 
+                    <TouchableOpacity
+                      style={[styles.imageButton, styles.galleryButton]}
                       onPress={pickImage}
                       disabled={imageLoading}
                     >
@@ -1809,9 +2077,9 @@ export default function ProductsManagement() {
                         </>
                       )}
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={[styles.imageButton, styles.cameraButton]} 
+
+                    <TouchableOpacity
+                      style={[styles.imageButton, styles.cameraButton]}
                       onPress={takePhoto}
                       disabled={imageLoading}
                     >
@@ -1859,9 +2127,9 @@ export default function ProductsManagement() {
                   <Text style={styles.inputLabel}>
                     Category * {autoFilledFields.has('category') && '✓'}
                   </Text>
-                  <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false} 
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
                     style={styles.chipScroll}
                     contentContainerStyle={styles.chipScrollContent}
                   >
@@ -1917,8 +2185,8 @@ export default function ProductsManagement() {
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Milk Type</Text>
-                  <ScrollView 
-                    horizontal 
+                  <ScrollView
+                    horizontal
                     showsHorizontalScrollIndicator={false}
                     style={styles.chipScroll}
                     contentContainerStyle={styles.chipScrollContent}
@@ -1955,8 +2223,8 @@ export default function ProductsManagement() {
                     <Text style={styles.inputLabel}>
                       Unit {autoFilledFields.has('unit') && '✓'}
                     </Text>
-                    <ScrollView 
-                      horizontal 
+                    <ScrollView
+                      horizontal
                       showsHorizontalScrollIndicator={false}
                       style={styles.chipScroll}
                       contentContainerStyle={styles.chipScrollContent}
@@ -1994,12 +2262,12 @@ export default function ProductsManagement() {
                   <Text style={styles.inputLabel}>
                     Tags {autoFilledFields.has('tags') && '✓'}
                   </Text>
-                    <TextInput
-                      style={[styles.textInput, autoFilledFields.has('tags') && styles.autoFilledField]}
-                      value={formData.tags}
-                      onChangeText={(t) => setFormData({ ...formData, tags: t })}
-                      placeholder="organic, fresh, premium (comma separated)"
-                    />
+                  <TextInput
+                    style={[styles.textInput, autoFilledFields.has('tags') && styles.autoFilledField]}
+                    value={formData.tags}
+                    onChangeText={(t) => setFormData({ ...formData, tags: t })}
+                    placeholder="organic, fresh, premium (comma separated)"
+                  />
                 </View>
               </View>
 
@@ -2058,7 +2326,7 @@ export default function ProductsManagement() {
                       <Text style={styles.toggleDescription}>Show this product in featured section</Text>
                     </View>
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity
                     style={styles.toggle}
                     onPress={() =>
@@ -2111,9 +2379,14 @@ export default function ProductsManagement() {
       </Modal>
 
       {/* Categories Management Modal */}
-      <Modal visible={categoriesModalVisible} animationType="slide" onRequestClose={closeCategoryModal}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+      {/* Categories Management Modal - FIXED */}
+      <Modal
+        visible={categoriesModalVisible}
+        animationType="slide"
+        onRequestClose={closeCategoryModal}
+      >
+        <View style={styles.fullScreenModalOverlay}>
+          <View style={styles.fullScreenModalContent}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>Manage Categories</Text>
@@ -2121,7 +2394,7 @@ export default function ProductsManagement() {
                   Create, edit, or delete product categories
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.closeButton}
                 onPress={closeCategoryModal}
                 disabled={isSubmittingCategory}
@@ -2130,6 +2403,7 @@ export default function ProductsManagement() {
               </TouchableOpacity>
             </View>
 
+            {/* Remove the wrapper View and use CategoriesList directly */}
             <CategoriesList />
 
             <View style={styles.modalFooter}>
@@ -2153,9 +2427,17 @@ export default function ProductsManagement() {
       </Modal>
 
       {/* Category Form Modal */}
-      <Modal visible={editingCategory !== null || categoryFormData.name !== ''} animationType="slide" onRequestClose={closeCategoryModal}>
+      {/* Category Form Modal */}
+      <Modal
+        visible={categoryFormModalVisible}
+        animationType="slide"
+        onRequestClose={closeCategoryFormModal}
+        statusBarTranslucent={false}
+        avoidKeyboard
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
+            {/* header ... */}
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>
@@ -2165,118 +2447,28 @@ export default function ProductsManagement() {
                   {editingCategory ? 'Update category information' : 'Add a new product category'}
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.closeButton}
-                onPress={closeCategoryModal}
+                onPress={closeCategoryFormModal}
                 disabled={isSubmittingCategory}
               >
                 <MaterialIcons name="close" size={24} color={Colors.light.text} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Category Image Preview */}
-              {categoryFormData.image && (
-                <View style={styles.imagePreviewContainer}>
-                  <Image source={{ uri: categoryFormData.image }} style={styles.imagePreview} />
-                  <TouchableOpacity
-                    style={styles.removeImageButton}
-                    onPress={() => setCategoryFormData(prev => ({ ...prev, image: '' }))}
-                    disabled={isSubmittingCategory}
-                  >
-                    <Ionicons name="close" size={16} color="#FFF" />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Category Name *</Text>
-                <TextInput
-                  style={[styles.textInput, categoryFormData.name.trim() && styles.inputValid]}
-                  value={categoryFormData.name}
-                  onChangeText={(text) => setCategoryFormData(prev => ({ ...prev, name: text }))}
-                  placeholder="e.g., Dairy Products, Fresh Milk"
-                  editable={!isSubmittingCategory}
-                />
-                <Text style={styles.charCount}>{categoryFormData.name.length}/50</Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description</Text>
-                <TextInput
-                  style={[styles.textInput, styles.textArea]}
-                  value={categoryFormData.description}
-                  onChangeText={(text) => setCategoryFormData(prev => ({ ...prev, description: text }))}
-                  placeholder="Optional category description..."
-                  multiline
-                  numberOfLines={4}
-                  editable={!isSubmittingCategory}
-                />
-                <Text style={styles.charCount}>{categoryFormData.description.length}/200</Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Category Image</Text>
-                <View style={styles.imageInputContainer}>
-                  <TextInput
-                    style={[styles.textInput, styles.imageInput]}
-                    value={categoryFormData.image}
-                    onChangeText={(text) => setCategoryFormData(prev => ({ ...prev, image: text }))}
-                    placeholder="Image URL or select from gallery"
-                    editable={!isSubmittingCategory}
-                  />
-                  <TouchableOpacity 
-                    style={styles.imagePickerButton} 
-                    onPress={pickCategoryImage} 
-                    disabled={isSubmittingCategory}
-                  >
-                    <Ionicons name="image" size={20} color="#FFF" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Display Order</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={categoryFormData.displayOrder.toString()}
-                  onChangeText={(text) => {
-                    const num = parseInt(text) || 0;
-                    setCategoryFormData(prev => ({ ...prev, displayOrder: Math.max(0, num) }));
-                  }}
-                  placeholder="0"
-                  keyboardType="numeric"
-                  editable={!isSubmittingCategory}
-                />
-                <Text style={styles.helperText}>Lower numbers appear first in listings</Text>
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.cancelButton, isSubmittingCategory && styles.buttonDisabled]}
-                onPress={closeCategoryModal}
-                disabled={isSubmittingCategory}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.submitButton, isSubmittingCategory && styles.buttonDisabled]}
-                onPress={handleCategorySubmit}
-                disabled={isSubmittingCategory || !categoryFormData.name.trim()}
-              >
-                {isSubmittingCategory ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Text style={styles.submitButtonText}>
-                    {editingCategory ? 'Update Category' : 'Create Category'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            <CategoryForm
+              initialData={categoryFormData}
+              onSubmit={handleCategorySubmit}      // gets localForm as argument
+              onCancel={closeCategoryFormModal}
+              isSubmittingCategory={isSubmittingCategory}
+              categories={categories}
+              pickCategoryImage={pickCategoryImage}
+            />
           </View>
         </View>
       </Modal>
+
+
 
       {/* Barcode Scanner Modal for Product Creation */}
       <Modal
@@ -2294,14 +2486,14 @@ export default function ProductsManagement() {
                   Position barcode within the frame to auto-fill product details
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setBarcodeScannerVisible(false)}
               >
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.cameraContainer}>
               <CameraView
                 style={styles.camera}
@@ -2360,16 +2552,16 @@ export default function ProductsManagement() {
             <View style={styles.previewModalHeader}>
               <View>
                 <Text style={styles.previewModalTitle}>
-                  {fetchingProductData ? '🔍 Scanning Barcode...' : 
-                   fetchedProductData?.found ? '🎉 Product Data Found!' : '📝 Create New Product'}
+                  {fetchingProductData ? '🔍 Scanning Barcode...' :
+                    fetchedProductData?.found ? '🎉 Product Data Found!' : '📝 Create New Product'}
                 </Text>
                 <Text style={styles.previewModalSubtitle}>
-                  {fetchingProductData ? 'Fetching product information...' : 
-                   `Barcode: ${scannedBarcode}${fetchedProductData?.dataSource === 'openfoodfacts' ? ' • From OpenFoodFacts' : ''}`}
+                  {fetchingProductData ? 'Fetching product information...' :
+                    `Barcode: ${scannedBarcode}${fetchedProductData?.dataSource === 'openfoodfacts' ? ' • From OpenFoodFacts' : ''}`}
                 </Text>
               </View>
               {!fetchingProductData && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.closeButton}
                   onPress={() => {
                     setProductDataPreviewVisible(false);
@@ -2403,22 +2595,22 @@ export default function ProductsManagement() {
                 </View>
               ) : fetchedProductData ? (
                 <View style={styles.previewData}>
-                  
+
                   {/* Data Source Info */}
                   <View style={[
-                    styles.warningSection, 
+                    styles.warningSection,
                     fetchedProductData.found ? styles.successSection : styles.infoSection
                   ]}>
-                    <Ionicons 
-                      name={fetchedProductData.found ? "checkmark-circle" : "information-circle"} 
-                      size={20} 
-                      color={fetchedProductData.found ? "#4CAF50" : "#2196F3"} 
+                    <Ionicons
+                      name={fetchedProductData.found ? "checkmark-circle" : "information-circle"}
+                      size={20}
+                      color={fetchedProductData.found ? "#4CAF50" : "#2196F3"}
                     />
                     <Text style={[
                       styles.warningText,
                       fetchedProductData.found ? styles.successText : styles.infoText
                     ]}>
-                      {fetchedProductData.found 
+                      {fetchedProductData.found
                         ? 'Product data found online! Review and complete the information below.'
                         : 'No product data found. Please fill in the details manually.'}
                     </Text>
@@ -2434,7 +2626,7 @@ export default function ProductsManagement() {
                         <View style={styles.previewImagesContainer}>
                           {fetchedProductData.images.map((image, index) => {
                             if (!image || !image.url) return null;
-                            
+
                             return (
                               <View key={index} style={styles.previewImageContainer}>
                                 <Image
@@ -2454,8 +2646,8 @@ export default function ProductsManagement() {
                         </View>
                       </ScrollView>
                       <Text style={styles.previewImageNote}>
-                        {fetchedProductData.images.find(img => img && img.type === 'front') 
-                          ? 'Front product image will be used as main image.' 
+                        {fetchedProductData.images.find(img => img && img.type === 'front')
+                          ? 'Front product image will be used as main image.'
                           : 'First image will be used as main product image.'
                         }
                       </Text>
@@ -2465,7 +2657,7 @@ export default function ProductsManagement() {
                   {/* Product Information */}
                   <View style={styles.previewSection}>
                     <Text style={styles.previewSectionTitle}>Product Information</Text>
-                    
+
                     {fetchedProductData.name && (
                       <View style={styles.previewField}>
                         <Text style={styles.previewLabel}>
@@ -2474,7 +2666,7 @@ export default function ProductsManagement() {
                         <Text style={styles.previewValue}>{fetchedProductData.name}</Text>
                       </View>
                     )}
-                    
+
                     {fetchedProductData.description && (
                       <View style={styles.previewField}>
                         <Text style={styles.previewLabel}>
@@ -2483,7 +2675,7 @@ export default function ProductsManagement() {
                         <Text style={styles.previewValue}>{fetchedProductData.description}</Text>
                       </View>
                     )}
-                    
+
                     {fetchedProductData.brand && (
                       <View style={styles.previewField}>
                         <Text style={styles.previewLabel}>Brand</Text>
@@ -2495,7 +2687,7 @@ export default function ProductsManagement() {
                   {/* Product Details */}
                   <View style={styles.previewSection}>
                     <Text style={styles.previewSectionTitle}>Product Details</Text>
-                    
+
                     <View style={styles.previewFieldRow}>
                       <View style={styles.previewFieldHalf}>
                         <Text style={styles.previewLabel}>
@@ -2531,30 +2723,30 @@ export default function ProductsManagement() {
                   </View>
 
                   {/* Required Fields Warning */}
-                  {fetchedProductData.missingRequiredFields && 
-                  Object.values(fetchedProductData.missingRequiredFields).some(val => val) && (
-                    <View style={styles.warningSection}>
-                      <Ionicons name="warning" size={20} color="#FF9800" />
-                      <View style={styles.warningContent}>
-                        <Text style={styles.warningTitle}>Required Fields Missing</Text>
-                        <Text style={styles.warningText}>
-                          Please fill in these required fields:{' '}
-                          {Object.entries(fetchedProductData.missingRequiredFields)
-                            .filter(([_, isMissing]) => isMissing)
-                            .map(([field]) => {
-                              const fieldNames = {
-                                name: 'Product Name',
-                                price: 'Price',
-                                category: 'Category',
-                                unit: 'Unit'
-                              };
-                              return fieldNames[field] || field;
-                            })
-                            .join(', ')}
-                        </Text>
+                  {fetchedProductData.missingRequiredFields &&
+                    Object.values(fetchedProductData.missingRequiredFields).some(val => val) && (
+                      <View style={styles.warningSection}>
+                        <Ionicons name="warning" size={20} color="#FF9800" />
+                        <View style={styles.warningContent}>
+                          <Text style={styles.warningTitle}>Required Fields Missing</Text>
+                          <Text style={styles.warningText}>
+                            Please fill in these required fields:{' '}
+                            {Object.entries(fetchedProductData.missingRequiredFields)
+                              .filter(([_, isMissing]) => isMissing)
+                              .map(([field]) => {
+                                const fieldNames = {
+                                  name: 'Product Name',
+                                  price: 'Price',
+                                  category: 'Category',
+                                  unit: 'Unit'
+                                };
+                                return fieldNames[field] || field;
+                              })
+                              .join(', ')}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  )}
+                    )}
 
                   {/* Action Instructions */}
                   <View style={styles.infoSection}>
@@ -2587,7 +2779,7 @@ export default function ProductsManagement() {
                 >
                   <Text style={styles.previewCancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={[styles.previewApplyButton, applyingProductData && styles.previewApplyButtonDisabled]}
                   onPress={handleApplyProductDataToForm}
@@ -2624,7 +2816,7 @@ export default function ProductsManagement() {
                   {selectedProductForBarcode?.name}
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.closeButton}
                 onPress={closeBarcodeModal}
               >
@@ -2667,7 +2859,7 @@ export default function ProductsManagement() {
                 </View>
               </View>
             ) : (
-              <ScrollView 
+              <ScrollView
                 style={styles.barcodeScrollView}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.barcodeScrollContent}
@@ -2747,15 +2939,15 @@ export default function ProductsManagement() {
                   {selectedProductForBarcode?.barcodeUrl ? (
                     // Has generated barcode
                     <>
-                      <TouchableOpacity 
-                        style={styles.downloadBarcodeButton} 
+                      <TouchableOpacity
+                        style={styles.downloadBarcodeButton}
                         onPress={downloadBarcode}
                       >
                         <Ionicons name="download-outline" size={20} color="#FFF" />
                         <Text style={styles.downloadBarcodeButtonText}>Save Generated Barcode</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.scanBarcodeButton} 
+                      <TouchableOpacity
+                        style={styles.scanBarcodeButton}
                         onPress={startBarcodeScan}
                       >
                         <Ionicons name="scan-outline" size={20} color="#FFF" />
@@ -2765,7 +2957,7 @@ export default function ProductsManagement() {
                       </TouchableOpacity>
                       <View style={styles.removeButtonsRow}>
                         {selectedProductForBarcode?.scannedBarcodeId && (
-                          <TouchableOpacity 
+                          <TouchableOpacity
                             style={[styles.removeBarcodeButton, styles.removeScannedButton]}
                             onPress={removeScannedBarcode}
                           >
@@ -2773,7 +2965,7 @@ export default function ProductsManagement() {
                             <Text style={styles.removeBarcodeButtonText}>Remove Scanned</Text>
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           style={[styles.removeBarcodeButton, styles.removeGeneratedButton]}
                           onPress={removeGeneratedBarcode}
                         >
@@ -2785,8 +2977,8 @@ export default function ProductsManagement() {
                   ) : selectedProductForBarcode?.scannedBarcodeId ? (
                     // Has scanned barcode but no generated
                     <>
-                      <TouchableOpacity 
-                        style={styles.generateBarcodeButton} 
+                      <TouchableOpacity
+                        style={styles.generateBarcodeButton}
                         onPress={generateBarcode}
                         disabled={barcodeScanning}
                       >
@@ -2799,15 +2991,15 @@ export default function ProductsManagement() {
                           </>
                         )}
                       </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.scanBarcodeButton} 
+                      <TouchableOpacity
+                        style={styles.scanBarcodeButton}
                         onPress={startBarcodeScan}
                       >
                         <Ionicons name="scan-outline" size={20} color="#FFF" />
                         <Text style={styles.scanBarcodeButtonText}>Rescan Barcode</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.removeBarcodeButton} 
+                      <TouchableOpacity
+                        style={styles.removeBarcodeButton}
                         onPress={removeScannedBarcode}
                       >
                         <Ionicons name="trash-outline" size={20} color="#F44336" />
@@ -2817,8 +3009,8 @@ export default function ProductsManagement() {
                   ) : (
                     // No barcode at all
                     <>
-                      <TouchableOpacity 
-                        style={styles.generateBarcodeButton} 
+                      <TouchableOpacity
+                        style={styles.generateBarcodeButton}
                         onPress={generateBarcode}
                         disabled={barcodeScanning}
                       >
@@ -2831,8 +3023,8 @@ export default function ProductsManagement() {
                           </>
                         )}
                       </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.scanBarcodeButton} 
+                      <TouchableOpacity
+                        style={styles.scanBarcodeButton}
                         onPress={startBarcodeScan}
                       >
                         <Ionicons name="scan-outline" size={20} color="#FFF" />
@@ -2939,6 +3131,76 @@ const styles = StyleSheet.create({
     width: 1,
     height: 24,
     backgroundColor: Colors.light.border,
+  },
+
+  // FAB Container
+  fabContainer: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    alignItems: 'center',
+    gap: 12,
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  addFab: {
+    backgroundColor: Colors.light.accent,
+  },
+  scanFab: {
+    backgroundColor: '#2196F3',
+  },
+
+  // Clear Scan Button
+  clearScanButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+
+  // Enhanced Scan Section
+  scanSection: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  minimalScanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F8FF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    gap: 8,
+  },
+  minimalScanButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2196F3',
+  },
+
+  // Barcode Info in Form
+  barcodeInfoSection: {
+    backgroundColor: '#E8F5E9',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  barcodeInfoText: {
+    fontSize: 14,
+    color: '#2E7D32',
+    fontWeight: '500',
   },
 
   // Horizontal Categories Styles
@@ -3052,11 +3314,145 @@ const styles = StyleSheet.create({
     color: Colors.light.accent,
     textAlign: 'center',
   },
+  fullScreenModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  fullScreenModalContent: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    marginTop: 50, // Adjust this value based on your status bar height
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  categoriesFlatList: {
+    flex: 1, // This makes the FlatList take available space
+  },
+  categoriesListWrapper: {
+    flex: 1,
+  },
+  categoriesListHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+
+
 
   // Categories List Styles
   categoriesListContainer: {
     flex: 1,
     padding: 16,
+  },
+  categoriesListContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  categoriesListContentContainer: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
+  categoriesListTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  categoriesListSubtitle: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
+  categoryListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.white,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  categoryListImageContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: Colors.light.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryListImage: {
+    width: '100%',
+    height: '100%',
+  },
+  categoryListPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.light.background,
+  },
+  categoryListInfo: {
+    flex: 1,
+  },
+  categoryListName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  categoryListDescription: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 4,
+  },
+  categoryListOrder: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+  categoryListActions: {
+    marginLeft: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryDeleteButton: {
+    padding: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 8,
+  },
+  categoryEditButton: {
+    padding: 8,
+    backgroundColor: Colors.light.accent + '20',
+    borderRadius: 8,
+  },
+  categoriesEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  categoriesEmptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  categoriesEmptySubtext: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   categoriesListTitle: {
     fontSize: 20,
@@ -3397,24 +3793,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFEBEE',
   },
 
-  // FAB
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    backgroundColor: Colors.light.accent,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-
   // Empty State
   emptyContainer: {
     alignItems: 'center',
@@ -3502,28 +3880,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.light.textSecondary,
     marginLeft: 'auto',
-  },
-
-  // Minimal Scan Section
-  scanSection: {
-    marginBottom: 24,
-    alignItems: 'center',
-  },
-  minimalScanButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F8FF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#2196F3',
-    gap: 8,
-  },
-  minimalScanButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2196F3',
   },
 
   // Form Styles

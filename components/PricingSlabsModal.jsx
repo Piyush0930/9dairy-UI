@@ -153,34 +153,36 @@ const PricingSlabsModal = ({ visible, onClose, inventoryItem, onSave, authToken 
     }
   };
 
-  const calculateExamplePrice = (quantity) => {
-    if (!sellingPrice) return 0;
-    
-    const base = parseFloat(sellingPrice);
-    const regularPrice = base * quantity;
-    
-    if (!enableQuantityPricing || pricingSlabs.length === 0) {
-      return regularPrice;
-    }
+const calculateExamplePrice = (quantity) => {
+  if (!sellingPrice) return 0;
+  
+  const base = parseFloat(sellingPrice);
+  const regularPrice = base * quantity;
+  
+  if (!enableQuantityPricing || pricingSlabs.length === 0) {
+    return regularPrice;
+  }
 
-    const applicableSlab = pricingSlabs
-      .filter(slab => slab.isActive)
-      .sort((a, b) => a.minQuantity - b.minQuantity)
-      .find(slab => quantity >= slab.minQuantity && quantity <= slab.maxQuantity);
+  const applicableSlab = pricingSlabs
+    .filter(slab => slab.isActive)
+    .sort((a, b) => a.minQuantity - b.minQuantity)
+    .find(slab => quantity >= slab.minQuantity && quantity <= slab.maxQuantity);
 
-    if (!applicableSlab) return regularPrice;
+  if (!applicableSlab) return regularPrice;
 
-    const discountValue = parseFloat(applicableSlab.discountValue);
-    let discountAmount = 0;
+  // ✅ PER-PIECE discount calculation
+  let discountedPricePerPiece = base;
+  const discountValue = parseFloat(applicableSlab.discountValue);
 
-    if (applicableSlab.discountType === 'FLAT') {
-      discountAmount = discountValue;
-    } else if (applicableSlab.discountType === 'PERCENTAGE') {
-      discountAmount = (regularPrice * discountValue) / 100;
-    }
+  if (applicableSlab.discountType === 'FLAT') {
+    discountedPricePerPiece = Math.max(0, base - discountValue);
+  } else if (applicableSlab.discountType === 'PERCENTAGE') {
+    const discountAmount = (base * discountValue) / 100;
+    discountedPricePerPiece = Math.max(0, base - discountAmount);
+  }
 
-    return Math.max(0, regularPrice - discountAmount);
-  };
+  return discountedPricePerPiece * quantity; // ✅ PER-PIECE
+};
 
   const renderSlabItem = ({ item, index }) => (
     <View style={styles.slabItem}>
