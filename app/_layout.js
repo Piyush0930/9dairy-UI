@@ -7,6 +7,8 @@ import NavigationHandler from '@/navigation/NavigationHandler';
 import { Slot } from 'expo-router';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { useEffect, useState } from 'react';
+// import '../global.css';
+import '../global.css'; // Note the ../
 
 // Simple loading component
 function LoadingScreen() {

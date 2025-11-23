@@ -1,4 +1,3 @@
-// app/(admin)/profile.jsx
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/contexts/ProfileContext';
@@ -9,7 +8,6 @@ import {
   Alert,
   Modal,
   ScrollView,
-  StyleSheet,
   Switch,
   Text,
   TextInput,
@@ -212,35 +210,34 @@ export default function AdminProfile() {
 
   // Enhanced Card Components
   const ProfileHeaderCard = () => (
-    <View style={styles.profileHeaderCard}>
-      <View style={styles.avatarSection}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
+    <View className="bg-white mx-4 p-5 rounded-xl border border-gray-200 shadow flex-row items-center justify-between">
+      <View className="flex-row items-center flex-1">
+        <View className="w-16 h-16 rounded-full bg-blue-500 items-center justify-center mr-4">
+          <Text className="text-white text-2xl font-bold">
             {profile?.shopName?.charAt(0)?.toUpperCase() || 'S'}
           </Text>
         </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.shopName} numberOfLines={1}>
+        <View className="flex-1">
+          <Text className="text-lg font-bold text-gray-800 mb-1" numberOfLines={1}>
             {profile?.shopName || 'No Shop Name'}
           </Text>
-          <Text style={styles.ownerName} numberOfLines={1}>
+          <Text className="text-base text-gray-500 mb-2" numberOfLines={1}>
             {profile?.fullName || 'No Name'}
           </Text>
-          <View style={styles.statusBadge}>
+          <View className="flex-row items-center self-start bg-green-100 px-3 py-1.5 rounded-full">
             <View 
-              style={[
-                styles.statusDot,
-                { backgroundColor: profile?.isActive ? '#4CAF50' : '#F44336' }
-              ]} 
+              className={`w-2 h-2 rounded-full mr-1.5 ${
+                profile?.isActive ? 'bg-green-500' : 'bg-red-500'
+              }`} 
             />
-            <Text style={styles.statusText}>
+            <Text className="text-xs font-semibold text-green-700">
               {profile?.isActive ? 'Active' : 'Inactive'}
             </Text>
           </View>
         </View>
       </View>
       <TouchableOpacity 
-        style={styles.editProfileButton}
+        className="w-10 h-10 rounded-full bg-blue-50 items-center justify-center"
         onPress={() => setEditModalVisible(true)}
       >
         <Feather name="edit-2" size={18} color={Colors.light.accent} />
@@ -249,28 +246,28 @@ export default function AdminProfile() {
   );
 
   const StatsCard = () => (
-    <View style={styles.statsCard}>
-      <Text style={styles.sectionTitle}>Business Overview</Text>
-      <View style={styles.statsGrid}>
-        <View style={styles.statItem}>
-          <View style={[styles.statIcon, { backgroundColor: 'rgba(33, 150, 243, 0.1)' }]}>
+    <View className="bg-white mx-4 p-5 rounded-xl border border-gray-200">
+      <Text className="text-lg font-bold text-gray-800 mb-4">Business Overview</Text>
+      <View className="flex-row gap-4">
+        <View className="flex-1 flex-row items-center">
+          <View className="w-12 h-12 rounded-full bg-blue-100 items-center justify-center mr-3">
             <Ionicons name="location" size={20} color={Colors.light.accent} />
           </View>
-          <View style={styles.statContent}>
-            <Text style={styles.statValue}>{profile?.serviceRadius || 50} km</Text>
-            <Text style={styles.statLabel}>Service Radius</Text>
+          <View className="flex-1">
+            <Text className="text-lg font-bold text-gray-800 mb-0.5">{profile?.serviceRadius || 50} km</Text>
+            <Text className="text-sm text-gray-500">Service Radius</Text>
           </View>
         </View>
         
-        <View style={styles.statItem}>
-          <View style={[styles.statIcon, { backgroundColor: 'rgba(76, 175, 80, 0.1)' }]}>
+        <View className="flex-1 flex-row items-center">
+          <View className="w-12 h-12 rounded-full bg-green-100 items-center justify-center mr-3">
             <MaterialIcons name="store" size={20} color="#4CAF50" />
           </View>
-          <View style={styles.statContent}>
-            <Text style={styles.statValue}>
+          <View className="flex-1">
+            <Text className="text-lg font-bold text-gray-800 mb-0.5">
               {profile?.isActive ? "Active" : "Inactive"}
             </Text>
-            <Text style={styles.statLabel}>Shop Status</Text>
+            <Text className="text-sm text-gray-500">Shop Status</Text>
           </View>
         </View>
       </View>
@@ -278,24 +275,24 @@ export default function AdminProfile() {
   );
 
   const InfoSection = ({ title, items }) => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.infoCards}>
+    <View className="mb-6 px-4">
+      <Text className="text-lg font-bold text-gray-800 mb-4">{title}</Text>
+      <View className="gap-2">
         {items.map((item, index) => (
           <TouchableOpacity 
             key={index}
-            style={styles.infoCard}
+            className="bg-white p-4 rounded-xl border border-gray-200"
             onPress={item.onPress}
             disabled={!item.editable}
           >
-            <View style={styles.infoHeader}>
-              <View style={styles.infoLeft}>
-                <View style={styles.infoIcon}>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center flex-1">
+                <View className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center mr-3">
                   {item.icon}
                 </View>
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>{item.label}</Text>
-                  <Text style={styles.infoValue} numberOfLines={2}>
+                <View className="flex-1">
+                  <Text className="text-sm font-semibold text-gray-500 mb-1">{item.label}</Text>
+                  <Text className="text-base text-gray-800 font-medium" numberOfLines={2}>
                     {item.value || 'Not set'}
                   </Text>
                 </View>
@@ -311,18 +308,18 @@ export default function AdminProfile() {
   );
 
   const ActionCard = ({ icon, title, description, onPress, buttonText = "Manage" }) => (
-    <TouchableOpacity style={styles.actionCard} onPress={onPress}>
-      <View style={styles.actionContent}>
-        <View style={styles.actionIcon}>
+    <TouchableOpacity className="bg-white p-4 rounded-xl border border-gray-200 flex-row items-center justify-between" onPress={onPress}>
+      <View className="flex-row items-center flex-1">
+        <View className="w-12 h-12 rounded-full bg-blue-100 items-center justify-center mr-3">
           {icon}
         </View>
-        <View style={styles.actionText}>
-          <Text style={styles.actionTitle}>{title}</Text>
-          <Text style={styles.actionDescription}>{description}</Text>
+        <View className="flex-1">
+          <Text className="text-base font-semibold text-gray-800 mb-0.5">{title}</Text>
+          <Text className="text-sm text-gray-500">{description}</Text>
         </View>
       </View>
-      <View style={styles.actionButton}>
-        <Text style={styles.actionButtonText}>{buttonText}</Text>
+      <View className="flex-row items-center">
+        <Text className="text-sm font-semibold text-blue-500 mr-1">{buttonText}</Text>
         <Feather name="chevron-right" size={16} color={Colors.light.accent} />
       </View>
     </TouchableOpacity>
@@ -330,27 +327,29 @@ export default function AdminProfile() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+      <View className="flex-1 justify-center items-center bg-white" style={{ paddingTop: insets.top }}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+        <Text className="text-base text-gray-500 mt-4">Loading profile...</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-white" style={{ paddingTop: insets.top }}>
       {/* Professional Header */}
-      <View style={styles.professionalHeader}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Profile</Text>
-          <Text style={styles.headerSubtitle}>Manage your business profile</Text>
+      <View className="px-4 pt-4 pb-4 bg-white border-b border-gray-200 min-h-18 justify-center">
+        <View className="flex-row items-center justify-between h-10">
+          <View>
+            <Text className="text-2xl font-bold text-gray-800">Profile</Text>
+            <Text className="text-sm text-gray-500 font-medium">Manage your business profile</Text>
+          </View>
         </View>
       </View>
 
       <ScrollView
-        style={styles.scrollView}
+        className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingBottom: 20 }}
       >
         {/* Profile Header */}
         <ProfileHeaderCard />
@@ -420,9 +419,9 @@ export default function AdminProfile() {
         />
 
         {/* Account Actions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.actionCards}>
+        <View className="mb-6 px-4">
+          <Text className="text-lg font-bold text-gray-800 mb-4">Account</Text>
+          <View className="gap-2">
             <ActionCard
               icon={<MaterialIcons name="phone-android" size={24} color={Colors.light.accent} />}
               title="Phone Number"
@@ -446,10 +445,10 @@ export default function AdminProfile() {
         </View>
 
         {/* Logout Section */}
-        <View style={styles.logoutSection}>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <View className="px-4 mt-2">
+          <TouchableOpacity className="bg-white p-4 rounded-xl border border-red-100 flex-row items-center justify-center gap-2" onPress={handleLogout}>
             <MaterialIcons name="logout" size={20} color="#F44336" />
-            <Text style={styles.logoutButtonText}>Logout</Text>
+            <Text className="text-base font-semibold text-red-500">Logout</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -461,10 +460,10 @@ export default function AdminProfile() {
         visible={editModalVisible}
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Profile</Text>
+        <View className="flex-1 bg-black/50 justify-center items-center p-5">
+          <View className="bg-white rounded-xl w-full max-w-125 max-h-4/5 shadow-lg">
+            <View className="flex-row justify-between items-center p-5 border-b border-gray-200">
+              <Text className="text-xl font-bold text-gray-800">Edit Profile</Text>
               <TouchableOpacity 
                 onPress={() => setEditModalVisible(false)}
                 disabled={saving}
@@ -473,31 +472,31 @@ export default function AdminProfile() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Owner Name</Text>
+            <ScrollView className="p-5" showsVerticalScrollIndicator={false}>
+              <View className="mb-4">
+                <Text className="text-sm font-semibold text-gray-800 mb-2">Owner Name</Text>
                 <TextInput
-                  style={styles.textInput}
+                  className="bg-gray-50 border border-gray-300 rounded-lg p-3 text-base text-gray-800"
                   value={formData.fullName}
                   onChangeText={(text) => setFormData(prev => ({ ...prev, fullName: text }))}
                   placeholder="Enter owner name"
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Shop Name</Text>
+              <View className="mb-4">
+                <Text className="text-sm font-semibold text-gray-800 mb-2">Shop Name</Text>
                 <TextInput
-                  style={styles.textInput}
+                  className="bg-gray-50 border border-gray-300 rounded-lg p-3 text-base text-gray-800"
                   value={formData.shopName}
                   onChangeText={(text) => setFormData(prev => ({ ...prev, shopName: text }))}
                   placeholder="Enter shop name"
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Contact Number</Text>
+              <View className="mb-4">
+                <Text className="text-sm font-semibold text-gray-800 mb-2">Contact Number</Text>
                 <TextInput
-                  style={styles.textInput}
+                  className="bg-gray-50 border border-gray-300 rounded-lg p-3 text-base text-gray-800"
                   value={formData.contactNumber}
                   onChangeText={(text) => setFormData(prev => ({ ...prev, contactNumber: text }))}
                   placeholder="Enter contact number"
@@ -505,10 +504,10 @@ export default function AdminProfile() {
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Address</Text>
+              <View className="mb-4">
+                <Text className="text-sm font-semibold text-gray-800 mb-2">Address</Text>
                 <TextInput
-                  style={[styles.textInput, styles.textArea]}
+                  className="bg-gray-50 border border-gray-300 rounded-lg p-3 text-base text-gray-800 min-h-20 text-top"
                   value={formData.address}
                   onChangeText={(text) => setFormData(prev => ({ ...prev, address: text }))}
                   placeholder="Enter shop address"
@@ -517,10 +516,10 @@ export default function AdminProfile() {
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Service Radius (km)</Text>
+              <View className="mb-4">
+                <Text className="text-sm font-semibold text-gray-800 mb-2">Service Radius (km)</Text>
                 <TextInput
-                  style={styles.textInput}
+                  className="bg-gray-50 border border-gray-300 rounded-lg p-3 text-base text-gray-800"
                   value={formData.serviceRadius.toString()}
                   onChangeText={(text) => setFormData(prev => ({ ...prev, serviceRadius: parseInt(text) || 50 }))}
                   placeholder="Enter service radius"
@@ -528,8 +527,8 @@ export default function AdminProfile() {
                 />
               </View>
 
-              <View style={styles.switchGroup}>
-                <Text style={styles.inputLabel}>Shop Active</Text>
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-sm font-semibold text-gray-800">Shop Active</Text>
                 <Switch
                   value={formData.isActive}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, isActive: value }))}
@@ -539,24 +538,24 @@ export default function AdminProfile() {
               </View>
             </ScrollView>
 
-            <View style={styles.modalFooter}>
+            <View className="flex-row p-5 border-t border-gray-200 gap-3">
               <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]}
+                className="flex-1 bg-gray-50 py-3.5 rounded-lg items-center border border-gray-300"
                 onPress={() => setEditModalVisible(false)}
                 disabled={saving}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text className="text-base font-semibold text-gray-500">Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.modalButton, styles.saveButton]}
+                className="flex-1 bg-blue-500 py-3.5 rounded-lg items-center"
                 onPress={handleSaveProfile}
                 disabled={saving}
               >
                 {saving ? (
                   <ActivityIndicator size="small" color="#FFF" />
                 ) : (
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                  <Text className="text-base font-semibold text-white">Save Changes</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -569,392 +568,3 @@ export default function AdminProfile() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-  },
-  // Professional Header
-  professionalHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: Colors.light.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
-    minHeight: 72,
-    justifyContent: 'center',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 40,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-  // Profile Header Card
-  profileHeaderCard: {
-    backgroundColor: '#FFF',
-    margin: 16,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  avatarSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.light.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  shopName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  ownerName: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4CAF50',
-  },
-  editProfileButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Stats Card
-  statsCard: {
-    backgroundColor: '#FFF',
-    margin: 16,
-    marginTop: 0,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  statItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  statContent: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
-  // Sections
-  section: {
-    marginBottom: 24,
-    paddingHorizontal: 16,
-  },
-  infoCards: {
-    gap: 8,
-  },
-  infoCard: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  infoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  infoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  infoIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  infoContent: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-    marginBottom: 4,
-  },
-  infoValue: {
-    fontSize: 16,
-    color: Colors.light.text,
-    fontWeight: '500',
-  },
-  // Action Cards
-  actionCards: {
-    gap: 8,
-  },
-  actionCard: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  actionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  actionText: {
-    flex: 1,
-  },
-  actionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 2,
-  },
-  actionDescription: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.accent,
-    marginRight: 4,
-  },
-  // Logout Section
-  logoutSection: {
-    paddingHorizontal: 16,
-    marginTop: 8,
-  },
-  logoutButton: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FFEBEE',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  logoutButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#F44336',
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    width: '100%',
-    maxWidth: 500,
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  modalBody: {
-    padding: 20,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  textInput: {
-    backgroundColor: Colors.light.background,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: Colors.light.text,
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  switchGroup: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButton: {
-    backgroundColor: Colors.light.background,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  saveButton: {
-    backgroundColor: Colors.light.accent,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-});

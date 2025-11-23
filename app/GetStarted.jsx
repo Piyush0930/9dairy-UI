@@ -5,14 +5,13 @@ import {
   Image,
   SafeAreaView,
   StatusBar,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-const router = useRouter();
 
 const DairyOScreen = () => {
+  const router = useRouter();
   const [currentProductIndex, setCurrentProductIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -44,115 +43,46 @@ const DairyOScreen = () => {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView className="flex-1 bg-white">
       <StatusBar barStyle="dark-content" />
 
-      <View style={styles.content}>
-        <View style={styles.logoContainer}>
+      <View className="flex-1 items-center justify-center px-5">
+        <View className="mb-15 items-up-center -mt-28">
           <Image
             source={require('../assets/images/logo.jpeg')}
-            style={styles.logo}
+            className="w-49 h-48"
             resizeMode="contain"
           />
         </View>
 
-        <Text style={styles.subheading}>
+        <Text className="text-sm text-gray-500 text-center mb-9 -mt-22">
           Fresh dairy products delivered to your door
         </Text>
 
-        <View style={styles.productContainer}>
-          <Animated.View style={[styles.productWrapper, { opacity: fadeAnim }]}>
-            <Image
-              source={dairyProducts[currentProductIndex].image}
-              style={styles.productImage}
-              resizeMode="contain"
-            />
-            <Text style={styles.productName}>
-              {dairyProducts[currentProductIndex].name}
-            </Text>
-          </Animated.View>
+        <View className="h-40 w-full items-center justify-center mb-9 -mt-10 ">
+          <Animated.View className="items-center justify-center mt-28" style={{ opacity: fadeAnim }}>
+  <Image
+    source={dairyProducts[currentProductIndex].image}
+    className="w-29 h-24 mb-1"
+    resizeMode="contain"
+  />
+  <Text className="text-base font-semibold text-blue-900 text-center">
+    {dairyProducts[currentProductIndex].name}
+  </Text>
+</Animated.View>
         </View>
 
         <TouchableOpacity
-          style={styles.button}
+          className="bg-blue-700 py-4 px-12 rounded-3xl shadow-lg shadow-black/30 mt-32"
           onPress={() => router.push('Login')}
         >
-          <Text style={styles.buttonText}>Get Started</Text>
+          <Text className="text-white text-lg font-bold tracking-wide">
+            Get Started
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  content: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  logoContainer: {
-    marginBottom: 40,
-    alignItems: 'center',
-  },
-  logo: {
-    width: 300,
-    height: 290,
-  },
-  subheading: {
-    top: -100,
-    fontSize: 15,
-    color: '#5A6B7D',
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  productContainer: {
-    top: -80,
-    height: 180,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  productWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  productImage: {
-    width: 140,
-    height: 140,
-    marginBottom: 8,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E3A5F',
-    textAlign: 'center',
-  },
-  button: {
-    backgroundColor: '#004494',
-    paddingVertical: 16,
-    paddingHorizontal: 60,
-    borderRadius: 35,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-});
 
 export default DairyOScreen;

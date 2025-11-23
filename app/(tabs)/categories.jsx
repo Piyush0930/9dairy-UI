@@ -13,7 +13,6 @@ import {
   Modal,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -530,61 +529,61 @@ export default function CategoriesScreen() {
 
     return (
       <TouchableOpacity 
-        style={styles.productCard}
+        className="bg-white rounded-xl p-4 mx-1 shadow-sm shadow-black min-h-[220px] relative"
         onPress={() => openProductDetail(product)}
         activeOpacity={0.9}
       >
         {/* Blue Discount Badge - Top Right Corner */}
         {pricing.hasDiscount && availabilityStatus === 'available' && (
-          <View style={styles.discountBadge}>
-            <Text style={styles.discountBadgeText}>
+          <View className="absolute right-3 top-3 bg-blue-500 px-3 py-1.5 rounded-lg z-10 shadow-sm shadow-black items-center">
+            <Text className="text-white text-xs font-extrabold">
               {pricing.discountPercentage}% OFF
             </Text>
             {pricing.isExtendedRange && (
-              <Text style={styles.extendedRangeText}>EXTENDED</Text>
+              <Text className="text-white text-[8px] font-bold mt-0.5 opacity-90">
+                EXTENDED
+              </Text>
             )}
           </View>
         )}
 
         {/* Status Badge - Short Titles */}
         {availabilityStatus === 'out_of_stock' && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>OUT OF STOCK</Text>
+          <View className="absolute right-3 top-3 bg-red-500 px-2.5 py-1.5 rounded-lg z-10">
+            <Text className="text-white text-[10px] font-bold">OUT OF STOCK</Text>
           </View>
         )}
         {availabilityStatus === 'not_available' && (
-          <View style={[styles.statusBadge, styles.notAvailableBadge]}>
-            <Text style={styles.statusBadgeText}>NOT AVAILABLE</Text>
+          <View className="absolute right-3 top-3 bg-yellow-500 px-2.5 py-1.5 rounded-lg z-10">
+            <Text className="text-white text-[10px] font-bold">NOT AVAILABLE</Text>
           </View>
         )}
 
         {/* Product Content */}
-        <View style={styles.productContent}>
-          <View style={styles.productLeft}>
-            <Text style={styles.productName}>{product.name}</Text>
-            <Text style={styles.productUnit}>{product.unit}</Text>
+        <View className="flex-row gap-4 mt-2">
+          <View className="flex-1 justify-between">
+            <Text className="text-base font-semibold text-gray-900 mb-1 leading-[22px]">{product.name}</Text>
+            <Text className="text-sm text-gray-600 mb-3">{product.unit}</Text>
 
             {/* Dynamic Price Display */}
-            <View style={styles.mainPriceContainer}>
-              <View style={styles.priceRow}>
-                <Text style={styles.price}>₹{pricing.currentPrice}</Text>
+            <View className="mb-3">
+              <View className="flex-row items-center gap-2 mb-3">
+                <Text className="text-xl font-bold text-gray-900">₹{pricing.currentPrice}</Text>
                 {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && (
-                  <Text style={styles.priceOriginal}>₹{pricing.basePrice}</Text>
+                  <Text className="text-base text-gray-600 line-through">₹{pricing.basePrice}</Text>
                 )}
               </View>
               
               {/* Savings Badge - Show for both single piece and bulk discounts */}
               {(pricing.savings > 0 || singlePieceSavings > 0) && (
                 <Animated.View 
-                  style={[
-                    styles.savingsBadge,
-                    { 
-                      transform: [{ scale: savingsScale }],
-                      opacity: savingsOpacity 
-                    }
-                  ]}
+                  className="bg-green-50 px-3 py-1.5 rounded-full border border-green-200 self-start"
+                  style={{ 
+                    transform: [{ scale: savingsScale }],
+                    opacity: savingsOpacity 
+                  }}
                 >
-                  <Text style={styles.savingsBadgeText}>
+                  <Text className="text-emerald-800 text-xs font-semibold">
                     You saved ₹{pricing.savings > 0 ? pricing.savings : singlePieceSavings}
                   </Text>
                 </Animated.View>
@@ -592,38 +591,36 @@ export default function CategoriesScreen() {
             </View>
           </View>
 
-          <View style={styles.productRight}>
+          <View className="items-center justify-between">
             {product.image || product.imageUrl ? (
               <Image
                 source={getImageSource(product.image || product.imageUrl)}
-                style={styles.productImage}
+                className="w-[90px] h-[90px] rounded-lg bg-gray-100"
                 resizeMode="cover"
               />
             ) : (
-              <View style={styles.productImagePlaceholder}>
-                <Text style={styles.productImageText}>📦</Text>
+              <View className="w-[90px] h-[90px] bg-gray-100 rounded-lg justify-center items-center">
+                <Text className="text-2xl">📦</Text>
               </View>
             )}
             
             {/* Quantity Controls - Below Image */}
             {availabilityStatus === 'available' && (
-              <View style={styles.quantitySection}>
+              <View className="mt-3 w-full items-center">
                 {cartQuantity > 0 ? (
                   <Animated.View 
-                    style={[
-                      styles.quantityControls,
-                      { transform: [{ scale: buttonScale }] }
-                    ]}
+                    className="flex-row items-center justify-between bg-blue-50 rounded-lg px-3 py-2 w-[120px]"
+                    style={{ transform: [{ scale: buttonScale }] }}
                   >
                     <TouchableOpacity 
-                      style={styles.qtyBtn} 
+                      className="p-1" 
                       onPress={handleRemovePress}
                     >
                       <Ionicons name="remove" size={20} color={Colors.light.tint} />
                     </TouchableOpacity>
-                    <Text style={styles.qtyText}>{cartQuantity}</Text>
+                    <Text className="text-base font-semibold text-gray-900 min-w-[30px] text-center">{cartQuantity}</Text>
                     <TouchableOpacity 
-                      style={styles.qtyBtn} 
+                      className="p-1" 
                       onPress={handleAddPress}
                     >
                       <Ionicons name="add" size={20} color={Colors.light.tint} />
@@ -632,11 +629,11 @@ export default function CategoriesScreen() {
                 ) : (
                   <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
                     <TouchableOpacity
-                      style={styles.addButton}
+                      className="bg-red-50 rounded-lg py-2.5 px-4 items-center w-[80px]"
                       onPress={handleAddPress}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.addButtonText}>ADD</Text>
+                      <Text className="text-sm font-bold text-red-700">ADD</Text>
                     </TouchableOpacity>
                   </Animated.View>
                 )}
@@ -647,13 +644,13 @@ export default function CategoriesScreen() {
 
         {/* Bulk Pricing Tiers */}
         {availabilityStatus === 'available' && pricing.bulkPricingTiers.length > 0 && (
-          <View style={styles.bulkPricingSection}>
-            <View style={styles.bulkPricingHeader}>
-              <Text style={styles.bulkPricingTitle}>BULK SAVINGS</Text>
+          <View className="mt-4 p-3 bg-gray-50 rounded-lg">
+            <View className="flex-row justify-between items-center mb-3">
+              <Text className="text-sm font-semibold text-gray-900">BULK SAVINGS</Text>
               {pricing.isExtendedRange && (
-                <View style={styles.extendedRangeIndicator}>
+                <View className="flex-row items-center bg-blue-50 px-2 py-1 rounded gap-1">
                   <Ionicons name="infinite" size={12} color="#3B82F6" />
-                  <Text style={styles.extendedRangeIndicatorText}>
+                  <Text className="text-[10px] text-blue-500 font-semibold">
                     Extended discounts
                   </Text>
                 </View>
@@ -661,38 +658,35 @@ export default function CategoriesScreen() {
             </View>
             {pricing.bulkPricingTiers.filter(tier => tier.quantity > 1).map((tier, index) => (
               <View key={index}>
-                <View style={styles.bulkTier}>
-                  <View style={styles.tierInfo}>
-                    <View style={styles.tierHeader}>
-                      <Text style={styles.tierPriceText}>
+                <View className="flex-row justify-between items-center py-2">
+                  <View className="flex-1">
+                    <View className="flex-row items-center gap-2 mb-1">
+                      <Text className="text-sm font-semibold text-blue-900">
                         ₹{tier.pricePerPiece}/pc for {tier.slabRange}
                       </Text>
                       {tier.isExtendedRange && (
-                        <View style={styles.tierExtendedBadge}>
-                          <Text style={styles.tierExtendedText}>EXTENDED</Text>
+                        <View className="bg-blue-500 px-1.5 py-0.5 rounded">
+                          <Text className="text-white text-[8px] font-bold">EXTENDED</Text>
                         </View>
                       )}
                     </View>
                     {tier.hasDiscount && (
-                      <Text style={styles.tierDiscountText}>
+                      <Text className="text-xs text-green-600 font-semibold">
                         {tier.discountPercentage}% OFF • Save ₹{tier.savings}
                       </Text>
                     )}
                   </View>
                   <TouchableOpacity
-                    style={[
-                      styles.tierAddButton,
-                      tier.isExtendedRange && styles.tierAddButtonExtended
-                    ]}
+                    className={`bg-red-50 px-3 py-1.5 rounded min-w-[70px] ${tier.isExtendedRange ? 'bg-blue-50' : ''}`}
                     onPress={() => handleAddToCart(product, tier.quantity)}
                   >
-                    <Text style={styles.tierAddButtonText}>
+                    <Text className="text-red-700 font-semibold text-xs text-center">
                       ADD {tier.quantity}
                     </Text>
                   </TouchableOpacity>
                 </View>
                 {index < pricing.bulkPricingTiers.filter(tier => tier.quantity > 1).length - 1 && (
-                  <View style={styles.tierSeparator} />
+                  <View className="h-px bg-gray-300 my-1.5" />
                 )}
               </View>
             ))}
@@ -712,14 +706,14 @@ export default function CategoriesScreen() {
           presentationStyle="pageSheet"
           onRequestClose={onClose}
         >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <View className="flex-1 bg-white">
+            <View className="flex-row justify-end p-4 pt-16">
+              <TouchableOpacity onPress={onClose} className="w-10 h-10 rounded-full bg-gray-200 justify-center items-center">
                 <Ionicons name="close" size={24} color="#000" />
               </TouchableOpacity>
             </View>
-            <View style={styles.productInfoSection}>
-              <Text style={styles.errorText}>Product information not available</Text>
+            <View className="p-5">
+              <Text className="text-base text-gray-600 text-center mt-5">Product information not available</Text>
             </View>
           </View>
         </Modal>
@@ -766,66 +760,64 @@ export default function CategoriesScreen() {
         presentationStyle="pageSheet"
         onRequestClose={onClose}
       >
-        <View style={styles.modalContainer}>
-          <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
+        <View className="flex-1 bg-white">
+          <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
             {/* Header with Close Button */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <View className="flex-row justify-end p-4 pt-16">
+              <TouchableOpacity onPress={onClose} className="w-10 h-10 rounded-full bg-gray-200 justify-center items-center">
                 <Ionicons name="close" size={24} color="#000" />
               </TouchableOpacity>
             </View>
 
             {/* Product Image */}
-            <View style={styles.productImageContainer}>
+            <View className="h-[300px] justify-center items-center bg-gray-50">
               {product.image || product.imageUrl ? (
                 <Image
                   source={getImageSource(product.image || product.imageUrl)}
-                  style={styles.largeProductImage}
+                  className="w-4/5 h-4/5 rounded-xl"
                   resizeMode="contain"
                 />
               ) : (
-                <View style={styles.largeProductImagePlaceholder}>
-                  <Text style={styles.largeProductImageText}>📦</Text>
+                <View className="w-[200px] h-[200px] bg-gray-300 rounded-xl justify-center items-center">
+                  <Text className="text-5xl">📦</Text>
                 </View>
               )}
             </View>
 
             {/* Product Info */}
-            <View style={styles.productInfoSection}>
-              <View style={styles.productHeaderRow}>
-                <View style={styles.productTitleContainer}>
-                  <Text style={styles.productDetailName}>{product.name}</Text>
-                  <Text style={styles.productDetailUnit}>{product.unit}</Text>
+            <View className="p-5">
+              <View className="flex-row justify-between items-start mb-4">
+                <View className="flex-1 mr-4">
+                  <Text className="text-2xl font-bold text-gray-900 mb-1">{product.name}</Text>
+                  <Text className="text-base text-gray-600">{product.unit}</Text>
                 </View>
                 
                 {/* Price and Add Counter - Top Right */}
-                <View style={styles.priceCounterContainer}>
-                  <View style={styles.detailPriceContainer}>
-                    <Text style={styles.detailPrice}>₹{pricing.currentPrice}</Text>
+                <View className="items-end min-w-[120px]">
+                  <View className="items-end mb-3">
+                    <Text className="text-3xl font-bold text-gray-900">₹{pricing.currentPrice}</Text>
                     {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && (
-                      <Text style={styles.detailPriceOriginal}>₹{pricing.basePrice}</Text>
+                      <Text className="text-xl text-gray-600 line-through">₹{pricing.basePrice}</Text>
                     )}
                   </View>
 
                   {/* Add to Cart Controls */}
                   {availabilityStatus === 'available' && (
-                    <View style={styles.detailQuantitySection}>
+                    <View className="mb-0">
                       {cartQuantity > 0 ? (
                         <Animated.View 
-                          style={[
-                            styles.detailQuantityControls,
-                            { transform: [{ scale: buttonScale }] }
-                          ]}
+                          className="flex-row items-center justify-between bg-blue-50 rounded-lg px-3 py-2 w-[120px]"
+                          style={{ transform: [{ scale: buttonScale }] }}
                         >
                           <TouchableOpacity 
-                            style={styles.detailQtyBtn} 
+                            className="p-1" 
                             onPress={handleRemovePress}
                           >
                             <Ionicons name="remove" size={20} color={Colors.light.tint} />
                           </TouchableOpacity>
-                          <Text style={styles.detailQtyText}>{cartQuantity}</Text>
+                          <Text className="text-base font-semibold text-gray-900 min-w-[30px] text-center">{cartQuantity}</Text>
                           <TouchableOpacity 
-                            style={styles.detailQtyBtn} 
+                            className="p-1" 
                             onPress={handleAddPress}
                           >
                             <Ionicons name="add" size={20} color={Colors.light.tint} />
@@ -834,11 +826,11 @@ export default function CategoriesScreen() {
                       ) : (
                         <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
                           <TouchableOpacity
-                            style={styles.detailAddButton}
+                            className="bg-red-50 rounded-lg py-2.5 px-4 items-center w-[80px]"
                             onPress={handleAddPress}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.detailAddButtonText}>ADD</Text>
+                            <Text className="text-sm font-bold text-red-700">ADD</Text>
                           </TouchableOpacity>
                         </Animated.View>
                       )}
@@ -848,8 +840,8 @@ export default function CategoriesScreen() {
               </View>
 
               {pricing.hasDiscount && (
-                <View style={styles.detailDiscountBadge}>
-                  <Text style={styles.detailDiscountBadgeText}>
+                <View className="bg-blue-500 px-3 py-1.5 rounded-lg self-start mb-5">
+                  <Text className="text-white text-sm font-bold">
                     {pricing.discountPercentage}% OFF
                   </Text>
                 </View>
@@ -857,24 +849,24 @@ export default function CategoriesScreen() {
 
               {/* Bulk Savings Section */}
               {availabilityStatus === 'available' && pricing.bulkPricingTiers.length > 0 && (
-                <View style={styles.detailBulkSection}>
-                  <Text style={styles.detailBulkTitle}>Bulk Savings</Text>
+                <View className="bg-gray-50 rounded-xl p-4 mb-6">
+                  <Text className="text-lg font-bold text-gray-900 mb-4">Bulk Savings</Text>
                   {pricing.bulkPricingTiers.map((tier, index) => (
-                    <View key={index} style={styles.detailBulkTier}>
-                      <View style={styles.detailTierInfo}>
-                        <Text style={styles.detailTierRange}>{tier.slabRange}</Text>
-                        <Text style={styles.detailTierPrice}>₹{tier.pricePerPiece}/piece</Text>
+                    <View key={index} className="flex-row justify-between items-center py-3 border-b border-gray-300">
+                      <View className="flex-1">
+                        <Text className="text-base font-semibold text-gray-900 mb-1">{tier.slabRange}</Text>
+                        <Text className="text-sm font-semibold text-blue-900 mb-1">₹{tier.pricePerPiece}/piece</Text>
                         {tier.hasDiscount && (
-                          <Text style={styles.detailTierDiscount}>
+                          <Text className="text-xs text-green-600 font-medium">
                             Save {tier.discountPercentage}% • ₹{tier.savings} total
                           </Text>
                         )}
                       </View>
                       <TouchableOpacity
-                        style={styles.detailTierAddButton}
+                        className="bg-red-50 px-3 py-2 rounded-lg"
                         onPress={() => handleAddToCart(product, tier.quantity)}
                       >
-                        <Text style={styles.detailTierAddButtonText}>
+                        <Text className="text-red-700 font-semibold text-sm">
                           ADD {tier.quantity}
                         </Text>
                       </TouchableOpacity>
@@ -884,25 +876,25 @@ export default function CategoriesScreen() {
               )}
 
               {/* Description */}
-              <View style={styles.descriptionSection}>
-                <Text style={styles.sectionTitle}>Description</Text>
-                <Text style={styles.descriptionText}>
+              <View className="mb-6">
+                <Text className="text-lg font-bold text-gray-900 mb-3">Description</Text>
+                <Text className="text-base text-gray-600 leading-6">
                   {product.description || 'No description available for this product.'}
                 </Text>
               </View>
 
               {/* Similar Products - Larger Cards */}
               {similarProducts.length > 0 && (
-                <View style={styles.similarProductsSection}>
-                  <Text style={styles.sectionTitle}>Similar Products</Text>
+                <View className="mb-[100px]">
+                  <Text className="text-lg font-bold text-gray-900 mb-3">Similar Products</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={styles.similarProductsList}>
+                    <View className="flex-row gap-4">
                       {similarProducts.map(similarProduct => {
                         const similarPricing = calculateProductPricing(similarProduct, similarProduct._inventory);
                         const similarCartQuantity = getItemQuantity(similarProduct._id);
                         
                         return (
-                          <View key={similarProduct._id} style={styles.similarProductCard}>
+                          <View key={similarProduct._id} className="w-[200px] bg-white rounded-xl p-3 shadow-sm shadow-black">
                             <TouchableOpacity 
                               onPress={() => {
                                 setSelectedProduct(similarProduct);
@@ -911,38 +903,38 @@ export default function CategoriesScreen() {
                             >
                               <Image
                                 source={getImageSource(similarProduct.image || similarProduct.imageUrl)}
-                                style={styles.similarProductImage}
+                                className="w-full h-[120px] rounded-lg mb-2"
                                 resizeMode="cover"
                               />
-                              <View style={styles.similarProductInfo}>
-                                <Text style={styles.similarProductName} numberOfLines={2}>
+                              <View className="flex-1">
+                                <Text className="text-sm font-semibold text-gray-900 mb-1 h-10" numberOfLines={2}>
                                   {similarProduct.name}
                                 </Text>
-                                <Text style={styles.similarProductUnit}>{similarProduct.unit}</Text>
-                                <View style={styles.similarProductPriceRow}>
-                                  <Text style={styles.similarProductPrice}>
+                                <Text className="text-xs text-gray-600 mb-2">{similarProduct.unit}</Text>
+                                <View className="flex-row items-center gap-2 mb-2">
+                                  <Text className="text-base font-bold text-gray-900">
                                     ₹{similarPricing.currentPrice}
                                   </Text>
                                   {similarPricing.hasDiscount && similarPricing.currentPrice < similarPricing.basePrice && (
-                                    <Text style={styles.similarProductPriceOriginal}>
+                                    <Text className="text-sm text-gray-600 line-through">
                                       ₹{similarPricing.basePrice}
                                     </Text>
                                   )}
                                 </View>
                                 
                                 {/* Add to Cart in Similar Products */}
-                                <View style={styles.similarProductActions}>
+                                <View className="mb-2">
                                   {similarCartQuantity > 0 ? (
-                                    <View style={styles.similarQuantityControls}>
+                                    <View className="flex-row items-center justify-between bg-blue-50 rounded px-2 py-1.5">
                                       <TouchableOpacity 
-                                        style={styles.similarQtyBtn} 
+                                        className="p-0.5" 
                                         onPress={() => removeFromCart(similarProduct._id)}
                                       >
                                         <Ionicons name="remove" size={16} color={Colors.light.tint} />
                                       </TouchableOpacity>
-                                      <Text style={styles.similarQtyText}>{similarCartQuantity}</Text>
+                                      <Text className="text-sm font-semibold text-gray-900 min-w-[20px] text-center">{similarCartQuantity}</Text>
                                       <TouchableOpacity 
-                                        style={styles.similarQtyBtn} 
+                                        className="p-0.5" 
                                         onPress={() => handleAddToCart(similarProduct)}
                                       >
                                         <Ionicons name="add" size={16} color={Colors.light.tint} />
@@ -950,29 +942,29 @@ export default function CategoriesScreen() {
                                     </View>
                                   ) : (
                                     <TouchableOpacity
-                                      style={styles.similarAddButton}
+                                      className="bg-red-50 rounded px-3 py-2 items-center"
                                       onPress={() => handleAddToCart(similarProduct)}
                                       activeOpacity={0.7}
                                     >
-                                      <Text style={styles.similarAddButtonText}>ADD</Text>
+                                      <Text className="text-xs font-bold text-red-700">ADD</Text>
                                     </TouchableOpacity>
                                   )}
                                 </View>
 
                                 {/* Bulk Pricing in Similar Products */}
                                 {similarPricing.bulkPricingTiers.length > 0 && similarPricing.bulkPricingTiers.some(tier => tier.quantity > 1) && (
-                                  <View style={styles.similarBulkSection}>
-                                    <Text style={styles.similarBulkTitle}>Bulk Save</Text>
+                                  <View className="mt-2">
+                                    <Text className="text-xs font-semibold text-gray-900 mb-1">Bulk Save</Text>
                                     {similarPricing.bulkPricingTiers
                                       .filter(tier => tier.quantity > 1)
                                       .slice(0, 2)
                                       .map((tier, tierIndex) => (
                                         <TouchableOpacity
                                           key={tierIndex}
-                                          style={styles.similarBulkButton}
+                                          className="bg-gray-50 py-1.5 px-2 rounded mb-1"
                                           onPress={() => handleAddToCart(similarProduct, tier.quantity)}
                                         >
-                                          <Text style={styles.similarBulkButtonText}>
+                                          <Text className="text-[10px] font-semibold text-blue-900 text-center">
                                             ADD {tier.quantity} • ₹{tier.pricePerPiece}/pc
                                           </Text>
                                         </TouchableOpacity>
@@ -993,15 +985,15 @@ export default function CategoriesScreen() {
 
           {/* Fixed Continue to Cart Button - Solid Red */}
           {cartQuantity > 0 && (
-            <View style={styles.continueToCartContainer}>
+            <View className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-300">
               <TouchableOpacity 
-                style={styles.continueToCartButton}
+                className="bg-red-600 rounded-xl py-4 px-6 items-center"
                 onPress={() => {
                   onClose();
                   router.push("/cart");
                 }}
               >
-                <Text style={styles.continueButtonText}>
+                <Text className="text-white text-base font-bold">
                   Continue to Cart • {cartQuantity} items • ₹{pricing.currentPrice * cartQuantity}
                 </Text>
               </TouchableOpacity>
@@ -1013,26 +1005,26 @@ export default function CategoriesScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>My List</Text>
-          <View style={styles.headerIcons}>
+    <View className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
+      <View className="bg-white pb-3">
+        <View className="flex-row justify-between items-center px-4 pt-3 pb-4">
+          <Text className="text-2xl font-bold text-gray-900">My List</Text>
+          <View className="flex-row gap-3">
             <TouchableOpacity
-              style={styles.iconButton}
+              className="w-12 h-12 rounded-full bg-gray-50 justify-center items-center"
               onPress={() => setShowSearch(!showSearch)}
               activeOpacity={0.7}
             >
               <Ionicons name="search" size={24} color="#1A1A1A" />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.cartButton}
+              className="w-12 h-12 rounded-full bg-gray-50 justify-center items-center relative"
               onPress={() => router.push("/cart")}
             >
               <Ionicons name="cart-outline" size={24} color="#1A1A1A" />
               {cartCount > 0 && (
-                <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>{cartCount}</Text>
+                <View className="absolute top-2 right-2 bg-blue-500 rounded-xl min-w-[20px] h-5 justify-center items-center">
+                  <Text className="text-white text-[11px] font-bold">{cartCount}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -1040,15 +1032,15 @@ export default function CategoriesScreen() {
         </View>
 
         {showSearch && (
-          <View style={styles.searchContainer}>
+          <View className="flex-row items-center bg-gray-50 rounded-xl mx-4 mb-2 px-4 py-3 gap-2">
             <TextInput
-              style={styles.searchInput}
+              className="flex-1 text-base text-gray-900"
               placeholder="Search products..."
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholderTextColor={Colors.light.textSecondary}
             />
-            <TouchableOpacity style={styles.searchIcon}>
+            <TouchableOpacity className="p-1">
               <Ionicons
                 name="search"
                 size={20}
@@ -1059,60 +1051,54 @@ export default function CategoriesScreen() {
         )}
 
         {/* Compact Save Tip */}
-        <View style={styles.saveTip}>
-          <Text style={styles.saveTipText}>
+        <View className="bg-amber-50 py-2 px-3 mx-4 rounded-lg mb-3">
+          <Text className="text-xs text-amber-900 font-medium text-center">
             💰 Save more with quantity discounts - Extended discounts apply automatically!
           </Text>
         </View>
 
-        <View style={styles.filterRow}>
+        <View className="flex-row px-4 gap-2 items-center">
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterButtons}
+            className="flex-row gap-2"
           >
             <TouchableOpacity
-              style={styles.filterButton}
+              className="flex-row items-center bg-white border border-gray-300 rounded-full py-2.5 px-3.5 gap-1.5"
               onPress={() => setShowSortModal(true)}
               activeOpacity={0.7}
             >
-              <Text style={styles.filterButtonText}>Sort</Text>
-              <Text style={styles.filterArrow}>▼</Text>
+              <Text className="text-[13px] font-semibold text-gray-900">Sort</Text>
+              <Text className="text-[10px] text-gray-600">▼</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.filterButton}
+              className="flex-row items-center bg-white border border-gray-300 rounded-full py-2.5 px-3.5 gap-1.5"
               onPress={() => console.log("Rated 4.0+ filter toggled")}
               activeOpacity={0.7}
             >
               <FontAwesome name="star" size={14} color="#F59E0B" />
-              <Text style={styles.filterButtonText}>Rated 4.0+</Text>
+              <Text className="text-[13px] font-semibold text-gray-900">Rated 4.0+</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.sidebar}>
+      <View className="flex-1 flex-row">
+        <View className="w-[90px] bg-white">
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.sidebarContent}
+            className="py-2"
           >
             <TouchableOpacity
-              style={[
-                styles.categoryItem,
-                selectedCategory === "all" && styles.categoryItemActive,
-              ]}
+              className={`items-center py-3 px-1.5 ${selectedCategory === "all" ? 'bg-pink-50' : ''}`}
               onPress={() => setSelectedCategory("all")}
               activeOpacity={0.7}
             >
-              <View style={styles.categoryIconContainer}>
-                <Text style={styles.allCategoryIcon}>📦</Text>
+              <View className="w-[52px] h-[52px] rounded-xl justify-center items-center mb-1.5">
+                <Text className="text-2xl">📦</Text>
               </View>
               <Text
-                style={[
-                  styles.categoryName,
-                  selectedCategory === "all" && styles.categoryNameActive,
-                ]}
+                className={`text-[10px] font-medium text-gray-600 text-center leading-[13px] ${selectedCategory === "all" ? 'text-gray-900 font-bold' : ''}`}
               >
                 All
               </Text>
@@ -1121,30 +1107,22 @@ export default function CategoriesScreen() {
             {categories.map((category, index) => (
               <TouchableOpacity
                 key={`category-${category._id}-${index}`}
-                style={[
-                  styles.categoryItem,
-                  selectedCategory === category._id && styles.categoryItemActive,
-                ]}
+                className={`items-center py-3 px-1.5 ${selectedCategory === category._id ? 'bg-pink-50' : ''}`}
                 onPress={() => setSelectedCategory(category._id)}
                 activeOpacity={0.7}
               >
                 <View
-                  style={[
-                    styles.categoryIconContainer,
-                    { backgroundColor: category.color || "#E3F2FD" },
-                  ]}
+                  className="w-[52px] h-[52px] rounded-xl justify-center items-center mb-1.5"
+                  style={{ backgroundColor: category.color || "#E3F2FD" }}
                 >
                   <Image
                     source={getImageSource(category.image)}
-                    style={styles.categoryImage}
+                    className="w-full h-full rounded-xl"
                     resizeMode="cover"
                   />
                 </View>
                 <Text
-                  style={[
-                    styles.categoryName,
-                    selectedCategory === category._id && styles.categoryNameActive,
-                  ]}
+                  className={`text-[10px] font-medium text-gray-600 text-center leading-[13px] ${selectedCategory === category._id ? 'text-gray-900 font-bold' : ''}`}
                   numberOfLines={3}
                 >
                   {category.name}
@@ -1154,10 +1132,10 @@ export default function CategoriesScreen() {
           </ScrollView>
         </View>
 
-        <View style={styles.productsContainer}>
+        <View className="flex-1">
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.productsList}
+            className="px-1 pb-[100px] gap-2"
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
@@ -1167,23 +1145,23 @@ export default function CategoriesScreen() {
                 <ProductCard key={product._id} product={product} />
               ))
             ) : (
-              <View style={styles.requestSection}>
-                <View style={styles.requestIcon}>
-                  <Text style={styles.requestIconText}>🔍</Text>
+              <View className="bg-white rounded-xl p-6 mx-2 flex-row gap-4 items-center">
+                <View className="w-[60px] h-[60px] bg-gray-100 rounded-xl justify-center items-center">
+                  <Text className="text-3xl">🔍</Text>
                 </View>
-                <View style={styles.requestContent}>
-                  <Text style={styles.requestTitle}>
+                <View className="flex-1">
+                  <Text className="text-base font-bold text-gray-900 mb-1">
                     Looking for something else?
                   </Text>
-                  <Text style={styles.requestSubtitle}>
+                  <Text className="text-[13px] text-gray-600 mb-3">
                     Tell us and we'll add it to the shop
                   </Text>
                   <TouchableOpacity
-                    style={styles.requestButton}
+                    className="border-2 border-blue-500 rounded-lg py-2.5 px-4 self-start"
                     onPress={() => console.log("Request a product clicked")}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.requestButtonText}>
+                    <Text className="text-sm font-bold text-blue-500">
                       Request a product
                     </Text>
                   </TouchableOpacity>
@@ -1201,26 +1179,23 @@ export default function CategoriesScreen() {
         animationType="slide"
         onRequestClose={() => setShowSortModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Sort by</Text>
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl pb-10">
+            <View className="flex-row justify-between items-center p-5 border-b border-gray-300">
+              <Text className="text-xl font-bold text-gray-900">Sort by</Text>
               <TouchableOpacity
                 onPress={() => setShowSortModal(false)}
-                style={styles.modalClose}
+                className="p-1"
                 activeOpacity={0.7}
               >
                 <Feather name="x" size={24} color="#1A1A1A" />
               </TouchableOpacity>
             </View>
-            <View style={styles.sortOptions}>
+            <View className="p-4 gap-2">
               {["relevance", "pricelow", "pricehigh", "rating"].map((option) => (
                 <TouchableOpacity
                   key={option}
-                  style={[
-                    styles.sortOption,
-                    sortOption === option && styles.sortOptionActive,
-                  ]}
+                  className={`py-4 px-5 rounded-xl bg-gray-50 ${sortOption === option ? 'bg-pink-50 border-2 border-blue-500' : ''}`}
                   onPress={() => {
                     setSortOption(option);
                     setShowSortModal(false);
@@ -1228,10 +1203,7 @@ export default function CategoriesScreen() {
                   activeOpacity={0.7}
                 >
                   <Text
-                    style={[
-                      styles.sortOptionText,
-                      sortOption === option && styles.sortOptionTextActive,
-                    ]}
+                    className={`text-base font-medium text-gray-900 ${sortOption === option ? 'font-bold text-blue-500' : ''}`}
                   >
                     {option === "pricelow" && "Price: Low to High"}
                     {option === "pricehigh" && "Price: High to Low"}
@@ -1254,886 +1226,3 @@ export default function CategoriesScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.backgroundLight,
-  },
-  header: {
-    backgroundColor: Colors.light.white,
-    paddingBottom: 12,
-  },
-  headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  headerIcons: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  iconButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.light.backgroundLight,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  cartButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.light.backgroundLight,
-    justifyContent: "center",
-    alignItems: "center",
-    position: "relative",
-  },
-  cartBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    backgroundColor: Colors.light.tint,
-    borderRadius: 12,
-    minWidth: 20,
-    height: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  cartBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.light.backgroundLight,
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: Colors.light.text,
-  },
-  searchIcon: {
-    padding: 4,
-  },
-  // Compact Save Tip
-  saveTip: {
-    backgroundColor: "#FFFAEB",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  saveTipText: {
-    fontSize: 12,
-    color: "#92400E",
-    fontWeight: "500",
-    textAlign: 'center',
-  },
-  filterRow: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    gap: 8,
-    alignItems: "center",
-  },
-  filterButtons: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  filterButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.light.white,
-    borderWidth: 1.5,
-    borderColor: "#E8E8E8",
-    borderRadius: 24,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    gap: 6,
-  },
-  filterButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.light.text,
-  },
-  filterArrow: {
-    fontSize: 10,
-    color: Colors.light.textSecondary,
-  },
-  content: {
-    flex: 1,
-    flexDirection: "row",
-  },
-  sidebar: {
-    width: 90,
-    backgroundColor: Colors.light.white,
-  },
-  sidebarContent: {
-    paddingVertical: 8,
-  },
-  categoryItem: {
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-  },
-  categoryItemActive: {
-    backgroundColor: "#FFF0F5",
-  },
-  categoryIconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  allCategoryIcon: {
-    fontSize: 24,
-  },
-  categoryImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 12,
-  },
-  categoryName: {
-    fontSize: 10,
-    fontWeight: "500",
-    color: Colors.light.textSecondary,
-    textAlign: "center",
-    lineHeight: 13,
-  },
-  categoryNameActive: {
-    color: Colors.light.text,
-    fontWeight: "700",
-  },
-  productsContainer: {
-    flex: 1,
-  },
-  productsList: {
-    paddingHorizontal: 4,
-    paddingBottom: 100,
-    gap: 8,
-  },
-  productCard: {
-    backgroundColor: Colors.light.white,
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-    position: "relative",
-    minHeight: 220,
-  },
-  // Blue Discount Badge
-  discountBadge: {
-    position: "absolute",
-    right: 12,
-    top: 12,
-    backgroundColor: "#3B82F6",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    zIndex: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-    alignItems: 'center',
-  },
-  discountBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  extendedRangeText: {
-    color: "#FFFFFF",
-    fontSize: 8,
-    fontWeight: "700",
-    marginTop: 2,
-    opacity: 0.9,
-  },
-  // Status Badges - Short Titles
-  statusBadge: {
-    position: "absolute",
-    right: 12,
-    top: 12,
-    backgroundColor: "#EF4444",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    zIndex: 2,
-  },
-  notAvailableBadge: {
-    backgroundColor: "#F59E0B",
-  },
-  statusBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  productContent: {
-    flexDirection: "row",
-    gap: 16,
-    marginTop: 8,
-  },
-  productLeft: {
-    flex: 1,
-    justifyContent: "space-between",
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.light.text,
-    marginBottom: 4,
-    lineHeight: 22,
-  },
-  productUnit: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 12,
-  },
-  mainPriceContainer: {
-    marginBottom: 12,
-  },
-  priceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  price: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  priceOriginal: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    textDecorationLine: "line-through",
-  },
-  // Light Savings Badge
-  savingsBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-  },
-  savingsBadgeText: {
-    color: "#065F46",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  productRight: {
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  productImage: {
-    width: 90,
-    height: 90,
-    borderRadius: 8,
-    backgroundColor: "#F5F5F5",
-  },
-  productImagePlaceholder: {
-    width: 90,
-    height: 90,
-    backgroundColor: "#F5F5F5",
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  productImageText: {
-    fontSize: 24,
-  },
-  // Quantity Section - Compact Add Button
-  quantitySection: {
-    marginTop: 12,
-    width: '100%',
-    alignItems: 'center',
-  },
-  quantityControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F0F9FF",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    width: 120,
-  },
-  qtyBtn: {
-    padding: 4,
-  },
-  qtyText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.light.text,
-    minWidth: 30,
-    textAlign: "center",
-  },
-  addButton: {
-    backgroundColor: "#FEE2E2",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    width: 80,
-  },
-  addButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#DC2626",
-  },
-  // Enhanced Bulk Pricing Section
-  bulkPricingSection: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-  },
-  bulkPricingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  bulkPricingTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.light.text,
-  },
-  extendedRangeIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
-  },
-  extendedRangeIndicatorText: {
-    fontSize: 10,
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  bulkTier: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  tierInfo: {
-    flex: 1,
-  },
-  tierHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  tierPriceText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1E40AF",
-  },
-  tierExtendedBadge: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  tierExtendedText: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '700',
-  },
-  tierDiscountText: {
-    fontSize: 12,
-    color: "#10B981",
-    fontWeight: "600",
-  },
-  tierSeparator: {
-    height: 1,
-    backgroundColor: "#E5E7EB",
-    marginVertical: 6,
-  },
-  tierAddButton: {
-    backgroundColor: "#FEE2E2",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    minWidth: 70,
-  },
-  tierAddButtonExtended: {
-    backgroundColor: "#EFF6FF",
-  },
-  tierAddButtonText: {
-    color: "#DC2626",
-    fontWeight: "600",
-    fontSize: 12,
-    textAlign: "center",
-  },
-  requestSection: {
-    backgroundColor: Colors.light.white,
-    borderRadius: 16,
-    padding: 24,
-    flexDirection: "row",
-    gap: 16,
-    alignItems: "center",
-    marginHorizontal: 8,
-  },
-  requestIcon: {
-    width: 60,
-    height: 60,
-    backgroundColor: "#F5F5F5",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  requestIconText: {
-    fontSize: 28,
-  },
-  requestContent: {
-    flex: 1,
-  },
-  requestTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  requestSubtitle: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    marginBottom: 12,
-  },
-  requestButton: {
-    borderWidth: 2,
-    borderColor: Colors.light.tint,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignSelf: "flex-start",
-  },
-  requestButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.light.tint,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: Colors.light.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E8E8E8",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  modalClose: {
-    padding: 4,
-  },
-  sortOptions: {
-    padding: 16,
-    gap: 8,
-  },
-  sortOption: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: Colors.light.backgroundLight,
-  },
-  sortOptionActive: {
-    backgroundColor: "#FFF0F5",
-    borderWidth: 2,
-    borderColor: Colors.light.tint,
-  },
-  sortOptionText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: Colors.light.text,
-  },
-  sortOptionTextActive: {
-    fontWeight: "700",
-    color: Colors.light.tint,
-  },
-  // Product Detail Modal Styles - Updated Layout
-  modalContainer: {
-    flex: 1,
-    backgroundColor: Colors.light.white,
-  },
-  modalScrollView: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 16,
-    paddingTop: 60,
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  productImageContainer: {
-    height: 300,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-  },
-  largeProductImage: {
-    width: '80%',
-    height: '80%',
-    borderRadius: 12,
-  },
-  largeProductImagePlaceholder: {
-    width: 200,
-    height: 200,
-    backgroundColor: "#E5E7EB",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  largeProductImageText: {
-    fontSize: 48,
-  },
-  productInfoSection: {
-    padding: 20,
-  },
-  // New Layout for Product Header Row
-  productHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  productTitleContainer: {
-    flex: 1,
-    marginRight: 16,
-  },
-  productDetailName: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  productDetailUnit: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-  },
-  priceCounterContainer: {
-    alignItems: 'flex-end',
-    minWidth: 120,
-  },
-  detailPriceContainer: {
-    alignItems: 'flex-end',
-    marginBottom: 12,
-  },
-  detailPrice: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  detailPriceOriginal: {
-    fontSize: 20,
-    color: Colors.light.textSecondary,
-    textDecorationLine: "line-through",
-  },
-  detailDiscountBadge: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 20,
-  },
-  detailDiscountBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  detailQuantitySection: {
-    marginBottom: 0,
-  },
-  detailQuantityControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F0F9FF",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    width: 120,
-  },
-  detailQtyBtn: {
-    padding: 4,
-  },
-  detailQtyText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.light.text,
-    minWidth: 30,
-    textAlign: "center",
-  },
-  detailAddButton: {
-    backgroundColor: "#FEE2E2",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    width: 80,
-  },
-  detailAddButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#DC2626",
-  },
-  detailBulkSection: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-  },
-  detailBulkTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.light.text,
-    marginBottom: 16,
-  },
-  detailBulkTier: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-  },
-  detailTierInfo: {
-    flex: 1,
-  },
-  detailTierRange: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  detailTierPrice: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1E40AF",
-    marginBottom: 4,
-  },
-  detailTierDiscount: {
-    fontSize: 12,
-    color: "#10B981",
-    fontWeight: "500",
-  },
-  detailTierAddButton: {
-    backgroundColor: "#FEE2E2",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  detailTierAddButtonText: {
-    color: "#DC2626",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  descriptionSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.light.text,
-    marginBottom: 12,
-  },
-  descriptionText: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    lineHeight: 24,
-  },
-  // Enhanced Similar Products Section
-  similarProductsSection: {
-    marginBottom: 100,
-  },
-  similarProductsList: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  similarProductCard: {
-    width: 200,
-    backgroundColor: Colors.light.white,
-    borderRadius: 12,
-    padding: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  similarProductImage: {
-    width: '100%',
-    height: 120,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  similarProductInfo: {
-    flex: 1,
-  },
-  similarProductName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.light.text,
-    marginBottom: 4,
-    height: 40,
-  },
-  similarProductUnit: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-  },
-  similarProductPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  similarProductPrice: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  similarProductPriceOriginal: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    textDecorationLine: "line-through",
-  },
-  similarProductActions: {
-    marginBottom: 8,
-  },
-  similarQuantityControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F0F9FF",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  similarQtyBtn: {
-    padding: 2,
-  },
-  similarQtyText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.light.text,
-    minWidth: 20,
-    textAlign: "center",
-  },
-  similarAddButton: {
-    backgroundColor: "#FEE2E2",
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    alignItems: "center",
-  },
-  similarAddButtonText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#DC2626",
-  },
-  similarBulkSection: {
-    marginTop: 8,
-  },
-  similarBulkTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  similarBulkButton: {
-    backgroundColor: "#F8F9FA",
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  similarBulkButtonText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#1E40AF",
-    textAlign: 'center',
-  },
-  // Continue to Cart Button - Solid Red
-  continueToCartContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    backgroundColor: Colors.light.white,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  continueToCartButton: {
-    backgroundColor: '#DC2626',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  errorText: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    marginTop: 20,
-  },
-});

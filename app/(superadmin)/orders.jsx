@@ -13,7 +13,6 @@ import {
   Modal,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -344,9 +343,9 @@ export default function OrdersScreen() {
     };
     const cfg = getStatusConfig(status);
     return (
-      <View style={[styles.statusBadge, { backgroundColor: cfg.bgColor }]}>
+      <View className="flex-row items-center px-2 py-1 rounded-lg gap-1" style={{ backgroundColor: cfg.bgColor }}>
         <MaterialIcons name={cfg.icon} size={12} color={cfg.color} />
-        <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.text}</Text>
+        <Text className="text-xs font-bold" style={{ color: cfg.color }}>{cfg.text}</Text>
       </View>
     );
   };
@@ -359,12 +358,12 @@ export default function OrdersScreen() {
     const totals = calculateOrderTotals(order);
 
     return (
-      <TouchableOpacity style={styles.orderCard} onPress={handleViewDetails} activeOpacity={0.8}>
+      <TouchableOpacity className="bg-white p-4 rounded-2xl shadow-sm mb-3" onPress={handleViewDetails} activeOpacity={0.8}>
         {/* Header Section */}
-        <View style={styles.orderHeader}>
-          <View style={styles.orderInfo}>
-            <Text style={styles.orderId}>{order.orderNumber}</Text>
-            <Text style={styles.orderDate}>
+        <View className="flex-row justify-between items-start mb-3">
+          <View className="flex-1">
+            <Text className="text-lg font-bold text-gray-900 mb-1">{order.orderNumber}</Text>
+            <Text className="text-sm text-gray-500 font-semibold">
               {order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { 
                 day: 'numeric', 
                 month: 'short',
@@ -372,58 +371,57 @@ export default function OrdersScreen() {
               }) : '—'}
             </Text>
           </View>
-          <View style={styles.badgeContainer}>
+          <View className="items-end gap-1.5">
             <StatusBadge status={order.status} />
             {order.isLocked && <StatusBadge status={'locked'} />}
           </View>
         </View>
 
         {/* Order Summary */}
-        <View style={styles.orderSummary}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Items:</Text>
-            <Text style={styles.summaryValue}>{order.items?.length || 0}</Text>
+        <View className="mb-4 gap-1.5">
+          <View className="flex-row justify-between items-center">
+            <Text className="text-sm text-gray-500 font-medium">Items:</Text>
+            <Text className="text-sm text-gray-900 font-semibold">{order.items?.length || 0}</Text>
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Amount:</Text>
-            <Text style={styles.summaryValue}>₹{totals.total.toFixed(2)}</Text>
+          <View className="flex-row justify-between items-center">
+            <Text className="text-sm text-gray-500 font-medium">Total Amount:</Text>
+            <Text className="text-sm text-gray-900 font-semibold">₹{totals.total.toFixed(2)}</Text>
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Priority:</Text>
-            <Text style={[styles.summaryValue, { 
-              color: order.priority === 'high' ? '#DC2626' : order.priority === 'low' ? '#10B981' : '#3B82F6',
-              fontWeight: '600'
-            }]}>
+          <View className="flex-row justify-between items-center">
+            <Text className="text-sm text-gray-500 font-medium">Priority:</Text>
+            <Text className="text-sm font-semibold" style={{ 
+              color: order.priority === 'high' ? '#DC2626' : order.priority === 'low' ? '#10B981' : '#3B82F6'
+            }}>
               {order.priority || 'normal'}
             </Text>
           </View>
         </View>
 
         {/* Action Buttons */}
-        <View style={styles.actionButtons}>
+        <View className="flex-row gap-2">
           <TouchableOpacity 
-            style={[styles.actionButton, styles.viewButton]} 
+            className="flex-1 flex-row items-center justify-center py-2.5 rounded-lg gap-1.5 bg-blue-500" 
             onPress={handleViewDetails}
           >
             <Feather name="eye" size={14} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>View Details</Text>
+            <Text className="text-xs font-semibold text-white">View Details</Text>
           </TouchableOpacity>
 
           {order.isLocked ? (
             <TouchableOpacity 
-              style={[styles.actionButton, styles.unlockButton]} 
+              className="flex-1 flex-row items-center justify-center py-2.5 rounded-lg gap-1.5 bg-green-500" 
               onPress={() => releaseOrderLock(order.id)}
             >
               <Feather name="unlock" size={14} color="#FFFFFF" />
-              <Text style={styles.actionButtonText}>Unlock</Text>
+              <Text className="text-xs font-semibold text-white">Unlock</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity 
-              style={[styles.actionButton, styles.lockButton]} 
+              className="flex-1 flex-row items-center justify-center py-2.5 rounded-lg gap-1.5 bg-red-600" 
               onPress={() => lockOrder(order.id)}
             >
               <Feather name="lock" size={14} color="#FFFFFF" />
-              <Text style={styles.actionButtonText}>Lock</Text>
+              <Text className="text-xs font-semibold text-white">Lock</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -442,23 +440,29 @@ export default function OrdersScreen() {
     ];
 
     return (
-      <View style={styles.filterContainer}>
+      <View className="px-5 py-4">
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScrollContent}
+          className="gap-2"
         >
           {filters.map(filter => (
             <TouchableOpacity 
               key={filter.key} 
-              style={[styles.filterButton, filterStatus === filter.key && styles.filterButtonActive]} 
+              className={`flex-row items-center px-4 py-3 rounded-xl border mr-2 ${
+                filterStatus === filter.key ? 'bg-blue-500 border-blue-500' : 'bg-gray-50 border-gray-200'
+              }`} 
               onPress={() => setFilterStatus(filter.key)}
             >
-              <Text style={[styles.filterText, filterStatus === filter.key && styles.filterTextActive]}>
+              <Text className={`text-sm font-semibold mr-1.5 ${
+                filterStatus === filter.key ? 'text-white' : 'text-gray-500'
+              }`}>
                 {filter.label}
               </Text>
-              <View style={[styles.filterCount, filterStatus === filter.key && styles.filterCountActive]}>
-                <Text style={styles.filterCountText}>{filter.count}</Text>
+              <View className={`px-1.5 py-0.5 rounded ${
+                filterStatus === filter.key ? 'bg-blue-700' : 'bg-gray-200'
+              }`}>
+                <Text className="text-xs text-gray-500 font-bold">{filter.count}</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -479,35 +483,35 @@ export default function OrdersScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowDetailsModal(false)}
       >
-        <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Order Details</Text>
+        <View className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
+          <View className="flex-row justify-between items-center px-5 py-4 bg-white border-b border-gray-200">
+            <Text className="text-xl font-bold text-gray-900">Order Details</Text>
             <TouchableOpacity 
-              style={styles.closeButton}
+              className="p-1"
               onPress={() => setShowDetailsModal(false)}
             >
               <Ionicons name="close" size={24} color="#64748B" />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.orderDetailContent}>
+          <ScrollView className="flex-1">
             {loadingDetail ? (
-              <View style={styles.centered}>
+              <View className="p-10 items-center">
                 <ActivityIndicator size="large" color="#3B82F6" />
-                <Text style={styles.loadingText}>Loading order details...</Text>
+                <Text className="mt-3 text-sm text-gray-500 text-center">Loading order details...</Text>
               </View>
             ) : (
               <>
                 {/* Basic Info */}
-                <View style={styles.detailSection}>
-                  <View style={styles.detailHeader}>
-                    <Text style={styles.detailOrderNumber}>{selectedOrder.orderNumber}</Text>
-                    <View style={styles.badgeContainer}>
+                <View className="bg-white mx-4 mb-0 rounded-2xl p-5 shadow-sm mt-4">
+                  <View className="flex-row justify-between items-start mb-2">
+                    <Text className="text-2xl font-bold text-gray-900 flex-1">{selectedOrder.orderNumber}</Text>
+                    <View className="items-end gap-1.5">
                       <StatusBadge status={selectedOrder.status} />
                       {selectedOrder.isLocked && <StatusBadge status={'locked'} />}
                     </View>
                   </View>
-                  <Text style={styles.detailDate}>
+                  <Text className="text-base text-gray-500 font-semibold mb-1">
                     Created {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleDateString('en-IN', {
                       day: 'numeric',
                       month: 'long',
@@ -516,74 +520,74 @@ export default function OrdersScreen() {
                       minute: '2-digit'
                     }) : '—'}
                   </Text>
-                  <Text style={styles.detailPriority}>Priority: {selectedOrder.priority || 'normal'}</Text>
+                  <Text className="text-sm text-gray-400">Priority: {selectedOrder.priority || 'normal'}</Text>
                 </View>
 
                 {/* Retailer Information */}
                 {selectedOrder.retailer && (
-                  <View style={styles.detailSection}>
-                    <Text style={styles.sectionTitle}>Retailer Information</Text>
-                    <View style={styles.retailerInfo}>
-                      <Text style={styles.retailerName}>
+                  <View className="bg-white mx-4 mb-0 rounded-2xl p-5 shadow-sm mt-4">
+                    <Text className="text-lg font-bold text-gray-900 mb-4">Retailer Information</Text>
+                    <View className="gap-1.5">
+                      <Text className="text-lg text-gray-700 font-semibold">
                         {selectedOrder.retailer.shopName || selectedOrder.retailer.name || selectedOrder.retailer.ownerName || '—'}
                       </Text>
-                      <Text style={styles.retailerContact}>{selectedOrder.retailer.email || selectedOrder.retailer.mobile || ''}</Text>
+                      <Text className="text-base text-gray-500 font-medium">{selectedOrder.retailer.email || selectedOrder.retailer.mobile || ''}</Text>
                     </View>
                   </View>
                 )}
 
                 {/* Order Items Table */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.sectionTitle}>Order Items</Text>
-                  <View style={styles.tableContainer}>
+                <View className="bg-white mx-4 mb-0 rounded-2xl p-5 shadow-sm mt-4">
+                  <Text className="text-lg font-bold text-gray-900 mb-4">Order Items</Text>
+                  <View className="border border-gray-200 rounded-lg overflow-hidden">
                     {/* Table Header */}
-                    <View style={styles.tableHeader}>
-                      <Text style={[styles.tableHeaderText, styles.tableColProduct]}>Product</Text>
-                      <Text style={[styles.tableHeaderText, styles.tableColQty]}>Qty</Text>
-                      <Text style={[styles.tableHeaderText, styles.tableColPrice]}>Price</Text>
-                      <Text style={[styles.tableHeaderText, styles.tableColTotal]}>Total</Text>
+                    <View className="flex-row bg-gray-50 border-b border-gray-200 py-3 px-2">
+                      <Text className="text-xs font-bold text-gray-500 uppercase flex-4">Product</Text>
+                      <Text className="text-xs font-bold text-gray-500 uppercase flex-2 text-center">Qty</Text>
+                      <Text className="text-xs font-bold text-gray-500 uppercase flex-2 text-right">Price</Text>
+                      <Text className="text-xs font-bold text-gray-500 uppercase flex-2 text-right">Total</Text>
                     </View>
                     
                     {/* Table Rows */}
                     {(selectedOrder.items || []).map((item, index) => (
-                      <View key={index} style={styles.tableRow}>
-                        <View style={[styles.tableCell, styles.tableColProduct]}>
-                          <Text style={styles.productName}>{item.name}</Text>
-                          {item.note ? <Text style={styles.productNote}>{item.note}</Text> : null}
+                      <View key={index} className="flex-row border-b border-gray-100 py-3 px-2">
+                        <View className="flex-4 justify-center">
+                          <Text className="text-sm font-semibold text-gray-900 mb-1">{item.name}</Text>
+                          {item.note ? <Text className="text-xs text-gray-500 italic">{item.note}</Text> : null}
                         </View>
-                        <View style={[styles.tableCell, styles.tableColQty]}>
-                          <Text style={styles.quantityText}>{item.requestedQty}</Text>
+                        <View className="flex-2 items-center justify-center">
+                          <Text className="text-sm font-semibold text-gray-900 text-center">{item.requestedQty}</Text>
                           {item.fulfilledQty > 0 && (
-                            <Text style={styles.fulfilledText}>Fulfilled: {item.fulfilledQty}</Text>
+                            <Text className="text-xs text-green-500 font-medium mt-0.5">Fulfilled: {item.fulfilledQty}</Text>
                           )}
                         </View>
-                        <View style={[styles.tableCell, styles.tableColPrice]}>
-                          <Text style={styles.priceText}>₹{item.unitPrice?.toFixed(2)}</Text>
+                        <View className="flex-2 items-end justify-center">
+                          <Text className="text-sm text-gray-500 font-medium">₹{item.unitPrice?.toFixed(2)}</Text>
                         </View>
-                        <View style={[styles.tableCell, styles.tableColTotal]}>
-                          <Text style={styles.totalText}>₹{item.totalPrice?.toFixed(2)}</Text>
+                        <View className="flex-2 items-end justify-center">
+                          <Text className="text-sm font-semibold text-gray-900">₹{item.totalPrice?.toFixed(2)}</Text>
                         </View>
                       </View>
                     ))}
                     
                     {/* Table Footer */}
-                    <View style={styles.tableFooter}>
-                      <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Subtotal:</Text>
-                        <Text style={styles.totalValue}>₹{totals.subtotal.toFixed(2)}</Text>
+                    <View className="bg-gray-50 p-4 border-t border-gray-200">
+                      <View className="flex-row justify-between items-center mb-2">
+                        <Text className="text-sm text-gray-500 font-medium">Subtotal:</Text>
+                        <Text className="text-sm text-gray-900 font-semibold">₹{totals.subtotal.toFixed(2)}</Text>
                       </View>
-                      <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Total:</Text>
-                        <Text style={styles.grandTotal}>₹{totals.total.toFixed(2)}</Text>
+                      <View className="flex-row justify-between items-center">
+                        <Text className="text-sm text-gray-500 font-medium">Total:</Text>
+                        <Text className="text-base font-bold text-gray-900">₹{totals.total.toFixed(2)}</Text>
                       </View>
                     </View>
                   </View>
                 </View>
 
                 {/* Action Buttons */}
-                <View style={styles.modalActions}>
+                <View className="p-4 gap-3">
                   <TouchableOpacity 
-                    style={[styles.modalButton, styles.fulfillButton]}
+                    className="flex-row items-center py-3.5 rounded-xl gap-2 justify-center bg-green-500"
                     onPress={() => {
                       const items = (selectedOrder.items || []).map(it => ({ 
                         product: it.product?._id || it.productId || it.product, 
@@ -598,11 +602,11 @@ export default function OrdersScreen() {
                     }}
                   >
                     <Feather name="check-circle" size={20} color="#FFFFFF" />
-                    <Text style={styles.modalButtonText}>Fulfill Remaining</Text>
+                    <Text className="text-base font-semibold text-white">Fulfill Remaining</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity 
-                    style={[styles.modalButton, styles.rejectButton]}
+                    className="flex-row items-center py-3.5 rounded-xl gap-2 justify-center bg-red-600"
                     onPress={() => {
                       actOnOrder({ 
                         orderId: selectedOrder._id, 
@@ -613,7 +617,7 @@ export default function OrdersScreen() {
                     }}
                   >
                     <Feather name="x-circle" size={20} color="#FFFFFF" />
-                    <Text style={styles.modalButtonText}>Reject Order</Text>
+                    <Text className="text-base font-semibold text-white">Reject Order</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -627,16 +631,16 @@ export default function OrdersScreen() {
   const stats = getOrderStats();
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim, paddingTop: insets.top }]}>
+    <Animated.View className="flex-1 bg-gray-50" style={{ opacity: fadeAnim, paddingTop: insets.top }}>
       {/* Header Section */}
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Stock Orders</Text>
+      <View className="flex-row justify-between items-center px-5 py-4 bg-white border-b border-gray-200">
+        <View className="flex-1">
+          <Text className="text-2xl font-bold text-gray-900">Stock Orders</Text>
         </View>
       </View>
 
       <ScrollView 
-        style={styles.scrollView} 
+        className="flex-1" 
         refreshControl={
           <RefreshControl 
             refreshing={refreshing} 
@@ -651,11 +655,11 @@ export default function OrdersScreen() {
         <StatusFilter />
 
         {/* Search Bar */}
-        <View style={styles.searchSection}>
-          <View style={styles.searchInputContainer}>
+        <View className="px-5 pb-4">
+          <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-3 py-2 gap-2">
             <Feather name="search" size={16} color="#64748B" />
             <TextInput 
-              style={styles.searchInput} 
+              className="flex-1 text-sm text-gray-900 py-1" 
               placeholder="Search orders by number or product..." 
               value={searchQuery} 
               onChangeText={setSearchQuery} 
@@ -670,22 +674,22 @@ export default function OrdersScreen() {
         </View>
 
         {/* Orders List */}
-        <View style={styles.ordersSection}>
+        <View className="px-5">
           {loadingList ? (
-            <View style={styles.centered}>
+            <View className="p-10 items-center">
               <ActivityIndicator size="large" color="#3B82F6" />
-              <Text style={styles.loadingText}>Loading orders...</Text>
+              <Text className="mt-3 text-sm text-gray-500 text-center">Loading orders...</Text>
             </View>
           ) : filteredOrders.length === 0 ? (
-            <View style={styles.emptyState}>
+            <View className="items-center py-10 px-5">
               <Feather name="package" size={48} color="#CBD5E1" />
-              <Text style={styles.emptyTitle}>No orders found</Text>
-              <Text style={styles.emptySubtitle}>
+              <Text className="mt-3 text-base font-semibold text-gray-500 text-center">No orders found</Text>
+              <Text className="mt-1 text-sm text-gray-400 text-center leading-5">
                 {searchQuery ? 'Try adjusting your search terms' : `No ${filterStatus === 'all' ? '' : filterStatus} orders found`}
               </Text>
             </View>
           ) : (
-            <View style={styles.ordersList}>
+            <View>
               {filteredOrders.map(order => (
                 <OrderCard key={order.id} order={order} />
               ))}
@@ -693,7 +697,7 @@ export default function OrdersScreen() {
           )}
         </View>
 
-        <View style={{ height: 40 }} />
+        <View className="h-10" />
       </ScrollView>
 
       {/* Order Details Modal */}
@@ -701,438 +705,3 @@ export default function OrdersScreen() {
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#F8FAFC' 
-  },
-  scrollView: { 
-    flex: 1 
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  filterContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  filterScrollContent: {
-    gap: 8,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginRight: 8,
-  },
-  filterButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  filterText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-    marginRight: 6,
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-  },
-  filterCount: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  filterCountActive: {
-    backgroundColor: '#1D4ED8',
-  },
-  filterCountText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '700',
-  },
-  searchSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#1E293B',
-    paddingVertical: 4,
-  },
-  ordersSection: {
-    paddingHorizontal: 20,
-  },
-  ordersList: {
-    gap: 12,
-  },
-  orderCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  orderInfo: {
-    flex: 1,
-  },
-  orderId: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  orderDate: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  badgeContainer: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  orderSummary: {
-    marginBottom: 16,
-    gap: 6,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  summaryValue: {
-    fontSize: 14,
-    color: '#1E293B',
-    fontWeight: '600',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  viewButton: {
-    backgroundColor: '#3B82F6',
-  },
-  lockButton: {
-    backgroundColor: '#DC2626',
-  },
-  unlockButton: {
-    backgroundColor: '#10B981',
-  },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  centered: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#94A3B8',
-    marginTop: 6,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  // Modal Styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  orderDetailContent: {
-    flex: 1,
-  },
-  detailSection: {
-    backgroundColor: '#FFFFFF',
-    margin: 16,
-    marginBottom: 0,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  detailHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  detailOrderNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1E293B',
-    flex: 1,
-  },
-  detailDate: {
-    fontSize: 16,
-    color: '#64748B',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  detailPriority: {
-    fontSize: 14,
-    color: '#94A3B8',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 16,
-  },
-  retailerInfo: {
-    gap: 6,
-  },
-  retailerName: {
-    fontSize: 18,
-    color: '#374151',
-    fontWeight: '600',
-  },
-  retailerContact: {
-    fontSize: 16,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  // Table Styles
-  tableContainer: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-  },
-  tableHeaderText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748B',
-    textTransform: 'uppercase',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-  },
-  tableCell: {
-    justifyContent: 'center',
-  },
-  tableColProduct: {
-    flex: 4,
-  },
-  tableColQty: {
-    flex: 2,
-    alignItems: 'center',
-  },
-  tableColPrice: {
-    flex: 2,
-    alignItems: 'flex-end',
-  },
-  tableColTotal: {
-    flex: 2,
-    alignItems: 'flex-end',
-  },
-  productName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  productNote: {
-    fontSize: 12,
-    color: '#64748B',
-    fontStyle: 'italic',
-  },
-  quantityText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    textAlign: 'center',
-  },
-  fulfilledText: {
-    fontSize: 11,
-    color: '#10B981',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  priceText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  totalText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  tableFooter: {
-    backgroundColor: '#F8FAFC',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  totalLabel: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  totalValue: {
-    fontSize: 14,
-    color: '#1E293B',
-    fontWeight: '600',
-  },
-  grandTotal: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  modalActions: {
-    padding: 16,
-    gap: 12,
-  },
-  modalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    justifyContent: 'center',
-  },
-  fulfillButton: {
-    backgroundColor: '#10B981',
-  },
-  rejectButton: {
-    backgroundColor: '#DC2626',
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-});

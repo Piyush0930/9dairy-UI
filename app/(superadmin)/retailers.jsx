@@ -11,7 +11,6 @@ import {
   Modal,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -470,9 +469,9 @@ export default function RetailersScreen() {
     const config = getStatusConfig(status);
 
     return (
-      <View style={[styles.statusBadge, { backgroundColor: config.bgColor }]}>
+      <View className="flex-row items-center px-2 py-1 rounded-lg gap-1" style={{ backgroundColor: config.bgColor }}>
         <MaterialIcons name={config.icon} size={12} color={config.color} />
-        <Text style={[styles.statusText, { color: config.color }]}>{config.text}</Text>
+        <Text className="text-xs font-bold" style={{ color: config.color }}>{config.text}</Text>
       </View>
     );
   };
@@ -498,22 +497,40 @@ export default function RetailersScreen() {
     const config = getPerformanceConfig(performance);
 
     return (
-      <View style={styles.performanceIndicator}>
-        <View style={[styles.performanceDot, { backgroundColor: config.color }]} />
-        <Text style={[styles.performanceText, { color: config.color }]}>{config.text}</Text>
+      <View className="flex-row items-center gap-1.5">
+        <View className="w-2 h-2 rounded-full" style={{ backgroundColor: config.color }} />
+        <Text className="text-xs font-semibold" style={{ color: config.color }}>{config.text}</Text>
       </View>
     );
   };
 
   const SummaryCard = ({ title, value, subtitle, color, icon, onPress }) => {
     return (
-      <TouchableOpacity style={[styles.summaryCard, { borderLeftColor: color }]} onPress={onPress} activeOpacity={0.7}>
-        <View style={styles.summaryHeader}>
-          <View style={[styles.summaryIcon, { backgroundColor: color }]}>{icon}</View>
-          <Text style={styles.summaryValue}>{value}</Text>
+      <TouchableOpacity 
+        className="bg-white p-4 rounded-xl border-l-4 shadow-sm"
+        style={{ 
+          width: (width - 88) / 2,
+          borderLeftColor: color,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 4,
+          elevation: 2,
+        }} 
+        onPress={onPress} 
+        activeOpacity={0.7}
+      >
+        <View className="flex-row justify-between items-center mb-2">
+          <View 
+            className="w-9 h-9 rounded-lg justify-center items-center"
+            style={{ backgroundColor: color }}
+          >
+            {icon}
+          </View>
+          <Text className="text-xl font-bold text-slate-800">{value}</Text>
         </View>
-        <Text style={styles.summaryTitle}>{title}</Text>
-        {subtitle && <Text style={styles.summarySubtitle}>{subtitle}</Text>}
+        <Text className="text-sm text-slate-500 font-semibold mb-0.5">{title}</Text>
+        {subtitle && <Text className="text-xs text-slate-400 font-medium">{subtitle}</Text>}
       </TouchableOpacity>
     );
   };
@@ -574,80 +591,105 @@ export default function RetailersScreen() {
 
     return (
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <TouchableOpacity style={styles.retailerCard} onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handleViewDetails} activeOpacity={0.8}>
-          <View style={styles.retailerHeader}>
-            <View style={styles.retailerInfo}>
-              <Text style={styles.shopName}>{retailer.shopName}</Text>
-              <Text style={styles.ownerName}>by {retailer.ownerName}</Text>
+        <TouchableOpacity 
+          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"
+          style={{
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.05,
+            shadowRadius: 4,
+            elevation: 2,
+          }}
+          onPressIn={handlePressIn} 
+          onPressOut={handlePressOut} 
+          onPress={handleViewDetails} 
+          activeOpacity={0.8}
+        >
+          <View className="flex-row justify-between items-start mb-3">
+            <View className="flex-1">
+              <Text className="text-lg font-bold text-slate-800 mb-0.5">{retailer.shopName}</Text>
+              <Text className="text-sm text-slate-500">by {retailer.ownerName}</Text>
             </View>
             <StatusBadge status={retailer.status} />
           </View>
 
-          <View style={styles.retailerDetails}>
-            <View style={styles.detailRow}>
+          <View className="gap-1.5 mb-3">
+            <View className="flex-row items-center gap-2">
               <Feather name="map-pin" size={14} color="#64748B" />
-              <Text style={styles.detailText}>{retailer.location}</Text>
+              <Text className="text-sm text-slate-500">{retailer.location}</Text>
             </View>
-            <View style={styles.detailRow}>
+            <View className="flex-row items-center gap-2">
               <Feather name="phone" size={14} color="#64748B" />
-              <Text style={styles.detailText}>{retailer.mobile}</Text>
+              <Text className="text-sm text-slate-500">{retailer.mobile}</Text>
             </View>
-            <View style={styles.detailRow}>
+            <View className="flex-row items-center gap-2">
               <MaterialIcons name="calendar-today" size={14} color="#64748B" />
-              <Text style={styles.detailText}>Joined {retailer.joinDate ? new Date(retailer.joinDate).toLocaleDateString() : '—'}</Text>
+              <Text className="text-sm text-slate-500">Joined {retailer.joinDate ? new Date(retailer.joinDate).toLocaleDateString() : '—'}</Text>
             </View>
           </View>
 
           {retailer.status === 'active' && (
-            <View style={styles.performanceSection}>
-              <View style={styles.performanceRow}>
-                <View style={styles.metric}>
-                  <Text style={styles.metricValue}>{retailer.totalOrders}</Text>
-                  <Text style={styles.metricLabel}>Orders</Text>
+            <View className="bg-slate-50 p-3 rounded-lg mb-3">
+              <View className="flex-row justify-between mb-2">
+                <View className="items-center">
+                  <Text className="text-base font-bold text-slate-800 mb-0.5">{retailer.totalOrders}</Text>
+                  <Text className="text-xs text-slate-500 font-medium">Orders</Text>
                 </View>
-                <View style={styles.metric}>
-                  <Text style={styles.metricValue}>₹{(retailer.totalRevenue / 1000).toFixed(0)}K</Text>
-                  <Text style={styles.metricLabel}>Revenue</Text>
+                <View className="items-center">
+                  <Text className="text-base font-bold text-slate-800 mb-0.5">₹{(retailer.totalRevenue / 1000).toFixed(0)}K</Text>
+                  <Text className="text-xs text-slate-500 font-medium">Revenue</Text>
                 </View>
-                <View style={styles.metric}>
-                  <Text style={styles.metricValue}>{retailer.products}</Text>
-                  <Text style={styles.metricLabel}>Products</Text>
+                <View className="items-center">
+                  <Text className="text-base font-bold text-slate-800 mb-0.5">{retailer.products}</Text>
+                  <Text className="text-xs text-slate-500 font-medium">Products</Text>
                 </View>
-                <View style={styles.metric}>
-                  <View style={styles.rating}>
+                <View className="items-center">
+                  <View className="flex-row items-center gap-0.5">
                     <MaterialIcons name="star" size={14} color="#F59E0B" />
-                    <Text style={styles.ratingText}>{retailer.rating}</Text>
+                    <Text className="text-sm font-bold text-slate-800">{retailer.rating}</Text>
                   </View>
-                  <Text style={styles.metricLabel}>Rating</Text>
+                  <Text className="text-xs text-slate-500 font-medium">Rating</Text>
                 </View>
               </View>
               <PerformanceIndicator performance={retailer.performance} />
             </View>
           )}
 
-          <View style={styles.actionButtons}>
+          <View className="flex-row gap-2">
             {retailer.status === 'pending' && (
-              <TouchableOpacity style={[styles.actionButton, styles.approveButton]} onPress={() => handleQuickAction('approve')}>
+              <TouchableOpacity 
+                className="flex-row items-center px-3 py-2 rounded-lg gap-1 flex-1 justify-center bg-emerald-500"
+                onPress={() => handleQuickAction('approve')}
+              >
                 <MaterialIcons name="check" size={16} color="#FFFFFF" />
-                <Text style={styles.actionButtonText}>Approve</Text>
+                <Text className="text-xs text-white font-semibold">Approve</Text>
               </TouchableOpacity>
             )}
 
             {retailer.status === 'active' && (
-              <TouchableOpacity style={[styles.actionButton, styles.suspendButton]} onPress={() => handleQuickAction('suspend')}>
+              <TouchableOpacity 
+                className="flex-row items-center px-3 py-2 rounded-lg gap-1 flex-1 justify-center bg-red-500"
+                onPress={() => handleQuickAction('suspend')}
+              >
                 <MaterialIcons name="block" size={16} color="#FFFFFF" />
-                <Text style={styles.actionButtonText}>Suspend</Text>
+                <Text className="text-xs text-white font-semibold">Suspend</Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={[styles.actionButton, styles.contactButton]} onPress={() => handleQuickAction('contact')}>
+            <TouchableOpacity 
+              className="flex-row items-center px-3 py-2 rounded-lg gap-1 flex-1 justify-center bg-blue-500"
+              onPress={() => handleQuickAction('contact')}
+            >
               <Feather name="phone" size={16} color="#FFFFFF" />
-              <Text style={styles.actionButtonText}>Contact</Text>
+              <Text className="text-xs text-white font-semibold">Contact</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.actionButton, styles.detailsButton]} onPress={handleViewDetails}>
+            <TouchableOpacity 
+              className="flex-row items-center px-3 py-2 rounded-lg gap-1 flex-1 justify-center border border-blue-500"
+              onPress={handleViewDetails}
+            >
               <Feather name="eye" size={16} color="#3B82F6" />
-              <Text style={[styles.actionButtonText, { color: '#3B82F6' }]}>View</Text>
+              <Text className="text-xs font-semibold" style={{ color: '#3B82F6' }}>View</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -664,12 +706,16 @@ export default function RetailersScreen() {
     ];
 
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2">
         {filters.map(filter => (
-          <TouchableOpacity key={filter.key} style={[styles.filterButton, filterStatus === filter.key && styles.filterButtonActive]} onPress={() => setFilterStatus(filter.key)}>
-            <Text style={[styles.filterText, filterStatus === filter.key && styles.filterTextActive]}>{filter.label}</Text>
-            <View style={[styles.filterCount, filterStatus === filter.key && styles.filterCountActive]}>
-              <Text style={styles.filterCountText}>{filter.count}</Text>
+          <TouchableOpacity 
+            key={filter.key} 
+            className={`flex-row items-center px-4 py-2 rounded-full mr-2 border ${filterStatus === filter.key ? 'bg-blue-500 border-blue-500' : 'bg-slate-50 border-slate-200'}`}
+            onPress={() => setFilterStatus(filter.key)}
+          >
+            <Text className={`text-sm font-semibold mr-1.5 ${filterStatus === filter.key ? 'text-white' : 'text-slate-500'}`}>{filter.label}</Text>
+            <View className={`px-1.5 py-0.5 rounded ${filterStatus === filter.key ? 'bg-blue-700' : 'bg-slate-200'}`}>
+              <Text className="text-xs font-bold text-slate-500">{filter.count}</Text>
             </View>
           </TouchableOpacity>
         ))}
@@ -679,32 +725,36 @@ export default function RetailersScreen() {
 
   // ---------- Render ----------
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+    <Animated.View className="flex-1 bg-slate-50" style={{ opacity: fadeAnim }}>
       {/* Header Section */}
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Retailers Management</Text>
-          <Text style={styles.headerSubtitle}>Manage all retailers on the platform</Text>
+      <View className="flex-row justify-between items-center p-5 bg-white border-b border-slate-200">
+        <View className="flex-1">
+          <Text className="text-2xl font-bold text-slate-800 mb-1">Retailers Management</Text>
+          <Text className="text-base text-slate-500">Manage all retailers on the platform</Text>
         </View>
         <TouchableOpacity 
-          style={styles.addButton} 
+          className="flex-row items-center bg-emerald-500 px-4 py-2.5 rounded-xl gap-1.5"
           onPress={() => setShowAddRetailerModal(true)}
         >
           <MaterialIcons name="person-add" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add Retailer</Text>
+          <Text className="text-sm text-white font-semibold">Add Retailer</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        className="flex-1" 
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} 
+        showsVerticalScrollIndicator={false}
+      >
         {/* Summary Cards */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Platform Overview</Text>
+        <View className="bg-white mx-4 mb-0 rounded-2xl p-5 shadow-sm">
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className="text-lg font-bold text-slate-800">Platform Overview</Text>
             <TouchableOpacity onPress={onRefresh}>
               <MaterialIcons name="refresh" size={20} color="#3B82F6" />
             </TouchableOpacity>
           </View>
-          <View style={styles.summaryGrid}>
+          <View className="flex-row flex-wrap gap-3">
             <SummaryCard title="Total Retailers" value={retailersData.summary.total} subtitle={`${retailersData.summary.growth}% growth`} color="#3B82F6" icon={<FontAwesome5 name="store" size={18} color="#FFFFFF" />} onPress={() => setFilterStatus('all')} />
             <SummaryCard title="Active" value={retailersData.summary.active} subtitle="Currently operating" color="#10B981" icon={<MaterialIcons name="check-circle" size={20} color="#FFFFFF" />} onPress={() => setFilterStatus('active')} />
             <SummaryCard title="Pending" value={retailersData.summary.pending} subtitle="Awaiting approval" color="#F59E0B" icon={<MaterialIcons name="pending" size={20} color="#FFFFFF" />} onPress={() => setFilterStatus('pending')} />
@@ -713,11 +763,17 @@ export default function RetailersScreen() {
         </View>
 
         {/* Search and Filters */}
-        <View style={styles.section}>
-          <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
+        <View className="bg-white mx-4 mb-0 rounded-2xl p-5 shadow-sm">
+          <View className="mb-4">
+            <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 gap-3">
               <Feather name="search" size={20} color="#64748B" />
-              <TextInput style={styles.searchInput} placeholder="Search retailers by name, owner, or location..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor="#94A3B8" />
+              <TextInput 
+                className="flex-1 text-base text-slate-800" 
+                placeholder="Search retailers by name, owner, or location..." 
+                value={searchQuery} 
+                onChangeText={setSearchQuery} 
+                placeholderTextColor="#94A3B8" 
+              />
               {searchQuery.length > 0 && (
                 <TouchableOpacity onPress={() => setSearchQuery('')}>
                   <MaterialIcons name="clear" size={20} color="#64748B" />
@@ -730,26 +786,26 @@ export default function RetailersScreen() {
         </View>
 
         {/* Retailers List */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
+        <View className="bg-white mx-4 mb-0 rounded-2xl p-5 shadow-sm">
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className="text-lg font-bold text-slate-800">
               {filterStatus === 'all' ? 'All Retailers' : filterStatus === 'active' ? 'Active Retailers' : filterStatus === 'pending' ? 'Pending Approval' : 'Suspended Retailers'}
             </Text>
-            <Text style={styles.resultsCount}>{filteredRetailers.length} results</Text>
+            <Text className="text-sm text-slate-500 font-medium">{filteredRetailers.length} results</Text>
           </View>
 
           {loading ? (
-            <View style={{ padding: 24, alignItems: 'center' }}>
+            <View className="p-6 items-center">
               <ActivityIndicator size="large" />
             </View>
           ) : filteredRetailers.length === 0 ? (
-            <View style={styles.emptyState}>
+            <View className="items-center py-10">
               <MaterialIcons name="store" size={48} color="#E2E8F0" />
-              <Text style={styles.emptyStateTitle}>No retailers found</Text>
-              <Text style={styles.emptyStateText}>{searchQuery ? 'Try adjusting your search terms' : 'No retailers match the selected filters'}</Text>
+              <Text className="text-lg font-bold text-slate-500 mt-3 mb-2">No retailers found</Text>
+              <Text className="text-sm text-slate-400 text-center">{searchQuery ? 'Try adjusting your search terms' : 'No retailers match the selected filters'}</Text>
             </View>
           ) : (
-            <View style={styles.retailersList}>
+            <View className="gap-3">
               {filteredRetailers.map(retailer => (
                 <RetailerCard key={retailer.id} retailer={retailer} />
               ))}
@@ -758,7 +814,7 @@ export default function RetailersScreen() {
         </View>
 
         {/* Bottom Spacer */}
-        <View style={styles.bottomSpacer} />
+        <View className="h-5" />
       </ScrollView>
 
       {/* Retailer Details Modal */}
@@ -768,53 +824,53 @@ export default function RetailersScreen() {
         setDetailsLoading(false);
       }}>
         {detailsLoading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <View className="flex-1 justify-center items-center">
             <ActivityIndicator size="large" />
-            <Text style={{ marginTop: 12, color: '#64748B' }}>Loading retailer details...</Text>
-            <TouchableOpacity onPress={() => { setShowDetailsModal(false); setSelectedRetailer(null); }} style={{ marginTop: 18 }}>
-              <Text style={{ color: '#3B82F6', fontWeight: '700' }}>Close</Text>
+            <Text className="mt-3 text-slate-500">Loading retailer details...</Text>
+            <TouchableOpacity onPress={() => { setShowDetailsModal(false); setSelectedRetailer(null); }} className="mt-4.5">
+              <Text className="text-blue-500 font-bold">Close</Text>
             </TouchableOpacity>
           </View>
         ) : selectedRetailer && (
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedRetailer.retailer.shopName}</Text>
-              <TouchableOpacity style={styles.closeButton} onPress={() => { setShowDetailsModal(false); setSelectedRetailer(null); }}>
+          <View className="flex-1 bg-white">
+            <View className="flex-row justify-between items-center p-5 border-b border-slate-200">
+              <Text className="text-xl font-bold text-slate-800">{selectedRetailer.retailer.shopName}</Text>
+              <TouchableOpacity className="p-1" onPress={() => { setShowDetailsModal(false); setSelectedRetailer(null); }}>
                 <MaterialIcons name="close" size={24} color="#000" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalContent}>
-              <View style={styles.modalSection}>
-                <Text style={styles.modalShopName}>{selectedRetailer.retailer.shopName}</Text>
-                <Text style={styles.modalOwner}>Owner: {selectedRetailer.retailer.ownerName}</Text>
+            <ScrollView className="flex-1">
+              <View className="p-5 border-b border-slate-100">
+                <Text className="text-2xl font-bold text-slate-800 mb-1">{selectedRetailer.retailer.shopName}</Text>
+                <Text className="text-base text-slate-500 mb-3">Owner: {selectedRetailer.retailer.ownerName}</Text>
                 <StatusBadge status={selectedRetailer.retailer.isActive ? 'active' : 'pending'} />
-                <Text style={{ marginTop: 8, color: '#64748B' }}>
+                <Text className="mt-2 text-slate-500">
                   Service radius: {selectedRetailer.retailer.serviceRadius ?? '—'} km
                 </Text>
-                <Text style={{ marginTop: 4, color: '#64748B' }}>
+                <Text className="mt-1 text-slate-500">
                   Created: {selectedRetailer.retailer.createdAt ? new Date(selectedRetailer.retailer.createdAt).toLocaleString() : '—'}
                 </Text>
-                <Text style={{ marginTop: 2, color: '#64748B' }}>
+                <Text className="mt-0.5 text-slate-500">
                   Updated: {selectedRetailer.retailer.updatedAt ? new Date(selectedRetailer.retailer.updatedAt).toLocaleString() : '—'}
                 </Text>
               </View>
 
-              <View style={styles.modalSection}>
-                <Text style={styles.sectionTitle}>Contact Information</Text>
-                <View style={styles.contactInfo}>
-                  <View style={styles.contactItem}>
+              <View className="p-5 border-b border-slate-100">
+                <Text className="text-lg font-bold text-slate-800 mb-3">Contact Information</Text>
+                <View className="gap-3">
+                  <View className="flex-row items-center gap-3">
                     <Feather name="phone" size={16} color="#64748B" />
-                    <Text style={styles.contactText}>{selectedRetailer.retailer.mobile || '—'}</Text>
+                    <Text className="text-base text-slate-700">{selectedRetailer.retailer.mobile || '—'}</Text>
                   </View>
-                  <View style={styles.contactItem}>
+                  <View className="flex-row items-center gap-3">
                     <Feather name="map-pin" size={16} color="#64748B" />
-                    <Text style={styles.contactText}>{selectedRetailer.retailer.location?.formattedAddress || selectedRetailer.retailer.address || '—'}</Text>
+                    <Text className="text-base text-slate-700">{selectedRetailer.retailer.location?.formattedAddress || selectedRetailer.retailer.address || '—'}</Text>
                   </View>
                   {selectedRetailer.retailer.location?.coordinates && (
-                    <View style={styles.contactItem}>
+                    <View className="flex-row items-center gap-3">
                       <MaterialIcons name="location-on" size={16} color="#64748B" />
-                      <Text style={styles.contactText}>
+                      <Text className="text-base text-slate-700">
                         {`Lat: ${selectedRetailer.retailer.location.coordinates.latitude}, Lon: ${selectedRetailer.retailer.location.coordinates.longitude}`}
                       </Text>
                     </View>
@@ -822,52 +878,52 @@ export default function RetailersScreen() {
                 </View>
               </View>
 
-              <View style={styles.modalSection}>
-                <Text style={styles.sectionTitle}>Performance</Text>
-                <View style={styles.performanceGrid}>
-                  <View style={styles.performanceMetric}>
-                    <Text style={styles.metricValue}>{selectedRetailer.performance?.totalOrders ?? 0}</Text>
-                    <Text style={styles.metricLabel}>Total Orders</Text>
+              <View className="p-5 border-b border-slate-100">
+                <Text className="text-lg font-bold text-slate-800 mb-4">Performance</Text>
+                <View className="flex-row flex-wrap gap-4">
+                  <View className="w-[45%] bg-slate-50 p-4 rounded-lg items-center">
+                    <Text className="text-base font-bold text-slate-800">{selectedRetailer.performance?.totalOrders ?? 0}</Text>
+                    <Text className="text-sm text-slate-500">Total Orders</Text>
                   </View>
-                  <View style={styles.performanceMetric}>
-                    <Text style={styles.metricValue}>₹{(selectedRetailer.performance?.totalRevenue ?? 0).toLocaleString()}</Text>
-                    <Text style={styles.metricLabel}>Total Revenue</Text>
+                  <View className="w-[45%] bg-slate-50 p-4 rounded-lg items-center">
+                    <Text className="text-base font-bold text-slate-800">₹{(selectedRetailer.performance?.totalRevenue ?? 0).toLocaleString()}</Text>
+                    <Text className="text-sm text-slate-500">Total Revenue</Text>
                   </View>
-                  <View style={styles.performanceMetric}>
-                    <Text style={styles.metricValue}>{selectedRetailer.performance?.completedOrders ?? 0}</Text>
-                    <Text style={styles.metricLabel}>Completed</Text>
+                  <View className="w-[45%] bg-slate-50 p-4 rounded-lg items-center">
+                    <Text className="text-base font-bold text-slate-800">{selectedRetailer.performance?.completedOrders ?? 0}</Text>
+                    <Text className="text-sm text-slate-500">Completed</Text>
                   </View>
-                  <View style={styles.performanceMetric}>
-                    <Text style={styles.metricValue}>{selectedRetailer.performance?.pendingOrders ?? 0}</Text>
-                    <Text style={styles.metricLabel}>Pending</Text>
+                  <View className="w-[45%] bg-slate-50 p-4 rounded-lg items-center">
+                    <Text className="text-base font-bold text-slate-800">{selectedRetailer.performance?.pendingOrders ?? 0}</Text>
+                    <Text className="text-sm text-slate-500">Pending</Text>
                   </View>
                 </View>
               </View>
 
-              <View style={styles.modalSection}>
-                <Text style={styles.sectionTitle}>Recent Orders</Text>
+              <View className="p-5 border-b border-slate-100">
+                <Text className="text-lg font-bold text-slate-800 mb-3">Recent Orders</Text>
                 {(selectedRetailer.recentOrders || []).length === 0 ? (
-                  <Text style={styles.documentText}>No recent orders</Text>
+                  <Text className="text-sm text-slate-700 font-medium">No recent orders</Text>
                 ) : (
                   (selectedRetailer.recentOrders || []).map((o, idx) => (
-                    <View key={idx} style={[styles.documentItem, { justifyContent: 'space-between' }]}>
+                    <View key={idx} className="flex-row justify-between items-center p-3 bg-slate-50 rounded-lg mb-2">
                       <View>
-                        <Text style={{ fontWeight: '700', color: '#1E293B' }}>{o.orderId || o.orderNumber || '—'}</Text>
-                        <Text style={{ color: '#64748B' }}>{o.customerName || '—'}</Text>
-                        <Text style={{ color: '#94A3B8', fontSize: 12 }}>{o.status} • {o.createdAt ? new Date(o.createdAt).toLocaleString() : '—'}</Text>
+                        <Text className="font-bold text-slate-800">{o.orderId || o.orderNumber || '—'}</Text>
+                        <Text className="text-slate-500">{o.customerName || '—'}</Text>
+                        <Text className="text-slate-400 text-xs">{o.status} • {o.createdAt ? new Date(o.createdAt).toLocaleString() : '—'}</Text>
                       </View>
-                      <Text style={{ fontWeight: '700', color: '#1E293B' }}>₹{o.amount ?? 0}</Text>
+                      <Text className="font-bold text-slate-800">₹{o.amount ?? 0}</Text>
                     </View>
                   ))
                 )}
               </View>
 
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.modalButton, styles.primaryButton]}>
-                  <Text style={styles.modalButtonText}>Edit Details</Text>
+              <View className="flex-row gap-3 p-5">
+                <TouchableOpacity className="flex-1 py-3 rounded-lg bg-blue-500 items-center">
+                  <Text className="text-base font-semibold text-white">Edit Details</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]}>
-                  <Text style={[styles.modalButtonText, { color: '#3B82F6' }]}>View Full Profile</Text>
+                <TouchableOpacity className="flex-1 py-3 rounded-lg border border-blue-500 items-center">
+                  <Text className="text-base font-semibold text-blue-500">View Full Profile</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -877,10 +933,10 @@ export default function RetailersScreen() {
 
       {/* Add Retailer Modal */}
       <Modal visible={showAddRetailerModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAddRetailerModal(false)}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add New Retailer</Text>
-            <TouchableOpacity style={styles.closeButton} onPress={() => {
+        <View className="flex-1 bg-white">
+          <View className="flex-row justify-between items-center p-5 border-b border-slate-200">
+            <Text className="text-xl font-bold text-slate-800">Add New Retailer</Text>
+            <TouchableOpacity className="p-1" onPress={() => {
               setShowAddRetailerModal(false);
               resetAddRetailerForm();
             }}>
@@ -888,15 +944,15 @@ export default function RetailersScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
             {!otpShown ? (
               <>
-                <View style={styles.modalSection}>
-                  <Text style={styles.sectionTitle}>Retailer Information</Text>
+                <View className="p-5 border-b border-slate-100">
+                  <Text className="text-lg font-bold text-slate-800 mb-4">Retailer Information</Text>
                   
-                  <View style={styles.inputContainerModal}>
+                  <View className="flex-row items-center border-2 border-slate-200 rounded-xl px-4 py-1 mb-4 bg-slate-50 min-h-14">
                     <TextInput
-                      style={styles.inputModal}
+                      className="flex-1 text-base text-slate-800 font-medium py-2"
                       placeholder="Full Name *"
                       placeholderTextColor="#94a3b8"
                       value={newRetailer.fullName}
@@ -904,9 +960,9 @@ export default function RetailersScreen() {
                     />
                   </View>
 
-                  <View style={styles.inputContainerModal}>
+                  <View className="flex-row items-center border-2 border-slate-200 rounded-xl px-4 py-1 mb-4 bg-slate-50 min-h-14">
                     <TextInput
-                      style={styles.inputModal}
+                      className="flex-1 text-base text-slate-800 font-medium py-2"
                       placeholder="Shop Name *"
                       placeholderTextColor="#94a3b8"
                       value={newRetailer.shopName}
@@ -914,23 +970,22 @@ export default function RetailersScreen() {
                     />
                   </View>
 
-                  <View style={styles.locationContainerModal}>
-                    <Text style={styles.locationLabel}>Address *</Text>
+                  <View className="mb-4">
+                    <Text className="text-base text-slate-800 font-medium mb-2">Address *</Text>
                     <LocationPicker
                       onLocationSelect={handleLocationSelect}
                       placeholder="Enter shop address"
                       showCurrentLocation={true}
-                      style={styles.locationPicker}
                     />
                   </View>
 
-                  <View style={styles.inputContainerModal}>
-                    <View style={styles.flagContainer}>
-                      <Text style={styles.flag}>🇮🇳</Text>
-                      <Text style={styles.countryCode}>+91</Text>
+                  <View className="flex-row items-center border-2 border-slate-200 rounded-xl px-4 py-1 mb-4 bg-slate-50 min-h-14">
+                    <View className="flex-row items-center pr-3 border-r-2 border-slate-200">
+                      <Text className="text-lg mr-1.5">🇮🇳</Text>
+                      <Text className="text-sm text-slate-800 font-semibold">+91</Text>
                     </View>
                     <TextInput
-                      style={[styles.inputModal, { marginLeft: 12 }]}
+                      className="flex-1 text-base text-slate-800 font-medium py-2 ml-3"
                       placeholder="Contact Number *"
                       placeholderTextColor="#94a3b8"
                       keyboardType="phone-pad"
@@ -941,33 +996,40 @@ export default function RetailersScreen() {
                   </View>
                 </View>
 
-                <View style={styles.modalActions}>
+                <View className="flex-row gap-3 p-5">
                   <TouchableOpacity
-                    style={[styles.modalButton, styles.primaryButton, addRetailerLoading && styles.buttonDisabled]}
+                    className={`flex-1 py-3 rounded-lg items-center ${addRetailerLoading ? 'bg-gray-400' : 'bg-blue-500'}`}
                     onPress={() => handleGetOtp(false)}
                     disabled={addRetailerLoading}
                   >
                     {addRetailerLoading ? (
                       <ActivityIndicator color="#ffffff" size="small" />
                     ) : (
-                      <Text style={styles.modalButtonText}>Create Retailer</Text>
+                      <Text className="text-base font-semibold text-white">Create Retailer</Text>
                     )}
                   </TouchableOpacity>
                 </View>
               </>
             ) : (
               <>
-                <View style={styles.modalSection}>
-                  <Text style={styles.otpTitle}>Verify Retailer Account</Text>
-                  <Text style={styles.otpSubtitle}>
+                <View className="p-5 border-b border-slate-100">
+                  <Text className="text-lg text-slate-900 font-semibold mb-2 text-center">Verify Retailer Account</Text>
+                  <Text className="text-sm text-slate-500 mb-6 text-center">
                     OTP sent to +91 {newRetailer.contactNo}
                   </Text>
                   
-                  <View style={styles.otpContainer}>
+                  <View className="flex-row justify-between mb-6 px-2.5">
                     {otp.map((value, index) => (
                       <TextInput
                         key={index}
-                        style={[styles.otpInput, value && styles.otpInputActive]}
+                        className={`w-12 h-12 border-2 rounded-lg text-xl font-bold text-slate-900 bg-white text-center ${value ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}
+                        style={{
+                          shadowColor: value ? '#3b82f6' : '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: value ? 0.2 : 0.1,
+                          shadowRadius: value ? 6 : 4,
+                          elevation: value ? 5 : 3,
+                        }}
                         keyboardType="number-pad"
                         maxLength={1}
                         value={value}
@@ -980,28 +1042,28 @@ export default function RetailersScreen() {
                   </View>
                 </View>
 
-                <View style={styles.modalActions}>
+                <View className="flex-row gap-3 p-5">
                   <TouchableOpacity
-                    style={[styles.modalButton, styles.primaryButton, addRetailerLoading && styles.buttonDisabled]}
+                    className={`flex-1 py-3 rounded-lg items-center ${addRetailerLoading ? 'bg-gray-400' : 'bg-blue-500'}`}
                     onPress={handleVerifyOtp}
                     disabled={addRetailerLoading}
                   >
                     {addRetailerLoading ? (
                       <ActivityIndicator color="#ffffff" size="small" />
                     ) : (
-                      <Text style={styles.modalButtonText}>Verify & Complete</Text>
+                      <Text className="text-base font-semibold text-white">Verify & Complete</Text>
                     )}
                   </TouchableOpacity>
 
                   <TouchableOpacity 
-                    style={[styles.modalButton, styles.secondaryButton]}
+                    className="flex-1 py-3 rounded-lg border border-blue-500 items-center"
                     onPress={() => handleGetOtp(true)}
                     disabled={resendLoading}
                   >
                     {resendLoading ? (
                       <ActivityIndicator color="#3b82f6" size="small" />
                     ) : (
-                      <Text style={[styles.modalButtonText, { color: '#3b82f6' }]}>Resend OTP</Text>
+                      <Text className="text-base font-semibold text-blue-500">Resend OTP</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -1013,539 +1075,3 @@ export default function RetailersScreen() {
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#64748B',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  section: {
-    backgroundColor: '#FFFFFF',
-    margin: 16,
-    marginBottom: 0,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  resultsCount: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  summaryCard: {
-    width: (width - 88) / 2,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  summaryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  summaryTitle: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  summarySubtitle: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  searchContainer: {
-    marginBottom: 16,
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1E293B',
-  },
-  filterContainer: {
-    marginBottom: 8,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  filterButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  filterText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-    marginRight: 6,
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-  },
-  filterCount: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  filterCountActive: {
-    backgroundColor: '#1D4ED8',
-  },
-  filterCountText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '700',
-  },
-  retailersList: {
-    gap: 12,
-  },
-  retailerCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  retailerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  retailerInfo: {
-    flex: 1,
-  },
-  shopName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  ownerName: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  retailerDetails: {
-    gap: 6,
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  detailText: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  performanceSection: {
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  performanceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  metric: {
-    alignItems: 'center',
-  },
-  metricValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  metricLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  rating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  performanceIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  performanceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  performanceText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
-    flex: 1,
-    justifyContent: 'center',
-  },
-  approveButton: {
-    backgroundColor: '#10B981',
-  },
-  suspendButton: {
-    backgroundColor: '#EF4444',
-  },
-  contactButton: {
-    backgroundColor: '#3B82F6',
-  },
-  detailsButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#64748B',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: '#94A3B8',
-    textAlign: 'center',
-  },
-  bottomSpacer: {
-    height: 20,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  modalContent: {
-    flex: 1,
-  },
-  modalSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  modalShopName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  modalOwner: {
-    fontSize: 16,
-    color: '#64748B',
-    marginBottom: 12,
-  },
-  contactInfo: {
-    gap: 12,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  contactText: {
-    fontSize: 16,
-    color: '#374151',
-  },
-  performanceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  performanceMetric: {
-    width: (width - 72) / 2,
-    backgroundColor: '#F8FAFC',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  documentsList: {
-    gap: 8,
-  },
-  documentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-  },
-  documentText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 20,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  primaryButton: {
-    backgroundColor: '#3B82F6',
-  },
-  secondaryButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  // Add Retailer Modal Styles
-  inputContainerModal: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    marginBottom: 16,
-    backgroundColor: '#f8fafc',
-    minHeight: 56,
-  },
-  inputModal: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1e293b',
-    paddingVertical: 8,
-    fontWeight: '500',
-  },
-  locationContainerModal: {
-    marginBottom: 16,
-  },
-  locationLabel: {
-    fontSize: 16,
-    color: '#1e293b',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  flagContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 12,
-    borderRightWidth: 1.5,
-    borderRightColor: '#e2e8f0',
-  },
-  flag: {
-    fontSize: 18,
-    marginRight: 6,
-  },
-  countryCode: {
-    fontSize: 14,
-    color: '#1e293b',
-    fontWeight: '600',
-  },
-  otpTitle: {
-    fontSize: 18,
-    color: '#0f172a',
-    marginBottom: 8,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  otpSubtitle: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    paddingHorizontal: 10,
-  },
-  otpInput: {
-    width: 48,
-    height: 48,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    fontSize: 20,
-    fontWeight: '700',
-    backgroundColor: '#ffffff',
-    color: '#0f172a',
-    textAlign: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  otpInputActive: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#f0f9ff',
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-});

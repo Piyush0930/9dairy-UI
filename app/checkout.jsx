@@ -1,3 +1,5 @@
+//checkout.jsx
+
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
@@ -9,7 +11,6 @@ import {
   Alert,
   Image,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -243,18 +244,12 @@ export default function CheckoutScreen() {
     const isLarge = size === "large";
     
     return (
-      <View style={[
-        styles.discountBadge,
-        isLarge ? styles.discountBadgeLarge : styles.discountBadgeMedium
-      ]}>
-        <Text style={[
-          styles.discountBadgeText,
-          isLarge && styles.discountBadgeTextLarge
-        ]}>
+      <View className={`bg-red-600 px-2 py-1 rounded-lg flex-row items-center gap-1 shadow-lg ${isLarge ? 'px-2.5 py-1.5' : 'px-1.5 py-0.75'}`}>
+        <Text className={`text-white text-xs font-extrabold ${isLarge && 'text-sm'}`}>
           {discountPercentage}% OFF
         </Text>
         {isExtendedRange && (
-          <View style={styles.extendedRangeDot} />
+          <View className="w-1 h-1 bg-white rounded-full opacity-80" />
         )}
       </View>
     );
@@ -542,8 +537,8 @@ export default function CheckoutScreen() {
   // =========================================
   const OrderItem = ({ item }) => {
     return (
-      <View style={styles.orderItem}>
-        <View style={styles.orderItemHeader}>
+      <View className="bg-white mb-3 rounded-xl p-4 shadow-lg relative border border-gray-100">
+        <View className="absolute top-2 left-2 right-2 flex-row justify-between z-10">
           {/* Discount Badge */}
           {item.pricing.hasDiscount && item.availableFromRetailer && (
             <DiscountBadge 
@@ -554,56 +549,56 @@ export default function CheckoutScreen() {
 
           {/* Status Badge */}
           {item.outOfStock && (
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>OUT OF STOCK</Text>
+            <View className="bg-red-500 px-2 py-1 rounded-lg">
+              <Text className="text-white text-xs font-bold">OUT OF STOCK</Text>
             </View>
           )}
           {!item.soldByRetailer && (
-            <View style={[styles.statusBadge, styles.notAvailableBadge]}>
-              <Text style={styles.statusBadgeText}>NOT AVAILABLE</Text>
+            <View className="bg-yellow-500 px-2 py-1 rounded-lg">
+              <Text className="text-white text-xs font-bold">NOT AVAILABLE</Text>
             </View>
           )}
         </View>
 
-        <View style={styles.orderItemContent}>
-          <View style={styles.orderItemLeft}>
-            <View style={styles.imageContainer}>
+        <View className="flex-row gap-3 mt-2">
+          <View className="justify-center">
+            <View className="relative">
               {item.image || item.imageUrl ? (
                 <Image
                   source={{ uri: item.image || item.imageUrl }}
-                  style={styles.orderItemImage}
+                  className="w-[70px] h-[70px] rounded-lg bg-gray-50"
                   resizeMode="cover"
                 />
               ) : (
-                <View style={styles.orderItemImagePlaceholder}>
-                  <Text style={styles.orderItemImageText}>📦</Text>
+                <View className="w-[70px] h-[70px] bg-gray-50 rounded-lg justify-center items-center border border-gray-200">
+                  <Text className="text-xl text-gray-400">📦</Text>
                 </View>
               )}
             </View>
           </View>
 
-          <View style={styles.orderItemCenter}>
-            <Text style={styles.orderItemName} numberOfLines={2}>
+          <View className="flex-1 justify-between py-1">
+            <Text className="text-base font-semibold text-gray-800 mb-0.5 leading-5" numberOfLines={2}>
               {item.name}
             </Text>
-            <Text style={styles.orderItemUnit}>{item.unit}</Text>
+            <Text className="text-sm text-gray-600 mb-2">{item.unit}</Text>
             
             {/* Price Display */}
-            <View style={styles.priceContainer}>
-              <View style={styles.priceRow}>
-                <Text style={styles.currentPrice}>₹{item.pricing.currentPrice}</Text>
+            <View className="mb-1">
+              <View className="flex-row items-center gap-1.5 mb-1.5">
+                <Text className="text-base font-bold text-gray-800">₹{item.pricing.currentPrice}</Text>
                 {item.pricing.hasDiscount && item.pricing.currentPrice < item.pricing.basePrice && (
-                  <Text style={styles.originalPrice}>₹{item.pricing.basePrice}</Text>
+                  <Text className="text-sm text-gray-400 line-through">₹{item.pricing.basePrice}</Text>
                 )}
-                <Text style={styles.priceUnit}>/piece</Text>
+                <Text className="text-xs text-gray-600">/piece</Text>
               </View>
               
               {/* Savings Badge */}
               {item.pricing.savings > 0 && (
-                <View style={styles.savingsBadge}>
-                  <View style={styles.savingsContent}>
+                <View className="self-start">
+                  <View className="flex-row items-center bg-green-50 px-2 py-1 rounded-full border border-green-200 gap-1">
                     <Ionicons name="checkmark-circle" size={14} color="#059669" />
-                    <Text style={styles.savingsBadgeText}>
+                    <Text className="text-emerald-800 text-xs font-semibold">
                       Save ₹{item.pricing.savings}
                     </Text>
                   </View>
@@ -612,19 +607,19 @@ export default function CheckoutScreen() {
             </View>
           </View>
 
-          <View style={styles.orderItemRight}>
+          <View className="items-end justify-between">
             {/* Quantity Display */}
-            <View style={styles.quantityDisplay}>
-              <Text style={styles.quantityText}>Qty: {item.quantity}</Text>
+            <View className="bg-gray-100 px-2 py-1 rounded-lg mb-2">
+              <Text className="text-xs font-semibold text-gray-700">Qty: {item.quantity}</Text>
             </View>
 
             {/* Item Total */}
-            <View style={styles.itemTotal}>
-              <Text style={styles.itemTotalText}>
+            <View className="items-end mb-2">
+              <Text className="text-base font-bold text-gray-800">
                 ₹{item.pricing.itemTotal}
               </Text>
               {item.pricing.hasDiscount && (
-                <Text style={styles.itemTotalOriginal}>
+                <Text className="text-xs text-gray-400 line-through">
                   ₹{item.pricing.baseTotal}
                 </Text>
               )}
@@ -640,23 +635,23 @@ export default function CheckoutScreen() {
   // =========================================
   if (fetchingProfile || inventoryLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading checkout...</Text>
+      <View className="flex-1 justify-center items-center bg-gray-50">
+        <Text className="text-base text-gray-600 mt-3">Loading checkout...</Text>
       </View>
     );
   }
 
   if (!profileData?.deliveryAddress) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.noAddressContainer}>
+      <View className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
+        <View className="flex-1 justify-center items-center px-10">
           <Ionicons name="location-outline" size={70} color={Colors.light.border} />
-          <Text style={styles.noAddressTitle}>No Address Found</Text>
+          <Text className="text-lg font-semibold text-gray-800 mt-4 mb-2">No Address Found</Text>
           <TouchableOpacity
-            style={styles.addAddressButton}
+            className="bg-red-600 px-6 py-3 rounded-lg mt-4"
             onPress={() => router.push("/profile")}
           >
-            <Text style={styles.addAddressButtonText}>Add Address</Text>
+            <Text className="text-white font-semibold text-base">Add Address</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -665,15 +660,15 @@ export default function CheckoutScreen() {
 
   if (cartItemsWithPricing.length === 0) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.emptyCartContainer}>
+      <View className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
+        <View className="flex-1 justify-center items-center px-10">
           <Ionicons name="cart-outline" size={80} color={Colors.light.textSecondary} />
-          <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
+          <Text className="text-lg font-semibold text-gray-800 mt-4 mb-4">Your cart is empty</Text>
           <TouchableOpacity
-            style={styles.shopButton}
+            className="bg-red-600 px-6 py-3 rounded-lg"
             onPress={() => router.push("/categories")}
           >
-            <Text style={styles.shopButtonText}>Continue Shopping</Text>
+            <Text className="text-white font-semibold text-base">Continue Shopping</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -685,49 +680,46 @@ export default function CheckoutScreen() {
   // =========================================
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
 
       {/* HEADER */}
-      <View style={styles.header}>
+      <View className="flex-row items-center justify-between px-5 py-4 border-b border-gray-200 bg-white shadow-sm">
         <TouchableOpacity 
-          style={styles.backButton}
+          className="p-1"
           onPress={() => router.back()}
         >
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Checkout</Text>
-        <View style={styles.headerSpacer} />
+        <Text className="text-lg font-bold text-gray-800">Checkout</Text>
+        <View className="w-6" />
       </View>
 
       <ScrollView 
-        style={styles.content} 
+        className="flex-1" 
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingBottom: 20 }}
       >
 
         {/* DELIVERY ADDRESS SECTION */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Delivery Address</Text>
+        <View className="mt-6 px-5">
+          <Text className="text-lg font-bold text-gray-800">Delivery Address</Text>
           
           {/* Signup Address */}
           <TouchableOpacity
-            style={[
-              styles.addressCard,
-              addressType === "signup" && styles.addressCardSelected,
-            ]}
+            className={`bg-white p-4 rounded-xl border-2 mb-3 shadow-sm ${addressType === "signup" ? "border-red-600 bg-red-50" : "border-gray-200"}`}
             onPress={() => setAddressType("signup")}
           >
-            <View style={styles.addressHeader}>
-              <View style={styles.addressIconContainer}>
+            <View className="flex-row items-start">
+              <View className="w-10 h-10 bg-gray-100 rounded-full items-center justify-center mr-3 mt-0.5">
                 <Ionicons
                   name="home-outline"
                   size={20}
                   color={Colors.light.accent}
                 />
               </View>
-              <View style={styles.addressInfo}>
-                <Text style={styles.addressName}>Home Address</Text>
-                <Text style={styles.addressText}>
+              <View className="flex-1 mr-3">
+                <Text className="text-base font-bold text-gray-800 mb-1">Home Address</Text>
+                <Text className="text-sm text-gray-600 leading-[18px]">
                   {formatAddress(profileData?.deliveryAddress)}
                 </Text>
               </View>
@@ -743,25 +735,21 @@ export default function CheckoutScreen() {
 
           {/* Current Location */}
           <TouchableOpacity
-            style={[
-              styles.currentLocCard,
-              addressType === "current" && styles.addressCardSelected,
-              !currentLocation && styles.disabledCard,
-            ]}
+            className={`bg-white p-4 rounded-xl border-2 mb-3 shadow-sm ${addressType === "current" ? "border-red-600 bg-red-50" : "border-gray-200"} ${!currentLocation && "opacity-60"}`}
             onPress={() => currentLocation && setAddressType("current")}
             disabled={!currentLocation}
           >
-            <View style={styles.currentLocHeader}>
-              <View style={styles.currentLocIconContainer}>
+            <View className="flex-row items-start">
+              <View className="w-10 h-10 bg-gray-100 rounded-full items-center justify-center mr-3 mt-0.5">
                 <Ionicons
                   name="navigate-outline"
                   size={20}
                   color={currentLocation ? Colors.light.accent : Colors.light.textSecondary}
                 />
               </View>
-              <View style={styles.currentLocInfo}>
-                <Text style={styles.currentLocTitle}>Current Location</Text>
-                <Text style={styles.currentLocText}>
+              <View className="flex-1 mr-3">
+                <Text className="text-base font-bold text-gray-800 mb-1">Current Location</Text>
+                <Text className="text-sm text-gray-600 leading-[18px]">
                   {currentLocation
                     ? currentLocation.formattedAddress || "Your current location"
                     : "Location not available"}
@@ -779,8 +767,8 @@ export default function CheckoutScreen() {
         </View>
 
         {/* PAYMENT METHOD SECTION */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Method</Text>
+        <View className="mt-6 px-5">
+          <Text className="text-lg font-bold text-gray-800">Payment Method</Text>
 
           {[
             { key: "upi", label: "UPI", icon: "wallet-outline", status: "coming_soon" },
@@ -789,11 +777,7 @@ export default function CheckoutScreen() {
           ].map((method) => (
             <TouchableOpacity
               key={method.key}
-              style={[
-                styles.paymentCard,
-                selectedPayment === method.key && styles.paymentCardSelected,
-                method.status === "coming_soon" && styles.comingSoonCard
-              ]}
+              className={`flex-row items-center bg-white p-4 rounded-xl mb-3 border-2 shadow-sm ${selectedPayment === method.key && method.status === "available" ? "border-red-600 bg-red-50" : "border-gray-200"} ${method.status === "coming_soon" && "opacity-70"}`}
               onPress={() => {
                 if (method.status === "available") {
                   setSelectedPayment(method.key);
@@ -803,7 +787,7 @@ export default function CheckoutScreen() {
               }}
               disabled={method.status === "coming_soon"}
             >
-              <View style={styles.paymentIconContainer}>
+              <View className="w-12 h-12 bg-gray-100 rounded-full items-center justify-center mr-4">
                 <Ionicons
                   name={method.icon}
                   size={24}
@@ -811,15 +795,12 @@ export default function CheckoutScreen() {
                 />
               </View>
 
-              <View style={styles.paymentInfo}>
-                <Text style={[
-                  styles.paymentName,
-                  method.status === "coming_soon" && styles.comingSoonText
-                ]}>
+              <View className="flex-1 flex-row items-center justify-between">
+                <Text className={`text-base font-semibold ${method.status === "coming_soon" ? "text-gray-600" : "text-gray-800"}`}>
                   {method.label}
                 </Text>
                 {method.status === "coming_soon" && (
-                  <Text style={styles.comingSoonBadge}>Coming Soon</Text>
+                  <Text className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded-lg">Coming Soon</Text>
                 )}
               </View>
 
@@ -843,52 +824,52 @@ export default function CheckoutScreen() {
         </View>
 
         {/* ENHANCED ORDER SUMMARY SECTION WITH DISCOUNT BADGES */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
+        <View className="mt-6 px-5">
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className="text-lg font-bold text-gray-800">
               Order Items ({cartItemsWithPricing.length})
             </Text>
             {getDiscountedItemsCount() > 0 && (
-              <Text style={styles.discountsCount}>
+              <Text className="text-xs text-blue-500 font-semibold bg-blue-50 px-2 py-1 rounded-lg">
                 {getDiscountedItemsCount()} items with discounts
               </Text>
             )}
           </View>
 
-          <View style={styles.summaryCard}>
+          <View className="bg-white p-5 rounded-xl shadow-sm">
             {cartItemsWithPricing.map((item, index) => (
               <OrderItem key={`${item._id}-${index}`} item={item} />
             ))}
 
-            <View style={styles.summaryDivider} />
+            <View className="h-px bg-gray-200 my-3" />
 
             {/* ENHANCED PRICING BREAKDOWN */}
-            <View style={styles.pricingBreakdown}>
-              <View style={styles.pricingRow}>
-                <Text style={styles.pricingLabel}>Subtotal</Text>
-                <Text style={styles.pricingValue}>₹{cartSummary.subtotal.toFixed(2)}</Text>
+            <View className="mt-2">
+              <View className="flex-row justify-between items-center mb-2">
+                <Text className="text-sm text-gray-600">Subtotal</Text>
+                <Text className="text-sm font-semibold text-gray-800">₹{cartSummary.subtotal.toFixed(2)}</Text>
               </View>
               
               {cartSummary.totalDiscount > 0 && (
-                <View style={styles.pricingRow}>
-                  <Text style={styles.pricingLabel}>Discounts</Text>
-                  <Text style={[styles.pricingValue, styles.discountValue]}>
+                <View className="flex-row justify-between items-center mb-2">
+                  <Text className="text-sm text-gray-600">Discounts</Text>
+                  <Text className="text-sm font-bold text-emerald-600">
                     -₹{cartSummary.totalDiscount.toFixed(2)}
                   </Text>
                 </View>
               )}
 
-              <View style={styles.pricingRow}>
-                <Text style={styles.pricingLabel}>Delivery</Text>
-                <Text style={styles.pricingValue}>FREE</Text>
+              <View className="flex-row justify-between items-center mb-2">
+                <Text className="text-sm text-gray-600">Delivery</Text>
+                <Text className="text-sm font-semibold text-gray-800">FREE</Text>
               </View>
 
-              <View style={styles.finalTotalRow}>
-                <Text style={styles.finalTotalLabel}>Total Amount</Text>
-                <View style={styles.finalTotalContainer}>
-                  <Text style={styles.finalTotalValue}>₹{cartSummary.finalTotal.toFixed(2)}</Text>
+              <View className="flex-row justify-between items-center mt-3 pt-3 border-t border-gray-200">
+                <Text className="text-base font-bold text-gray-800">Total Amount</Text>
+                <View className="items-end">
+                  <Text className="text-lg font-bold text-gray-800">₹{cartSummary.finalTotal.toFixed(2)}</Text>
                   {cartSummary.totalDiscount > 0 && (
-                    <Text style={styles.originalTotalValue}>
+                    <Text className="text-xs text-gray-400 line-through mt-0.5">
                       ₹{cartSummary.subtotal.toFixed(2)}
                     </Text>
                   )}
@@ -896,14 +877,14 @@ export default function CheckoutScreen() {
               </View>
 
               {cartSummary.totalDiscount > 0 && (
-                <View style={styles.savingsHighlight}>
-                  <View style={styles.savingsHighlightContent}>
+                <View className="mb-4 bg-green-50 p-4 rounded-xl border border-green-200 mt-4">
+                  <View className="flex-row items-center gap-3">
                     <Ionicons name="sparkles" size={20} color="#059669" />
-                    <View style={styles.savingsHighlightText}>
-                      <Text style={styles.savingsHighlightTitle}>
+                    <View className="flex-1">
+                      <Text className="text-emerald-800 text-base font-bold mb-0.5">
                         You saved ₹{cartSummary.totalDiscount.toFixed(2)}!
                       </Text>
-                      <Text style={styles.savingsHighlightSubtitle}>
+                      <Text className="text-emerald-800 text-xs opacity-80">
                         That's {((cartSummary.totalDiscount / cartSummary.subtotal) * 100).toFixed(1)}% off your order
                       </Text>
                     </View>
@@ -915,17 +896,17 @@ export default function CheckoutScreen() {
         </View>
 
         {/* BOTTOM SPACER FOR FOOTER */}
-        <View style={styles.bottomSpacer} />
+        <View className="h-5" />
       </ScrollView>
 
       {/* ENHANCED FOOTER */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        <View style={styles.totalContainer}>
-          <Text style={styles.totalLabel}>Total Amount</Text>
-          <View style={styles.totalAmountContainer}>
-            <Text style={styles.totalAmount}>₹{cartSummary.finalTotal.toFixed(2)}</Text>
+      <View className="px-5 pt-4 bg-white border-t border-gray-200 shadow-lg" style={{ paddingBottom: insets.bottom + 16 }}>
+        <View className="flex-row justify-between items-center mb-4">
+          <Text className="text-base font-semibold text-gray-600">Total Amount</Text>
+          <View className="items-end">
+            <Text className="text-2xl font-bold text-gray-800">₹{cartSummary.finalTotal.toFixed(2)}</Text>
             {cartSummary.totalDiscount > 0 && (
-              <Text style={styles.totalOriginalAmount}>
+              <Text className="text-sm text-gray-400 line-through mt-0.5">
                 ₹{cartSummary.subtotal.toFixed(2)}
               </Text>
             )}
@@ -933,19 +914,16 @@ export default function CheckoutScreen() {
         </View>
 
         <TouchableOpacity
-          style={[
-            styles.placeOrderButton,
-            loading && styles.buttonDisabled,
-          ]}
+          className={`flex-row items-center justify-between bg-red-600 px-6 py-4 rounded-xl shadow-lg ${loading && "opacity-60"}`}
           onPress={handlePlaceOrder}
           disabled={loading}
         >
-          <View style={styles.placeOrderContent}>
-            <Text style={styles.placeOrderButtonText}>
+          <View className="flex-1">
+            <Text className="text-white font-bold text-base mb-0.5">
               {loading ? "Placing Order..." : `Place Order - ₹${cartSummary.finalTotal.toFixed(2)}`}
             </Text>
             {cartSummary.totalDiscount > 0 && (
-              <Text style={styles.placeOrderDiscountText}>
+              <Text className="text-white text-xs opacity-90">
                 Save ₹{cartSummary.totalDiscount.toFixed(2)}
               </Text>
             )}
@@ -958,722 +936,22 @@ export default function CheckoutScreen() {
 
       {/* ORDER SUCCESS MODAL */}
       {orderSuccess && (
-        <View style={styles.successOverlay}>
-          <View style={styles.successModal}>
+        <View className="absolute top-0 left-0 right-0 bottom-0 bg-black/70 justify-center items-center z-50">
+          <View className="bg-white p-8 rounded-2xl items-center m-6 shadow-xl">
             <Ionicons name="checkmark-circle" size={80} color="#4CAF50" />
-            <Text style={styles.successTitle}>Order Placed!</Text>
-            <Text style={styles.successSubtitle}>Your order has been placed successfully</Text>
+            <Text className="text-2xl font-bold text-gray-800 mt-4">Order Placed!</Text>
+            <Text className="text-base text-gray-600 mt-2 text-center leading-[22px]">
+              Your order has been placed successfully
+            </Text>
             {cartSummary.totalDiscount > 0 && (
-              <Text style={styles.successDiscount}>
+              <Text className="text-sm text-emerald-600 font-semibold mt-2">
                 You saved ₹{cartSummary.totalDiscount.toFixed(2)} on this order
               </Text>
             )}
-            <Text style={styles.successNote}>Payment: Cash on Delivery</Text>
+            <Text className="text-sm text-gray-600 mt-3 font-medium">Payment: Cash on Delivery</Text>
           </View>
         </View>
       )}
     </View>
   );
 }
-
-// ===================== ENHANCED STYLES ===================== //
-const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#F8FAFC" 
-  },
-  
-  // HEADER STYLES
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-    backgroundColor: '#fff',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: "#1F2937",
-  },
-  headerSpacer: {
-    width: 24,
-  },
-
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-
-  // SECTION STYLES
-  section: { 
-    marginTop: 24, 
-    paddingHorizontal: 20 
-  },
-  sectionHeader: { 
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16 
-  },
-  sectionTitle: { 
-    fontSize: 18, 
-    fontWeight: '700',
-    color: "#1F2937" 
-  },
-  discountsCount: {
-    fontSize: 12,
-    color: '#3B82F6',
-    fontWeight: '600',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-
-  // ENHANCED DISCOUNT BADGES
-  discountBadge: {
-    backgroundColor: "#DC2626",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    shadowColor: "#DC2626",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  discountBadgeMedium: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  discountBadgeLarge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  discountBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  extendedRangeDot: {
-    width: 4,
-    height: 4,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 2,
-    opacity: 0.8,
-  },
-
-  // STATUS BADGES
-  statusBadge: {
-    backgroundColor: "#EF4444",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  notAvailableBadge: {
-    backgroundColor: "#F59E0B",
-  },
-  statusBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "700",
-  },
-
-  // ENHANCED ORDER ITEM STYLES
-  orderItem: {
-    backgroundColor: "#FFFFFF",
-    marginBottom: 12,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
-    position: "relative",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-  },
-  orderItemHeader: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    right: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    zIndex: 2,
-  },
-  orderItemContent: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  orderItemLeft: {
-    justifyContent: "center",
-  },
-  imageContainer: {
-    position: "relative",
-  },
-  orderItemImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 8,
-    backgroundColor: "#F9FAFB",
-  },
-  orderItemImagePlaceholder: {
-    width: 70,
-    height: 70,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  orderItemImageText: {
-    fontSize: 20,
-    color: "#9CA3AF",
-  },
-  orderItemCenter: {
-    flex: 1,
-    justifyContent: "space-between",
-    paddingVertical: 4,
-  },
-  orderItemName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1F2937",
-    marginBottom: 2,
-    lineHeight: 20,
-  },
-  orderItemUnit: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 8,
-  },
-  priceContainer: {
-    marginBottom: 4,
-  },
-  priceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 6,
-  },
-  currentPrice: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-  originalPrice: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    textDecorationLine: "line-through",
-  },
-  priceUnit: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  savingsBadge: {
-    alignSelf: "flex-start",
-  },
-  savingsContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: "#F0FDF4",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-    gap: 4,
-  },
-  savingsBadgeText: {
-    color: "#065F46",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  orderItemRight: {
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-  },
-  quantityDisplay: {
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginBottom: 8,
-  },
-  quantityText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#4B5563",
-  },
-  itemTotal: {
-    alignItems: "flex-end",
-    marginBottom: 8,
-  },
-  itemTotalText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-  itemTotalOriginal: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    textDecorationLine: "line-through",
-  },
-
-  // ADDRESS CARD STYLES
-  addressCard: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  addressCardSelected: {
-    borderColor: "#DC2626",
-    backgroundColor: "#FEF2F2",
-  },
-  addressHeader: { 
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  addressIconContainer: {
-    width: 40,
-    height: 40,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    marginTop: 2,
-  },
-  addressInfo: { 
-    flex: 1,
-    marginRight: 12,
-  },
-  addressName: { 
-    fontSize: 16, 
-    fontWeight: "700",
-    color: "#1F2937",
-    marginBottom: 4,
-  },
-  addressText: { 
-    fontSize: 14, 
-    color: "#6B7280",
-    lineHeight: 18,
-  },
-
-  // CURRENT LOCATION STYLES
-  currentLocCard: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  disabledCard: {
-    opacity: 0.6,
-  },
-  currentLocHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  currentLocIconContainer: {
-    width: 40,
-    height: 40,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    marginTop: 2,
-  },
-  currentLocInfo: { 
-    flex: 1,
-    marginRight: 12,
-  },
-  currentLocTitle: { 
-    fontWeight: "700", 
-    fontSize: 16,
-    color: "#1F2937",
-    marginBottom: 4,
-  },
-  currentLocText: { 
-    fontSize: 14, 
-    color: "#6B7280",
-    lineHeight: 18,
-  },
-
-  // PAYMENT CARD STYLES
-  paymentCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  paymentCardSelected: { 
-    borderColor: "#DC2626",
-    backgroundColor: "#FEF2F2"
-  },
-  comingSoonCard: {
-    opacity: 0.7,
-  },
-  paymentIconContainer: {
-    width: 48,
-    height: 48,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 16,
-  },
-  paymentInfo: { 
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
-  },
-  paymentName: { 
-    fontSize: 16, 
-    fontWeight: "600",
-    color: "#1F2937"
-  },
-  comingSoonText: {
-    color: "#6B7280",
-  },
-  comingSoonBadge: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#6B7280",
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-
-  // ORDER SUMMARY STYLES
-  summaryCard: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  summaryDivider: {
-    height: 1,
-    backgroundColor: "#E5E7EB",
-    marginVertical: 12,
-  },
-
-  // PRICING BREAKDOWN
-  pricingBreakdown: {
-    marginTop: 8,
-  },
-  pricingRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  pricingLabel: { 
-    fontSize: 14, 
-    color: "#6B7280" 
-  },
-  pricingValue: { 
-    fontSize: 14, 
-    fontWeight: "600",
-    color: "#1F2937"
-  },
-  discountValue: {
-    color: "#059669",
-    fontWeight: "700",
-  },
-  finalTotalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
-  },
-  finalTotalLabel: { 
-    fontSize: 16, 
-    fontWeight: "700",
-    color: "#1F2937"
-  },
-  finalTotalContainer: {
-    alignItems: "flex-end",
-  },
-  finalTotalValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-  originalTotalValue: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    textDecorationLine: "line-through",
-    marginTop: 2,
-  },
-
-  // ENHANCED SAVINGS HIGHLIGHT
-  savingsHighlight: {
-    marginBottom: 16,
-    backgroundColor: "#F0FDF4",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-  },
-  savingsHighlightContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  savingsHighlightText: {
-    flex: 1,
-  },
-  savingsHighlightTitle: {
-    color: "#065F46",
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  savingsHighlightSubtitle: {
-    color: "#065F46",
-    fontSize: 12,
-    opacity: 0.8,
-  },
-
-  // ENHANCED FOOTER STYLES
-  footer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  totalContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  totalLabel: { 
-    fontSize: 16, 
-    fontWeight: "600",
-    color: "#6B7280" 
-  },
-  totalAmountContainer: {
-    alignItems: "flex-end",
-  },
-  totalAmount: { 
-    fontSize: 24, 
-    fontWeight: "700",
-    color: "#1F2937"
-  },
-  totalOriginalAmount: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    textDecorationLine: "line-through",
-    marginTop: 2,
-  },
-  placeOrderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: "#DC2626",
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 12,
-    shadowColor: "#DC2626",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  buttonDisabled: { 
-    opacity: 0.6 
-  },
-  placeOrderContent: {
-    flex: 1,
-  },
-  placeOrderButtonText: { 
-    color: "#fff", 
-    fontWeight: "700", 
-    fontSize: 16,
-    marginBottom: 2,
-  },
-  placeOrderDiscountText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    opacity: 0.9,
-  },
-
-  // LOADING AND EMPTY STATES
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-  },
-  loadingText: {
-    fontSize: 16,
-    color: "#6B7280",
-    marginTop: 12,
-  },
-  noAddressContainer: { 
-    flex: 1,
-    justifyContent: "center", 
-    alignItems: "center", 
-    paddingHorizontal: 40 
-  },
-  noAddressTitle: { 
-    fontSize: 18, 
-    fontWeight: "600", 
-    color: "#1F2937",
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  addAddressButton: {
-    backgroundColor: "#DC2626",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  addAddressButtonText: { 
-    color: "#fff", 
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  emptyCartContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 40,
-  },
-  emptyCartTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1F2937",
-    marginTop: 16,
-    marginBottom: 16,
-  },
-  shopButton: {
-    backgroundColor: "#DC2626",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  shopButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-
-  // BOTTOM SPACER
-  bottomSpacer: {
-    height: 20,
-  },
-
-  // SUCCESS MODAL STYLES
-  successOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  successModal: {
-    backgroundColor: '#fff',
-    padding: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    margin: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: "#1F2937",
-    marginTop: 16,
-  },
-  successSubtitle: {
-    fontSize: 16,
-    color: "#6B7280",
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  successDiscount: {
-    fontSize: 14,
-    color: '#059669',
-    fontWeight: '600',
-    marginTop: 8,
-  },
-  successNote: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 12,
-    fontWeight: '500',
-  },
-});

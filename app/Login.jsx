@@ -7,7 +7,6 @@ import {
   Dimensions,
   Image,
   StatusBar,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -273,9 +272,9 @@ export default function Login() {
     console.log('🔄 Already authenticated, redirecting...');
     setTimeout(() => router.replace('/(tabs)'), 100);
     return (
-      <View style={styles.loadingContainer}>
+      <View className="flex-1 justify-center items-center bg-blue-50">
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Redirecting...</Text>
+        <Text className="mt-3 text-base text-slate-500">Redirecting...</Text>
       </View>
     );
   }
@@ -297,64 +296,65 @@ export default function Login() {
   };
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1 bg-blue-50">
       <StatusBar barStyle="light-content" />
       
       {/* Header with Back Button */}
       {(currentStep === 'otp' || currentStep === 'secret') && (
-        <View style={styles.header}>
+        <View className="absolute top-10 left-0 right-0 flex-row items-center justify-between px-4 py-3 z-50">
           <TouchableOpacity 
-            style={styles.backButton} 
+            className="w-10 h-10 rounded-full bg-white/90 items-center justify-center shadow-sm"
             onPress={handleBack}
             disabled={loading}
           >
-            <Text style={styles.backButtonText}>←</Text>
+            <Text className="text-xl font-bold text-blue-500">←</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>
+          <Text className="text-lg font-semibold text-white shadow-sm">
             {currentStep === 'secret' ? 'Enter Secret Key' : 'Enter OTP'}
           </Text>
-          <View style={styles.headerPlaceholder} />
+          <View className="w-10" />
         </View>
       )}
 
       {/* Background Image */}
-      <View style={styles.imageContainer}>
+      <View className="absolute top-0 w-full h-1/2">
         <Image
           source={{ uri: 'https://images.unsplash.com/photo-1628088062854-d1870b4553da?w=800&q=80' }}
-          style={styles.backgroundImage}
+          className="w-full h-full"
           resizeMode="cover"
         />
       </View>
 
       <KeyboardAwareScrollView
-        contentContainerStyle={styles.scrollContent}
-        enableOnAndroid
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.spacer} />
+  contentContainerClassName="flex-grow justify-end"
+  enableOnAndroid
+  keyboardShouldPersistTaps="handled"
+  showsVerticalScrollIndicator={false}
+  extraScrollHeight={100}
+>
+        <View className="h-1/3" />
 
-        {/* White Card */}
-        <View style={styles.bottomCard}>
+        {/* White Card - Image ke niche */}
+  <View className="bg-white rounded-t-3xl px-6 py-14 items-center shadow-lg">
           {/* Logo */}
           {currentStep === 'mobile' && (
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>Dairy Nine</Text>
+            <View className="mb-3">
+              <Text className="text-2xl font-bold text-slate-900">Dairy Nine</Text>
             </View>
           )}
 
-          <Text style={styles.title}>{getStepTitle()}</Text>
-          <Text style={styles.subtitle}>{getStepSubtitle()}</Text>
+          <Text className="text-xl font-bold text-slate-900 text-center mb-2">{getStepTitle()}</Text>
+          <Text className="text-sm text-slate-500 text-center mb-5">{getStepSubtitle()}</Text>
 
           {/* Step 1: Mobile Input */}
           {currentStep === 'mobile' && (
-            <View style={styles.inputContainer}>
-              <View style={styles.flagContainer}>
-                <Text style={styles.flag}>🇮🇳</Text>
-                <Text style={styles.countryCode}>+91</Text>
+            <View className="flex-row items-center border-2 border-slate-300 rounded-xl bg-slate-50 w-full mb-3">
+              <View className="flex-row items-center px-3 py-3.5 border-r-2 border-slate-200">
+                <Text className="text-lg mr-1.5">🇮🇳</Text>
+                <Text className="text-sm font-semibold text-slate-800">+91</Text>
               </View>
               <TextInput
-                style={styles.input}
+                className="flex-1 text-sm text-slate-800 px-3 py-3.5 font-medium"
                 placeholder="Enter mobile number"
                 placeholderTextColor="#94a3b8"
                 keyboardType="phone-pad"
@@ -366,64 +366,57 @@ export default function Login() {
             </View>
           )}
 
-          {/* Step 2: OTP Input */}
-          {currentStep === 'otp' && (
-            <View style={styles.otpSection}>
-              <View style={styles.otpContainer}>
-                {otp.map((digit, index) => (
-                  <TextInput
-                    key={index}
-                    ref={(ref) => (otpRefs.current[index] = ref)}
-                    style={[
-                      styles.otpInput, 
-                      digit ? styles.otpInputActive : null
-                    ]}
-                    keyboardType="number-pad"
-                    maxLength={1}
-                    value={digit}
-                    onChangeText={(text) => handleOtpChange(text, index)}
-                    onKeyPress={(e) => handleOtpKeyPress(e, index)}
-                    textAlign="center"
-                    editable={!loading}
-                    selectTextOnFocus
-                  />
-                ))}
-              </View>
+// Step 2: OTP Input - FIXED with margin top
+{currentStep === 'otp' && (
+  <View className="w-full mb-3 mt-4"> {/* mt-4 add kiya */}
+    <View className="flex-row justify-between w-full px-2 mb-4">
+      {otp.map((digit, index) => (
+        <TextInput
+          key={index}
+          ref={(ref) => (otpRefs.current[index] = ref)}
+          className={`w-12 h-13 border-2 rounded-lg text-xl font-bold bg-white text-black text-center ${digit ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}
+          keyboardType="numeric"
+          maxLength={1}
+          value={digit}
+          onChangeText={(text) => handleOtpChange(text, index)}
+          onKeyPress={(e) => handleOtpKeyPress(e, index)}
+          textAlign="center"
+          editable={!loading}
+          selectTextOnFocus
+        />
+      ))}
+    </View>
 
-              <TouchableOpacity
-                style={styles.resendContainer}
-                onPress={handleResendOTP}
-                disabled={sendingOtp}
-              >
-                {sendingOtp ? (
-                  <ActivityIndicator color="#3b82f6" size="small" />
-                ) : (
-                  <Text style={styles.resendText}>
-                    Didn't receive OTP?{' '}
-                    <Text style={styles.resendTextBold}>Resend</Text>
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
+    <TouchableOpacity
+      className="items-center mb-3"
+      onPress={handleResendOTP}
+      disabled={sendingOtp}
+    >
+      {sendingOtp ? (
+        <ActivityIndicator color="#3b82f6" size="small" />
+      ) : (
+        <Text className="text-sm text-slate-500">
+          Didn't receive OTP?{' '}
+          <Text className="text-blue-500 font-semibold">Resend</Text>
+        </Text>
+      )}
+    </TouchableOpacity>
+  </View>
+)}
 
           {/* Step 3: Secret Input */}
           {currentStep === 'secret' && (
-            <View style={styles.otpSection}>
-              <Text style={styles.superadminHint}>
+            <View className="w-full mb-3">
+              <Text className="text-sm text-amber-500 text-center italic mb-2">
                 SuperAdmin access requires additional verification
               </Text>
               
-              <View style={styles.otpContainer}>
+              <View className="flex-row justify-between w-full px-2 mb-4">
                 {secret.map((digit, index) => (
                   <TextInput
                     key={index}
                     ref={(ref) => (secretRefs.current[index] = ref)}
-                    style={[
-                      styles.otpInput, 
-                      styles.secretCodeInputActive,
-                      digit ? styles.otpInputActive : null
-                    ]}
+                    className={`w-11 h-11 border-2 rounded-lg text-xl font-bold bg-white text-slate-900 text-center shadow-sm border-green-500 bg-green-50 ${digit ? 'border-blue-500 bg-blue-50 shadow-blue-500/20' : 'border-slate-200'}`}
                     keyboardType="number-pad"
                     maxLength={1}
                     value={digit}
@@ -437,7 +430,7 @@ export default function Login() {
                 ))}
               </View>
               
-              <Text style={styles.secretCodeHint}>
+              <Text className="text-xs text-green-600 text-center italic mb-2">
                 Enter your 6-digit secret key
               </Text>
             </View>
@@ -447,23 +440,20 @@ export default function Login() {
           {currentStep === 'mobile' && (
             <>
               <TouchableOpacity
-                style={[
-                  styles.continueButton, 
-                  (sendingOtp || !mobile) && styles.buttonDisabled
-                ]}
+                className={`w-full rounded-xl py-3.5 items-center mb-3 shadow-lg ${(sendingOtp || !mobile) ? 'bg-gray-400' : 'bg-blue-500 shadow-blue-500/30'}`}
                 onPress={handleSendOTP}
                 disabled={sendingOtp || !mobile}
               >
                 {sendingOtp ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.buttonText}>Send OTP</Text>
+                  <Text className="text-white text-base font-bold">Send OTP</Text>
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity onPress={() => router.push('/Signup')}>
-                <Text style={styles.createAccountText}>
-                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                <Text className="text-sm text-slate-500 mb-3">
+                  New user? <Text className="text-blue-500 font-semibold">Create Account</Text>
                 </Text>
               </TouchableOpacity>
             </>
@@ -472,23 +462,20 @@ export default function Login() {
           {currentStep === 'otp' && (
             <>
               <TouchableOpacity
-                style={[
-                  styles.continueButton, 
-                  (loading || otp.join('').length !== 6) && styles.buttonDisabled
-                ]}
+                className={`w-full rounded-xl py-3.5 items-center mb-3 shadow-lg ${(loading || otp.join('').length !== 6) ? 'bg-gray-400' : 'bg-blue-500 shadow-blue-500/30'}`}
                 onPress={handleManualVerifyOTP}
                 disabled={loading || otp.join('').length !== 6}
               >
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.buttonText}>Verify & Sign In</Text>
+                  <Text className="text-white text-base font-bold">Verify & Sign In</Text>
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity onPress={() => router.push('/Signup')} disabled={loading}>
-                <Text style={styles.createAccountText}>
-                  New user? <Text style={styles.createAccountLink}>Create Account</Text>
+                <Text className="text-sm text-slate-500 mb-3">
+                  New user? <Text className="text-blue-500 font-semibold">Create Account</Text>
                 </Text>
               </TouchableOpacity>
             </>
@@ -496,23 +483,20 @@ export default function Login() {
 
           {currentStep === 'secret' && (
             <TouchableOpacity
-              style={[
-                styles.continueButton, 
-                (loading || secret.join('').length !== 6) && styles.buttonDisabled
-              ]}
+              className={`w-full rounded-xl py-3.5 items-center mb-3 shadow-lg ${(loading || secret.join('').length !== 6) ? 'bg-gray-400' : 'bg-blue-500 shadow-blue-500/30'}`}
               onPress={handleManualVerifySecret}
               disabled={loading || secret.join('').length !== 6}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.buttonText}>Verify Secret Key</Text>
+                <Text className="text-white text-base font-bold">Verify Secret Key</Text>
               )}
             </TouchableOpacity>
           )}
 
           {/* Footer */}
-          <Text style={styles.footerText}>
+          <Text className="text-xs text-slate-400 text-center leading-3.5 px-4">
             By continuing, you agree to our Terms & Privacy Policy
           </Text>
         </View>
@@ -520,244 +504,3 @@ export default function Login() {
     </View>
   );
 }
-
-// Styles remain the same as your second version
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f0f9ff',
-  },
-  header: {
-    position: 'absolute',
-    top: StatusBar.currentHeight || 40,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    zIndex: 1000,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  backButtonText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  headerPlaceholder: {
-    width: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f9ff',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#64748b',
-  },
-  imageContainer: {
-    position: 'absolute',
-    top: 0,
-    width: '100%',
-    height: height * 0.5,
-  },
-  backgroundImage: {
-    width: '100%',
-    height: '100%',
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'flex-end',
-  },
-  spacer: {
-    height: height * 0.48,
-  },
-  bottomCard: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 10,
-    minHeight: height * 0.55,
-  },
-  logoContainer: { marginBottom: 12 },
-  logoText: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#0f172a',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    backgroundColor: '#f8fafc',
-    width: '100%',
-    marginBottom: 12,
-  },
-  flagContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    borderRightWidth: 1.5,
-    borderRightColor: '#e2e8f0',
-  },
-  flag: { fontSize: 18, marginRight: 6 },
-  countryCode: { fontSize: 14, fontWeight: '600', color: '#1e293b' },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: '#1e293b',
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    fontWeight: '500',
-  },
-  otpSection: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 8,
-    marginBottom: 16,
-  },
-  otpInput: {
-    width: 46,
-    height: 46,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    fontSize: 20,
-    fontWeight: '700',
-    backgroundColor: '#ffffff',
-    color: '#0f172a',
-    textAlign: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  otpInputActive: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#f0f9ff',
-    shadowColor: '#3b82f6',
-    shadowOpacity: 0.2,
-  },
-  secretCodeInputActive: {
-    borderColor: '#10b981',
-    backgroundColor: '#f0fdf4',
-  },
-  continueButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 12,
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
-    shadowOpacity: 0,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  createAccountText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  createAccountLink: {
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  footerText: {
-    fontSize: 10,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 14,
-    paddingHorizontal: 16,
-  },
-  resendContainer: { 
-    alignItems: 'center', 
-    marginBottom: 12 
-  },
-  resendText: { 
-    fontSize: 14, 
-    color: '#64748b' 
-  },
-  resendTextBold: { 
-    color: '#3b82f6', 
-    fontWeight: '600' 
-  },
-  secretCodeHint: {
-    fontSize: 12,
-    color: '#10b981',
-    textAlign: 'center',
-    fontStyle: 'italic',
-    marginBottom: 8,
-  },
-  superadminHint: {
-    fontSize: 12,
-    color: '#f59e0b',
-    textAlign: 'center',
-    fontStyle: 'italic',
-    marginBottom: 8,
-  },
-});

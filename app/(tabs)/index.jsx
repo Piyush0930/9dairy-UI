@@ -11,7 +11,6 @@ import {
   Modal,
   Alert,
   TextInput,
-  StyleSheet,
   Image,
   Dimensions,
   AppState
@@ -569,11 +568,11 @@ export default function HomeScreen() {
 
   // ------------- Render -------------
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-white" style={{ paddingTop: insets.top }}>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -586,24 +585,24 @@ export default function HomeScreen() {
 
         {/* SEARCH BAR - Only show if location is selected */}
         {!showLocationPrompt && (
-          <View style={styles.searchSection}>
-            <View style={styles.searchBar}>
+          <View className="flex-row px-4 pt-4 pb-4 gap-2 items-center bg-white">
+            <View className="flex-1 flex-row items-center bg-white rounded-3xl border border-[#E8E8E8] px-4 h-13 gap-2.5">
               <Ionicons name="search" size={20} color="#EF4444" />
               <TextInput
                 placeholder="Search 'Salted Butter'"
-                style={styles.searchInput}
+                className="flex-1 text-base text-gray-900 font-normal"
                 placeholderTextColor="#BDBDBD"
               />
             </View>
 
             <TouchableOpacity
-              style={styles.iconButton}
+              className="w-13 h-13 rounded-full bg-white border border-[#E8E8E8] justify-center items-center relative"
               onPress={() => router.push("/cart")}
             >
               <Ionicons name="cart-outline" size={22} color="#1A1A1A" />
               {cartCount > 0 && (
-                <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>
+                <View className="absolute top-2 right-2 bg-red-500 rounded-full min-w-[45px] h-5.5 justify-center items-center px-2">
+                  <Text className="text-white text-xs font-bold">
                     {cartCount > 99 ? "99+" : cartCount}
                   </Text>
                 </View>
@@ -614,9 +613,9 @@ export default function HomeScreen() {
 
         {/* Show loading only when location prompt is not visible */}
         {loading && !showLocationPrompt && (
-          <View style={styles.fullScreenLoading}>
+          <View className="flex-1 justify-center items-center py-25">
             <ActivityIndicator size="large" color={Colors.light.tint} />
-            <Text style={styles.loadingText}>Loading products...</Text>
+            <Text className="mt-2.5 text-base text-gray-600">Loading products...</Text>
           </View>
         )}
 
@@ -624,30 +623,30 @@ export default function HomeScreen() {
         {!showLocationPrompt && !loading && (
           <>
             {/* FEATURED STORES */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Featured Stores</Text>
-                <View style={styles.newBadge}>
-                  <Text style={styles.newBadgeText}>NEW</Text>
+            <View className="px-4 mt-6">
+              <View className="flex-row items-center mb-4 gap-2">
+                <Text className="text-xl font-bold text-gray-900">Featured Stores</Text>
+                <View className="bg-red-500 px-2 py-0.75 rounded">
+                  <Text className="text-white text-xs font-bold">NEW</Text>
                 </View>
               </View>
 
-              <View style={styles.storesContainer}>
+              <View className="mx--4">
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   snapToInterval={CARD_WIDTH + CARD_SPACING}
                   decelerationRate="fast"
-                  contentContainerStyle={styles.storesScroll}
+                  contentContainerStyle={{ paddingHorizontal: 32, paddingVertical: 12 }}
                 >
                   {infiniteStoreCards.map((store, index) => (
                     <TouchableOpacity
                       key={`${store.id}-${index}`}
-                      style={styles.storeCard}
+                      className="w-[280px] aspect-video mr-4 rounded-xl overflow-hidden elevation-8"
                       onPress={() => router.push("/categories")}
                       activeOpacity={0.9}
                     >
-                      <Image source={store.image} style={styles.storeImageFull} />
+                      <Image source={store.image} className="w-full h-full rounded-xl" />
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -655,11 +654,11 @@ export default function HomeScreen() {
             </View>
 
             {/* CATEGORIES */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Shop by category</Text>
+            <View className="px-4 mt-6">
+              <Text className="text-xl font-bold text-gray-900">Shop by category</Text>
 
               {categories.length > 0 ? (
-                <View style={styles.categoriesGrid}>
+                <View className="flex-row flex-wrap justify-between mt-3">
                   {categories.map((cat) => (
                     <CategoryTile
                       key={cat._id || cat.id}
@@ -676,30 +675,30 @@ export default function HomeScreen() {
                   ))}
                 </View>
               ) : (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>No categories found</Text>
+                <View className="justify-center items-center py-10">
+                  <Text className="text-base text-gray-600">No categories found</Text>
                 </View>
               )}
             </View>
 
             {/* POPULAR PRODUCTS - ONLY AVAILABLE */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Popular</Text>
-                <View style={styles.fireIcon}>
-                  <Text style={styles.fireEmoji}>🔥</Text>
+            <View className="px-4 mt-6">
+              <View className="flex-row items-center mb-4 gap-2">
+                <Text className="text-xl font-bold text-gray-900">Popular</Text>
+                <View className="w-8 h-8 rounded bg-orange-50 justify-center items-center">
+                  <Text className="text-lg">🔥</Text>
                 </View>
               </View>
 
-              <Text style={styles.popularSubtext}>Most frequently bought</Text>
+              <Text className="text-sm text-gray-600 mb-3">Most frequently bought</Text>
 
               {popularProducts.length > 0 ? (
-                <View style={styles.popularContainer}>
+                <View className="mx--4">
                   <ScrollView
                     ref={popularScrollRef}
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.popularScroll}
+                    contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
                     snapToInterval={POPULAR_CARD_WIDTH + POPULAR_CARD_SPACING}
                     decelerationRate="fast"
                     onScroll={handlePopularScroll}
@@ -710,7 +709,7 @@ export default function HomeScreen() {
                       .map((product, index) => (
                         <View
                           key={`${product._id || product.id}-${index}`}
-                          style={styles.productCardWrapper}
+                          className="w-[165px] mr-3"
                         >
                           <ProductCard product={product} />
                         </View>
@@ -718,63 +717,57 @@ export default function HomeScreen() {
                   </ScrollView>
                 </View>
               ) : (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>No popular products available</Text>
+                <View className="justify-center items-center py-10">
+                  <Text className="text-base text-gray-600">No popular products available</Text>
                 </View>
               )}
             </View>
 
             {/* QUICK LINKS */}
-            <View style={[styles.section, { marginBottom: 120 }]}>
-              <Text style={styles.sectionTitle}>Quick links</Text>
+            <View className="px-4 mt-6 mb-30">
+              <Text className="text-xl font-bold text-gray-900">Quick links</Text>
 
-              <View style={styles.quickLinksRow}>
+              <View className="flex-row gap-3 mt-3">
                 <TouchableOpacity
-                  style={styles.quickLinkCard}
+                  className="flex-1 items-center"
                   onPress={() => router.push("/wallet")}
                 >
                   <View
-                    style={[
-                      styles.quickLinkIconContainer,
-                      { backgroundColor: "#06B6D4" },
-                    ]}
+                    className="w-full aspect-square rounded-xl justify-center items-center mb-2"
+                    style={{ backgroundColor: "#06B6D4" }}
                   >
-                    <Text style={styles.quickLinkEmoji}>💳</Text>
+                    <Text className="text-4xl">💳</Text>
                   </View>
-                  <Text style={styles.quickLinkTitle}>Wallet</Text>
-                  <Text style={styles.quickLinkSubtext}>₹0.0</Text>
+                  <Text className="text-base font-bold text-gray-900">Wallet</Text>
+                  <Text className="text-sm text-gray-500">₹0.0</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.quickLinkCard}
+                  className="flex-1 items-center"
                   onPress={() => router.push("/orders")}
                 >
                   <View
-                    style={[
-                      styles.quickLinkIconContainer,
-                      { backgroundColor: "#F59E0B" },
-                    ]}
+                    className="w-full aspect-square rounded-xl justify-center items-center mb-2"
+                    style={{ backgroundColor: "#F59E0B" }}
                   >
-                    <Text style={styles.quickLinkEmoji}>📋</Text>
+                    <Text className="text-4xl">📋</Text>
                   </View>
-                  <Text style={styles.quickLinkTitle}>Orders</Text>
-                  <Text style={styles.quickLinkSubtext}>Track orders</Text>
+                  <Text className="text-base font-bold text-gray-900">Orders</Text>
+                  <Text className="text-sm text-gray-500">Track orders</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.quickLinkCard}
+                  className="flex-1 items-center"
                   onPress={() => router.push("/categories")}
                 >
                   <View
-                    style={[
-                      styles.quickLinkIconContainer,
-                      { backgroundColor: "#EF4444" },
-                    ]}
+                    className="w-full aspect-square rounded-xl justify-center items-center mb-2"
+                    style={{ backgroundColor: "#EF4444" }}
                   >
-                    <Text style={styles.quickLinkEmoji}>❤️</Text>
+                    <Text className="text-4xl">❤️</Text>
                   </View>
-                  <Text style={styles.quickLinkTitle}>My list</Text>
-                  <Text style={styles.quickLinkSubtext}>Shop</Text>
+                  <Text className="text-base font-bold text-gray-900">My list</Text>
+                  <Text className="text-sm text-gray-500">Shop</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -792,38 +785,38 @@ export default function HomeScreen() {
           return true;
         }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Welcome Back! 👋</Text>
-            <Text style={styles.modalSubtitle}>
+        <View className="flex-1 bg-black/45 justify-end">
+          <View className="bg-white p-6 rounded-t-2xl pb-7">
+            <Text className="text-xl font-bold mb-2 text-center">Welcome Back! 👋</Text>
+            <Text className="text-sm text-gray-600 mb-6 text-center leading-5">
               Please choose your location to see available products from nearest retailer.
             </Text>
 
             <TouchableOpacity
-              style={styles.primaryBtn}
+              className="bg-red-500 py-4 rounded-xl items-center mb-3 flex-row justify-center"
               onPress={handleUseCurrentAddress}
             >
-              <Ionicons name="location" size={18} color="#fff" style={styles.btnIcon} />
-              <Text style={styles.primaryBtnText}>Use Current Location</Text>
+              <Ionicons name="location" size={18} color="#fff" className="mr-2" />
+              <Text className="text-white font-bold text-base">Use Current Location</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.ghostBtn}
+              className="border border-[#E8E8E8] py-4 rounded-xl items-center mb-4 flex-row justify-center"
               onPress={handleSkip}
             >
-              <Ionicons name="home" size={18} color="#333" style={styles.btnIcon} />
-              <Text style={styles.ghostBtnText}>Use Saved Address</Text>
+              <Ionicons name="home" size={18} color="#333" className="mr-2" />
+              <Text className="text-gray-900 font-bold text-base">Use Saved Address</Text>
             </TouchableOpacity>
 
             <TextInput
               placeholder="Or enter address manually (optional)"
               value={manualAddress}
               onChangeText={setManualAddress}
-              style={styles.addressInput}
+              className="mt-2 border border-[#EEE] rounded-xl p-3.5 text-base mb-3"
               placeholderTextColor="#666"
             />
 
-            <Text style={styles.noteText}>
+            <Text className="text-xs text-gray-600 text-center italic">
               🔄 Your location choice will be remembered until you close the app
             </Text>
           </View>
@@ -832,206 +825,3 @@ export default function HomeScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.light.background },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingBottom: 20 },
-
-  // ⭐ NEW: Full screen loading
-  fullScreenLoading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 100,
-  },
-
-  searchSection: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    gap: 8,
-    alignItems: "center",
-    backgroundColor: Colors.light.white,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.light.white,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: "#E8E8E8",
-    paddingHorizontal: 16,
-    height: 52,
-    gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: Colors.light.text,
-    fontWeight: "400",
-  },
-  iconButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Colors.light.white,
-    borderWidth: 1.5,
-    borderColor: "#E8E8E8",
-    justifyContent: "center",
-    alignItems: "center",
-    position: 'relative',
-  },
-  cartBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    backgroundColor: Colors.light.tint,
-    borderRadius: 10,
-    minWidth: 45,
-    height: 22,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 8,
-  },
-  cartBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  section: { paddingHorizontal: 16, marginTop: 24 },
-  sectionHeader: { flexDirection: "row", alignItems: "center", marginBottom: 16, gap: 8 },
-  sectionTitle: { fontSize: 20, fontWeight: "700", color: Colors.light.text },
-
-  newBadge: { backgroundColor: "#EF4444", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 5 },
-  newBadgeText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
-
-  storesContainer: { marginHorizontal: -16 },
-  storesScroll: { paddingHorizontal: 32, paddingVertical: 12 },
-  storeCard: {
-    width: CARD_WIDTH,
-    aspectRatio: 16 / 9,
-    marginRight: CARD_SPACING,
-    borderRadius: 16,
-    overflow: "hidden",
-    elevation: 8,
-  },
-  storeImageFull: { width: "100%", height: "100%", borderRadius: 16 },
-
-  categoriesGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginTop: 12,
-  },
-
-  popularSubtext: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 12 },
-  popularContainer: { marginHorizontal: -16 },
-  popularScroll: { paddingHorizontal: 16, paddingVertical: 12 },
-  productCardWrapper: { width: POPULAR_CARD_WIDTH, marginRight: POPULAR_CARD_SPACING },
-
-  fireIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "#FFF4E6",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fireEmoji: { fontSize: 18 },
-
-  loadingContainer: { justifyContent: "center", alignItems: "center", paddingVertical: 40 },
-  loadingText: { marginTop: 10, fontSize: 16, color: Colors.light.textSecondary },
-  emptyState: { justifyContent: "center", alignItems: "center", paddingVertical: 40 },
-  emptyStateText: { fontSize: 16, color: Colors.light.textSecondary },
-
-  quickLinksRow: { flexDirection: "row", gap: 12, marginTop: 12 },
-  quickLinkCard: { flex: 1, alignItems: "center" },
-  quickLinkIconContainer: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  quickLinkEmoji: { fontSize: 36 },
-  quickLinkTitle: { fontSize: 15, fontWeight: "700", color: Colors.light.text },
-  quickLinkSubtext: { fontSize: 13, color: "#9E9E9E" },
-
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: "rgba(0,0,0,0.45)", 
-    justifyContent: "flex-end" 
-  },
-  modalCard: { 
-    backgroundColor: "#fff", 
-    padding: 24, 
-    borderTopLeftRadius: 20, 
-    borderTopRightRadius: 20,
-    paddingBottom: 30 
-  },
-  modalTitle: { 
-    fontSize: 22, 
-    fontWeight: "700", 
-    marginBottom: 8,
-    textAlign: "center"
-  },
-  modalSubtitle: { 
-    fontSize: 15, 
-    color: "#666", 
-    marginBottom: 24,
-    textAlign: "center",
-    lineHeight: 20
-  },
-  primaryBtn: { 
-    backgroundColor: Colors.light.tint, 
-    paddingVertical: 16, 
-    borderRadius: 12, 
-    alignItems: "center", 
-    marginBottom: 12,
-    flexDirection: "row",
-    justifyContent: "center"
-  },
-  primaryBtnText: { 
-    color: "#fff", 
-    fontWeight: "700",
-    fontSize: 16
-  },
-  ghostBtn: { 
-    borderWidth: 1.5, 
-    borderColor: "#E8E8E8", 
-    paddingVertical: 16, 
-    borderRadius: 12, 
-    alignItems: "center",
-    marginBottom: 16,
-    flexDirection: "row",
-    justifyContent: "center"
-  },
-  ghostBtnText: { 
-    color: "#333", 
-    fontWeight: "700",
-    fontSize: 16
-  },
-  btnIcon: {
-    marginRight: 8
-  },
-  addressInput: { 
-    marginTop: 8, 
-    borderWidth: 1.5, 
-    borderColor: "#EEE", 
-    borderRadius: 10, 
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12
-  },
-  noteText: {
-    fontSize: 12,
-    color: "#666",
-    textAlign: "center",
-    fontStyle: "italic"
-  }
-});

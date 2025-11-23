@@ -15,7 +15,6 @@ import {
   Modal,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -137,103 +136,102 @@ export default function InventoryScreen() {
     }
   }, [permission]);
 
-  // Fetch All Data with Time Filter
   const fetchData = useCallback(async () => {
-    if (!authToken) {
-      console.log("No auth token available");
-      setError("Authentication required");
-      setLoading(false);
-      return;
+  if (!authToken) {
+    console.log("No auth token available");
+    setError("Authentication required");
+    setLoading(false);
+    return;
+  }
+  
+  try {
+    setLoading(true);
+    setError(null);
+    console.log("Starting to fetch inventory data...");
+    
+    const headers = { 
+      Authorization: `Bearer ${authToken}`,
+      'Content-Type': 'application/json'
+    };
+
+    // Fetch inventory data WITH TIME FILTER
+    const invRes = await fetch(`${API_BASE_URL}?timeFilter=${timeFilter}`, { headers });
+    console.log("Inventory response status:", invRes.status);
+    
+    if (!invRes.ok) {
+      const errorText = await invRes.text();
+      throw new Error(`HTTP error! status: ${invRes.status}, message: ${errorText}`);
     }
     
-    try {
-      setLoading(true);
-      setError(null);
-      console.log("Starting to fetch inventory data...");
+    const invData = await invRes.json();
+    console.log("Inventory API Response:", invData);
+    
+    if (invData.success) {
+      const inventoryItems = invData.data?.inventory || [];
+      console.log('📦 Inventory items received:', inventoryItems.length);
+
+      // Filter out null items and items with null product references
+      const validInventoryItems = inventoryItems.filter(item => item != null && item.product != null);
+      console.log('📦 Valid inventory items:', validInventoryItems.length);
+
+      setInventory(validInventoryItems);
       
-      const headers = { 
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json'
-      };
+      // Use the REVENUE-BASED summary from backend
+      setSummary({
+        totalProducts: invData.data?.summary?.totalProducts || 0,
+        totalInventoryValue: invData.data?.summary?.totalInventoryValue || 0,
+        totalSales: invData.data?.summary?.totalSales || 0,
+        totalRevenue: invData.data?.summary?.totalRevenue || 0,
+        lowStockCount: invData.data?.summary?.lowStockCount || 0,
+        outOfStockCount: invData.data?.summary?.outOfStockCount || 0,
+        totalItemsSold: invData.data?.summary?.totalItemsSold || 0,
+        profitMargin: invData.data?.summary?.profitMargin || 0,
+        averageOrderValue: invData.data?.summary?.averageOrderValue || 0
+      });
 
-      // Fetch inventory data WITH TIME FILTER
-      const invRes = await fetch(`${API_BASE_URL}?timeFilter=${timeFilter}`, { headers });
-      console.log("Inventory response status:", invRes.status);
-      
-      if (!invRes.ok) {
-        const errorText = await invRes.text();
-        throw new Error(`HTTP error! status: ${invRes.status}, message: ${errorText}`);
-      }
-      
-      const invData = await invRes.json();
-      console.log("Inventory API Response:", invData);
-      
-      if (invData.success) {
-        const inventoryItems = invData.data?.inventory || [];
-        console.log('📦 Inventory items received:', inventoryItems.length);
-
-        // Filter out null items and items with null product references
-        const validInventoryItems = inventoryItems.filter(item => item != null && item.product != null);
-        console.log('📦 Valid inventory items:', validInventoryItems.length);
-
-        setInventory(validInventoryItems);
-        
-        // Use the REVENUE-BASED summary from backend
-        setSummary({
-          totalProducts: invData.data?.summary?.totalProducts || 0,
-          totalInventoryValue: invData.data?.summary?.totalInventoryValue || 0,
-          totalSales: invData.data?.summary?.totalSales || 0,
-          totalRevenue: invData.data?.summary?.totalRevenue || 0,
-          lowStockCount: invData.data?.summary?.lowStockCount || 0,
-          outOfStockCount: invData.data?.summary?.outOfStockCount || 0,
-          totalItemsSold: invData.data?.summary?.totalItemsSold || 0,
-          profitMargin: invData.data?.summary?.profitMargin || 0,
-          averageOrderValue: invData.data?.summary?.averageOrderValue || 0
-        });
-
-        console.log('🎯 Revenue-Based Summary:', invData.data?.summary);
-      } else {
-        throw new Error(invData.message || 'Failed to fetch inventory data');
-      }
-
-      // Fetch low stock alerts with error handling
-      try {
-        const alertRes = await fetch(`${API_BASE_URL}/alerts/low-stock`, { headers });
-        if (alertRes.ok) {
-          const alertData = await alertRes.json();
-          if (alertData.success) {
-            setLowStockAlerts(alertData.data || { critical: [], warning: [], total: 0 });
-          }
-        } else {
-          console.warn('Failed to fetch low stock alerts:', alertRes.status);
-        }
-      } catch (alertError) {
-        console.error('Error fetching alerts:', alertError);
-      }
-
-      // Fetch recent activity logs with error handling
-      try {
-        const logRes = await fetch(`${API_BASE_URL}/logs?limit=6`, { headers });
-        if (logRes.ok) {
-          const logData = await logRes.json();
-          if (logData.success) {
-            setRecentActivity(logData.data?.logs || []);
-          }
-        } else {
-          console.warn('Failed to fetch recent activity:', logRes.status);
-        }
-      } catch (logError) {
-        console.error('Error fetching logs:', logError);
-      }
-
-    } catch (e) {
-      console.error("Fetch Error:", e);
-      setError(e.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      console.log('🎯 Revenue-Based Summary:', invData.data?.summary);
+    } else {
+      throw new Error(invData.message || 'Failed to fetch inventory data');
     }
-  }, [authToken, timeFilter]);
+
+    // Fetch low stock alerts with error handling
+    try {
+      const alertRes = await fetch(`${API_BASE_URL}/alerts/low-stock`, { headers });
+      if (alertRes.ok) {
+        const alertData = await alertRes.json();
+        if (alertData.success) {
+          setLowStockAlerts(alertData.data || { critical: [], warning: [], total: 0 });
+        }
+      } else {
+        console.warn('Failed to fetch low stock alerts:', alertRes.status);
+      }
+    } catch (alertError) {
+      console.error('Error fetching alerts:', alertError);
+    }
+
+    // Fetch recent activity logs with error handling - FIXED THIS SECTION
+    try {
+      const logRes = await fetch(`${API_BASE_URL}/logs?limit=6`, { headers });
+      if (logRes.ok) {
+        const logData = await logRes.json(); // ✅ Fixed: was logData.json()
+        if (logData.success) {
+          setRecentActivity(logData.data?.logs || []);
+        }
+      } else {
+        console.warn('Failed to fetch recent activity:', logRes.status);
+      }
+    } catch (logError) {
+      console.error('Error fetching logs:', logError);
+    }
+
+  } catch (e) {
+    console.error("Fetch Error:", e);
+    setError(e.message);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+}, [authToken, timeFilter]);
 
   useEffect(() => {
     if (!authLoading && authToken) {
@@ -853,25 +851,23 @@ export default function InventoryScreen() {
 
   // Time Filter Component
   const TimeFilterSelector = () => (
-    <View style={styles.timeFilterContainer}>
+    <View className="px-4 py-2 bg-white border-b border-gray-200">
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.timeFilterScroll}
+        className="pr-4"
       >
         {TIME_FILTERS.map((filter) => (
           <TouchableOpacity
             key={filter.key}
-            style={[
-              styles.timeFilterButton,
-              timeFilter === filter.key && styles.timeFilterButtonActive
-            ]}
+            className={`px-4 py-2 rounded-full mr-2 ${
+              timeFilter === filter.key ? 'bg-blue-500' : 'bg-gray-100'
+            }`}
             onPress={() => handleTimeFilterChange(filter.key)}
           >
-            <Text style={[
-              styles.timeFilterText,
-              timeFilter === filter.key && styles.timeFilterTextActive
-            ]}>
+            <Text className={`text-xs font-semibold ${
+              timeFilter === filter.key ? 'text-white' : 'text-gray-500'
+            }`}>
               {filter.label}
             </Text>
           </TouchableOpacity>
@@ -882,28 +878,27 @@ export default function InventoryScreen() {
 
   // Interactive Summary Grid Component
   const InteractiveSummaryGrid = () => (
-    <View style={styles.summaryGrid}>
+    <View className="flex-row flex-wrap p-4 gap-3 bg-white">
       {/* Total Sales Card - Click to show top selling products */}
       <TouchableOpacity 
-        style={[
-          styles.summaryCard, 
-          styles.salesCard,
-          activeFilter === FILTER_TYPES.TOP_SELLING && styles.summaryCardActive
-        ]}
+        className={`w-[47%] bg-white p-4 rounded-xl items-center border ${
+          activeFilter === FILTER_TYPES.TOP_SELLING ? 'border-2 shadow-lg' : 'border-gray-200 shadow'
+        }`}
+        style={{ borderLeftWidth: 4, borderLeftColor: '#4CAF50' }}
         onPress={() => handleFilterChange(
           activeFilter === FILTER_TYPES.TOP_SELLING ? FILTER_TYPES.ALL : FILTER_TYPES.TOP_SELLING
         )}
       >
-        <View style={[styles.iconContainer, { backgroundColor: '#4CAF50' }]}>
+        <View className="w-10 h-10 rounded-full bg-green-500 justify-center items-center mb-2">
           <Ionicons name="trending-up" size={20} color="#FFF" />
         </View>
-        <Text style={styles.summaryValue}>₹{(summary.totalSales || 0).toLocaleString()}</Text>
-        <Text style={styles.summaryLabel}>Total Sales</Text>
-        <Text style={styles.timePeriodText}>
+        <Text className="text-lg font-bold text-gray-800 mb-1">₹{(summary.totalSales || 0).toLocaleString()}</Text>
+        <Text className="text-xs text-gray-500 font-medium">Total Sales</Text>
+        <Text className="text-xs text-green-500 mt-1 font-medium">
           {TIME_FILTERS.find(f => f.key === timeFilter)?.label || 'All Time'}
         </Text>
         {activeFilter === FILTER_TYPES.TOP_SELLING && (
-          <View style={styles.activeFilterIndicator}>
+          <View className="absolute top-2 right-2">
             <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
           </View>
         )}
@@ -911,25 +906,24 @@ export default function InventoryScreen() {
 
       {/* Low Stock Card - Click to show low stock products */}
       <TouchableOpacity 
-        style={[
-          styles.summaryCard, 
-          styles.lowStockCard,
-          activeFilter === FILTER_TYPES.LOW_STOCK && styles.summaryCardActive
-        ]}
+        className={`w-[47%] bg-white p-4 rounded-xl items-center border ${
+          activeFilter === FILTER_TYPES.LOW_STOCK ? 'border-2 shadow-lg' : 'border-gray-200 shadow'
+        }`}
+        style={{ borderLeftWidth: 4, borderLeftColor: '#FF9800' }}
         onPress={() => handleFilterChange(
           activeFilter === FILTER_TYPES.LOW_STOCK ? FILTER_TYPES.ALL : FILTER_TYPES.LOW_STOCK
         )}
       >
-        <View style={[styles.iconContainer, { backgroundColor: '#FF9800' }]}>
+        <View className="w-10 h-10 rounded-full bg-orange-500 justify-center items-center mb-2">
           <Ionicons name="warning" size={20} color="#FFF" />
         </View>
-        <Text style={styles.summaryValue}>{summary.lowStockCount || 0}</Text>
-        <Text style={styles.summaryLabel}>Low Stock</Text>
-        <Text style={styles.stockAlertText}>
+        <Text className="text-lg font-bold text-gray-800 mb-1">{summary.lowStockCount || 0}</Text>
+        <Text className="text-xs text-gray-500 font-medium">Low Stock</Text>
+        <Text className="text-xs text-orange-500 mt-1 font-medium">
           {summary.outOfStockCount || 0} out of stock
         </Text>
         {activeFilter === FILTER_TYPES.LOW_STOCK && (
-          <View style={styles.activeFilterIndicator}>
+          <View className="absolute top-2 right-2">
             <Ionicons name="checkmark-circle" size={16} color="#FF9800" />
           </View>
         )}
@@ -937,38 +931,37 @@ export default function InventoryScreen() {
 
       {/* Inventory Value Card - Click to show high stock products */}
       <TouchableOpacity 
-        style={[
-          styles.summaryCard, 
-          styles.inventoryCard,
-          activeFilter === FILTER_TYPES.HIGH_STOCK && styles.summaryCardActive
-        ]}
+        className={`w-[47%] bg-white p-4 rounded-xl items-center border ${
+          activeFilter === FILTER_TYPES.HIGH_STOCK ? 'border-2 shadow-lg' : 'border-gray-200 shadow'
+        }`}
+        style={{ borderLeftWidth: 4, borderLeftColor: Colors.light.accent }}
         onPress={() => handleFilterChange(
           activeFilter === FILTER_TYPES.HIGH_STOCK ? FILTER_TYPES.ALL : FILTER_TYPES.HIGH_STOCK
         )}
       >
-        <View style={[styles.iconContainer, { backgroundColor: Colors.light.accent }]}>
+        <View className="w-10 h-10 rounded-full bg-blue-500 justify-center items-center mb-2">
           <Ionicons name="business" size={20} color="#FFF" />
         </View>
-        <Text style={styles.summaryValue}>₹{(summary.totalInventoryValue || 0).toLocaleString()}</Text>
-        <Text style={styles.summaryLabel}>Stock Value</Text>
-        <Text style={styles.stockInfoText}>
+        <Text className="text-lg font-bold text-gray-800 mb-1">₹{(summary.totalInventoryValue || 0).toLocaleString()}</Text>
+        <Text className="text-xs text-gray-500 font-medium">Stock Value</Text>
+        <Text className="text-xs text-blue-500 mt-1 font-medium">
           {summary.totalProducts || 0} products
         </Text>
         {activeFilter === FILTER_TYPES.HIGH_STOCK && (
-          <View style={styles.activeFilterIndicator}>
+          <View className="absolute top-2 right-2">
             <Ionicons name="checkmark-circle" size={16} color={Colors.light.accent} />
           </View>
         )}
       </TouchableOpacity>
 
       {/* Items Sold Card */}
-      <View style={[styles.summaryCard, styles.itemsCard]}>
-        <View style={[styles.iconContainer, { backgroundColor: '#2196F3' }]}>
+      <View className="w-[47%] bg-white p-4 rounded-xl items-center border border-gray-200 shadow" style={{ borderLeftWidth: 4, borderLeftColor: '#2196F3' }}>
+        <View className="w-10 h-10 rounded-full bg-blue-400 justify-center items-center mb-2">
           <Ionicons name="cube" size={20} color="#FFF" />
         </View>
-        <Text style={styles.summaryValue}>{(summary.totalItemsSold || 0).toLocaleString()}</Text>
-        <Text style={styles.summaryLabel}>Items Sold</Text>
-        <Text style={styles.averageOrderText}>
+        <Text className="text-lg font-bold text-gray-800 mb-1">{(summary.totalItemsSold || 0).toLocaleString()}</Text>
+        <Text className="text-xs text-gray-500 font-medium">Items Sold</Text>
+        <Text className="text-xs text-blue-400 mt-1 font-medium">
           Avg: ₹{summary.averageOrderValue?.toFixed(0) || '0'}
         </Text>
       </View>
@@ -993,10 +986,10 @@ export default function InventoryScreen() {
     };
 
     return (
-      <View style={styles.filterIndicator}>
-        <Text style={styles.filterIndicatorText}>{getFilterText()}</Text>
+      <View className="flex-row items-center justify-center bg-blue-500 mx-4 mb-3 py-2 px-4 rounded-full">
+        <Text className="text-white text-sm font-semibold mr-2">{getFilterText()}</Text>
         <TouchableOpacity 
-          style={styles.clearFilterButton}
+          className="w-6 h-6 rounded-full bg-white/30 justify-center items-center"
           onPress={() => handleFilterChange(FILTER_TYPES.ALL)}
         >
           <Ionicons name="close" size={16} color="#FFF" />
@@ -1013,25 +1006,25 @@ export default function InventoryScreen() {
       presentationStyle="fullScreen"
       onRequestClose={closeScanner}
     >
-      <View style={styles.scannerContainer}>
+      <View className="flex-1 bg-black">
         {/* Header */}
-        <View style={styles.scannerHeader}>
+        <View className="flex-row items-center justify-between px-4 pt-16 pb-5 bg-black/90">
           <TouchableOpacity
-            style={styles.scannerBackButton}
+            className="p-2 w-10"
             onPress={closeScanner}
           >
             <Ionicons name="chevron-down" size={28} color="#FFF" />
           </TouchableOpacity>
           
-          <View style={styles.scannerStatsTop}>
-            <View style={styles.statItemTop}>
-              <Text style={styles.statNumberTop}>{inventory.length}</Text>
-              <Text style={styles.statLabelTop}>Products</Text>
+          <View className="flex-row items-center bg-white/10 rounded-2xl px-4 py-2">
+            <View className="items-center px-3">
+              <Text className="text-base font-bold text-white mb-1">{inventory.length}</Text>
+              <Text className="text-xs text-gray-300 font-medium">Products</Text>
             </View>
           </View>
           
           <TouchableOpacity
-            style={[styles.flashButton, torchOn && styles.flashButtonActive]}
+            className={`p-2 w-10 items-center ${torchOn ? 'bg-white/10 rounded-full' : ''}`}
             onPress={() => setTorchOn(!torchOn)}
           >
             <Ionicons 
@@ -1043,57 +1036,56 @@ export default function InventoryScreen() {
         </View>
 
         {/* Camera Container with Visual Feedback */}
-        <View style={styles.cameraContainer}>
+        <View className="flex-1">
           {hasPermission === null ? (
-            <View style={styles.permissionContainer}>
+            <View className="flex-1 justify-center items-center bg-black">
               <ActivityIndicator size="large" color="#FFF" />
-              <Text style={styles.permissionText}>Checking camera access</Text>
+              <Text className="text-white text-lg mt-4">Checking camera access</Text>
             </View>
           ) : hasPermission === false ? (
-            <View style={styles.permissionContainer}>
+            <View className="flex-1 justify-center items-center bg-black">
               <Ionicons name="camera-off" size={64} color="#FFF" />
-              <Text style={styles.permissionText}>Camera access required</Text>
+              <Text className="text-white text-lg mt-4">Camera access required</Text>
               <TouchableOpacity
-                style={styles.permissionButton}
+                className="bg-blue-500 px-6 py-3 rounded-xl mt-6"
                 onPress={requestCameraPermission}
               >
-                <Text style={styles.permissionButtonText}>Allow Camera Access</Text>
+                <Text className="text-white font-semibold">Allow Camera Access</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.cameraWrapper}>
+            <View className="flex-1 relative">
               <CameraView
                 ref={cameraRef}
-                style={styles.camera}
+                className="flex-1"
                 onBarcodeScanned={isScanningLocked ? undefined : handleBarcodeScanned}
                 flash={torchOn ? "torch" : "off"}
                 facing="back"
               />
               
               {/* Scan Overlay with Visual Feedback */}
-              <View style={styles.scanOverlay}>
-                <View style={styles.maskTop} />
-                <View style={styles.scanArea}>
+              <View className="absolute inset-0 z-10">
+                <View className="flex-[2] bg-black/70" />
+                <View className="h-50 justify-center items-center bg-transparent">
                   
                   {/* Animated Scan Frame with Color Feedback */}
-                  <Animated.View style={[
-                    styles.scanFrame,
-                    scanFeedback === "success" && styles.scanFrameSuccess,
-                    scanFeedback === "error" && styles.scanFrameError,
-                    scanFeedback === "scanning" && styles.scanFrameScanning,
-                    {
-                      transform: [{
-                        scale: scanIndicatorAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [1, 1.05]
-                        })
-                      }]
-                    }
-                  ]}>
+                  <Animated.View className={`w-62 h-38 border-2 rounded-xl relative overflow-hidden ${
+                    scanFeedback === "success" ? 'border-green-500 bg-green-500/10' :
+                    scanFeedback === "error" ? 'border-red-500 bg-red-500/10' :
+                    scanFeedback === "scanning" ? 'border-blue-500 bg-blue-500/10' :
+                    'border-white'
+                  }`}
+                  style={{
+                    transform: [{
+                      scale: scanIndicatorAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 1.05]
+                      })
+                    }]
+                  }}>
                     {/* Animated Success Overlay */}
-                    <Animated.View style={[
-                      styles.successOverlay,
-                      {
+                    <Animated.View className="absolute inset-0 bg-green-500/20 justify-center items-center"
+                      style={{
                         opacity: scanSuccessAnim,
                         transform: [{
                           scale: scanSuccessAnim.interpolate({
@@ -1101,15 +1093,14 @@ export default function InventoryScreen() {
                             outputRange: [0.8, 1.2]
                           })
                         }]
-                      }
-                    ]}>
+                      }}
+                    >
                       <Ionicons name="checkmark-circle" size={80} color="#4CAF50" />
                     </Animated.View>
 
                     {/* Animated Error Overlay */}
-                    <Animated.View style={[
-                      styles.errorOverlay,
-                      {
+                    <Animated.View className="absolute inset-0 bg-red-500/20 justify-center items-center"
+                      style={{
                         opacity: scanErrorAnim,
                         transform: [{
                           scale: scanErrorAnim.interpolate({
@@ -1117,31 +1108,31 @@ export default function InventoryScreen() {
                             outputRange: [0.8, 1.2]
                           })
                         }]
-                      }
-                    ]}>
+                      }}
+                    >
                       <Ionicons name="close-circle" size={80} color="#F44336" />
                     </Animated.View>
 
                     {/* Scan Frame Corners */}
-                    <View style={[styles.corner, styles.cornerTopLeft]} />
-                    <View style={[styles.corner, styles.cornerTopRight]} />
-                    <View style={[styles.corner, styles.cornerBottomLeft]} />
-                    <View style={[styles.corner, styles.cornerBottomRight]} />
+                    <View className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-white rounded-tl-lg" />
+                    <View className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-white rounded-tr-lg" />
+                    <View className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-white rounded-bl-lg" />
+                    <View className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-white rounded-br-lg" />
                   </Animated.View>
 
                   {/* Scan Status Text */}
-                  <View style={styles.scanStatusContainer}>
-                    <Animated.Text style={[
-                      styles.scanInstruction,
-                      scanFeedback === "success" && styles.scanInstructionSuccess,
-                      scanFeedback === "error" && styles.scanInstructionError,
-                      {
+                  <View className="items-center mt-5">
+                    <Animated.Text className={`text-sm text-white font-medium text-center ${
+                      scanFeedback === "success" ? 'text-green-500' :
+                      scanFeedback === "error" ? 'text-red-500' : ''
+                    }`}
+                      style={{
                         opacity: scanIndicatorAnim.interpolate({
                           inputRange: [0, 1],
                           outputRange: [1, 0.7]
                         })
-                      }
-                    ]}>
+                      }}
+                    >
                       {scanFeedback === "scanning" ? "Searching product..." :
                        scanFeedback === "success" ? "Product found! Opening stock..." :
                        scanFeedback === "error" ? "Product not found" :
@@ -1149,30 +1140,29 @@ export default function InventoryScreen() {
                     </Animated.Text>
                     
                     {scanFeedback === "error" && (
-                      <Animated.Text style={[
-                        styles.scanErrorSubtext,
-                        { opacity: scanErrorAnim }
-                      ]}>
+                      <Animated.Text className="text-xs text-red-500 text-center mt-1"
+                        style={{ opacity: scanErrorAnim }}
+                      >
                         Try scanning a different barcode
                       </Animated.Text>
                     )}
                   </View>
 
                 </View>
-                <View style={styles.maskBottom} />
+                <View className="flex-[2] bg-black/70" />
               </View>
             </View>
           )}
         </View>
 
         {/* Footer */}
-        <View style={styles.scannerFooter}>
-          <Text style={styles.scannerHelpText}>
+        <View className="bg-black/90 px-5 py-5 items-center">
+          <Text className="text-sm text-gray-300 text-center">
             {scanFeedback === "success" ? "Opening stock management with per-piece pricing..." :
              scanFeedback === "error" ? "Product not found in catalog" :
              "Point camera at product barcode to manage stock"}
           </Text>
-          <Text style={styles.scannerDebugText}>
+          <Text className="text-xs text-gray-500 text-center mt-1">
             Catalog API: {scanFeedback === "scanning" ? "Searching..." : "Ready"}
           </Text>
         </View>
@@ -1188,22 +1178,22 @@ export default function InventoryScreen() {
       presentationStyle="pageSheet"
       onRequestClose={() => setAddProductModal(false)}
     >
-      <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Add Product to Inventory</Text>
+      <View className="bg-white rounded-t-3xl max-h-[90%]">
+        <View className="flex-row justify-between items-center p-5 border-b border-gray-200">
+          <Text className="text-xl font-bold text-gray-800">Add Product to Inventory</Text>
           <TouchableOpacity onPress={() => setAddProductModal(false)}>
             <Ionicons name="close" size={24} color={Colors.light.text} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+        <ScrollView className="p-5" showsVerticalScrollIndicator={false}>
           {/* Product Search */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Search Products</Text>
-            <View style={styles.searchBar}>
+          <View className="mb-4">
+            <Text className="text-sm font-semibold text-gray-800 mb-2">Search Products</Text>
+            <View className="flex-row items-center bg-white rounded-full border border-gray-300 px-4 h-12 gap-3">
               <Ionicons name="search" size={20} color={Colors.light.accent} />
               <TextInput
-                style={styles.searchInput}
+                className="flex-1 text-base text-gray-800"
                 placeholder="Search products by name or SKU..."
                 placeholderTextColor="#BDBDBD"
                 value={productSearch}
@@ -1215,31 +1205,30 @@ export default function InventoryScreen() {
             </View>
             
             {searchingProducts && (
-              <ActivityIndicator size="small" color={Colors.light.accent} style={styles.searchLoading} />
+              <ActivityIndicator size="small" color={Colors.light.accent} className="mt-2" />
             )}
           </View>
 
           {/* Search Results */}
           {searchResults.length > 0 && (
-            <View style={styles.searchResults}>
-              <Text style={styles.resultsTitle}>Search Results</Text>
+            <View className="mb-4">
+              <Text className="text-base font-semibold text-gray-800 mb-2">Search Results</Text>
               {searchResults.map((product) => (
                 <TouchableOpacity
                   key={product._id}
-                  style={[
-                    styles.productResult,
-                    selectedProduct?._id === product._id && styles.productResultSelected
-                  ]}
+                  className={`flex-row items-center p-3 bg-gray-50 rounded-lg mb-2 border ${
+                    selectedProduct?._id === product._id ? 'bg-blue-50 border-blue-500' : 'border-gray-200'
+                  }`}
                   onPress={() => setSelectedProduct(product)}
                 >
                   <Image
                     source={{ uri: product.image || "https://via.placeholder.com/60x60?text=No+Img" }}
-                    style={styles.productResultImage}
+                    className="w-15 h-15 rounded-lg mr-3"
                   />
-                  <View style={styles.productResultInfo}>
-                    <Text style={styles.productResultName}>{product.name}</Text>
-                    <Text style={styles.productResultSku}>SKU: {product.sku}</Text>
-                    <Text style={styles.productResultPrice}>Default Price: ₹{product.price}</Text>
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-gray-800 mb-1">{product.name}</Text>
+                    <Text className="text-xs text-gray-500 mb-1">SKU: {product.sku}</Text>
+                    <Text className="text-xs text-blue-500 font-medium">Default Price: ₹{product.price}</Text>
                   </View>
                   {selectedProduct?._id === product._id && (
                     <Ionicons name="checkmark-circle" size={24} color={Colors.light.accent} />
@@ -1252,17 +1241,17 @@ export default function InventoryScreen() {
           {selectedProduct && (
             <>
               {/* Product Details */}
-              <View style={styles.selectedProductSection}>
-                <Text style={styles.sectionTitle}>Selected Product</Text>
-                <View style={styles.selectedProductCard}>
+              <View className="mb-5">
+                <Text className="text-lg font-bold text-gray-800 mb-3">Selected Product</Text>
+                <View className="flex-row items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
                   <Image
                     source={{ uri: selectedProduct.image || "https://via.placeholder.com/80x80?text=No+Img" }}
-                    style={styles.selectedProductImage}
+                    className="w-20 h-20 rounded-lg mr-4"
                   />
-                  <View style={styles.selectedProductInfo}>
-                    <Text style={styles.selectedProductName}>{selectedProduct.name}</Text>
-                    <Text style={styles.selectedProductSku}>SKU: {selectedProduct.sku}</Text>
-                    <Text style={styles.selectedProductCategory}>
+                  <View className="flex-1">
+                    <Text className="text-base font-semibold text-gray-800 mb-1">{selectedProduct.name}</Text>
+                    <Text className="text-sm text-gray-500 mb-1">SKU: {selectedProduct.sku}</Text>
+                    <Text className="text-xs text-gray-500">
                       Category: {selectedProduct.category?.name || 'N/A'}
                     </Text>
                   </View>
@@ -1270,14 +1259,14 @@ export default function InventoryScreen() {
               </View>
 
               {/* Inventory Settings */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Inventory Settings</Text>
+              <View className="mb-4">
+                <Text className="text-lg font-bold text-gray-800 mb-3">Inventory Settings</Text>
                 
-                <View style={styles.inputRow}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Initial Stock *</Text>
+                <View className="flex-row gap-3 mb-4">
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-gray-800 mb-2">Initial Stock *</Text>
                     <TextInput
-                      style={styles.textInput}
+                      className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                       keyboardType="numeric"
                       placeholder="0"
                       value={initialStock}
@@ -1285,10 +1274,10 @@ export default function InventoryScreen() {
                     />
                   </View>
                   
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Selling Price (₹) *</Text>
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-gray-800 mb-2">Selling Price (₹) *</Text>
                     <TextInput
-                      style={styles.textInput}
+                      className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                       keyboardType="numeric"
                       placeholder="Enter selling price"
                       value={sellingPrice}
@@ -1297,11 +1286,11 @@ export default function InventoryScreen() {
                   </View>
                 </View>
 
-                <View style={styles.inputRow}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Cost Price (₹)</Text>
+                <View className="flex-row gap-3 mb-4">
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-gray-800 mb-2">Cost Price (₹)</Text>
                     <TextInput
-                      style={styles.textInput}
+                      className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                       keyboardType="numeric"
                       placeholder="Optional"
                       value={costPrice}
@@ -1309,10 +1298,10 @@ export default function InventoryScreen() {
                     />
                   </View>
                   
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Min Stock Level</Text>
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-gray-800 mb-2">Min Stock Level</Text>
                     <TextInput
-                      style={styles.textInput}
+                      className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                       keyboardType="numeric"
                       placeholder="10"
                       value={minStockLevel}
@@ -1321,10 +1310,10 @@ export default function InventoryScreen() {
                   </View>
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Max Stock Level</Text>
+                <View className="mb-4">
+                  <Text className="text-sm font-semibold text-gray-800 mb-2">Max Stock Level</Text>
                   <TextInput
-                    style={styles.textInput}
+                    className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                     keyboardType="numeric"
                     placeholder="100"
                     value={maxStockLevel}
@@ -1336,22 +1325,21 @@ export default function InventoryScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.modalFooter}>
+        <View className="flex-row p-5 border-t border-gray-200 gap-3">
           <TouchableOpacity 
-            style={styles.cancelButton}
+            className="flex-1 bg-gray-100 py-3.5 rounded-lg items-center"
             onPress={() => setAddProductModal(false)}
           >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+            <Text className="text-base font-semibold text-gray-800">Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[
-              styles.submitButton,
-              (!selectedProduct || !sellingPrice || addingProduct) && styles.submitButtonDisabled
-            ]}
+            className={`flex-1 py-3.5 rounded-lg items-center ${
+              (!selectedProduct || !sellingPrice || addingProduct) ? 'bg-blue-300' : 'bg-blue-500'
+            }`}
             onPress={handleAddProductToInventory}
             disabled={!selectedProduct || !sellingPrice || addingProduct}
           >
-            <Text style={styles.submitButtonText}>
+            <Text className="text-base font-semibold text-white">
               {addingProduct ? 'Adding...' : 'Add to Inventory'}
             </Text>
           </TouchableOpacity>
@@ -1382,34 +1370,34 @@ export default function InventoryScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setDetailModal(false)}
       >
-        <View style={[styles.modalContent, styles.detailModal]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Product Details</Text>
+        <View className="bg-white rounded-t-3xl max-h-[95%]">
+          <View className="flex-row justify-between items-center p-5 border-b border-gray-200">
+            <Text className="text-xl font-bold text-gray-800">Product Details</Text>
             <TouchableOpacity onPress={() => setDetailModal(false)}>
               <Ionicons name="close" size={24} color={Colors.light.text} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView className="p-5" showsVerticalScrollIndicator={false}>
             {/* Product Header */}
-            <View style={styles.detailHeader}>
+            <View className="flex-row items-center mb-6 pb-4 border-b border-gray-200">
               <Image
                 source={{ uri: productImage }}
-                style={styles.detailImage}
+                className="w-20 h-20 rounded-xl mr-4"
                 defaultSource={{ uri: "https://via.placeholder.com/80x80?text=No+Img" }}
               />
-              <View style={styles.detailTitle}>
-                <Text style={styles.detailName}>{productName}</Text>
-                <Text style={styles.detailSKU}>
+              <View className="flex-1">
+                <Text className="text-lg font-bold text-gray-800 mb-1">{productName}</Text>
+                <Text className="text-sm text-gray-500 mb-2">
                   SKU: {selectedItem.product?.sku || 'N/A'}
                 </Text>
-                <View style={styles.stockStatusRow}>
+                <View className="flex-row items-center">
                   <MaterialIcons 
                     name={stockStatus.icon} 
                     size={16} 
                     color={stockStatus.color} 
                   />
-                  <Text style={[styles.stockStatusText, { color: stockStatus.color }]}>
+                  <Text className="text-sm font-semibold ml-1.5" style={{ color: stockStatus.color }}>
                     {stockStatus.text}
                   </Text>
                 </View>
@@ -1417,9 +1405,9 @@ export default function InventoryScreen() {
             </View>
 
             {/* Action Buttons */}
-            <View style={styles.detailActions}>
+            <View className="flex-row gap-3 mb-6">
               <TouchableOpacity 
-                style={[styles.detailActionButton, styles.stockInAction]}
+                className="flex-1 flex-row items-center justify-center py-3 rounded-lg bg-green-500 gap-2"
                 onPress={() => {
                   setDetailModal(false);
                   setTimeout(() => {
@@ -1431,11 +1419,11 @@ export default function InventoryScreen() {
                 }}
               >
                 <Ionicons name="arrow-down" size={20} color="#FFF" />
-                <Text style={styles.detailActionText}>Stock In</Text>
+                <Text className="text-white font-semibold text-sm">Stock In</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.detailActionButton, styles.stockOutAction]}
+                className="flex-1 flex-row items-center justify-center py-3 rounded-lg bg-red-500 gap-2"
                 onPress={() => {
                   setDetailModal(false);
                   setTimeout(() => {
@@ -1447,98 +1435,98 @@ export default function InventoryScreen() {
                 }}
               >
                 <Ionicons name="arrow-up" size={20} color="#FFF" />
-                <Text style={styles.detailActionText}>Stock Out</Text>
+                <Text className="text-white font-semibold text-sm">Stock Out</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.detailActionButton, styles.deleteAction]}
+                className="flex-1 flex-row items-center justify-center py-3 rounded-lg bg-orange-500 gap-2"
                 onPress={() => {
                   setDetailModal(false);
                   setTimeout(() => handleDeleteItem(selectedItem), 300);
                 }}
               >
                 <Ionicons name="trash-outline" size={20} color="#FFF" />
-                <Text style={styles.detailActionText}>Delete</Text>
+                <Text className="text-white font-semibold text-sm">Delete</Text>
               </TouchableOpacity>
             </View>
 
             {/* Stock Information */}
-            <View style={styles.detailSection}>
-              <Text style={styles.detailSectionTitle}>Stock Information</Text>
-              <View style={styles.detailGrid}>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Available Stock</Text>
-                  <Text style={styles.detailValueLarge}>{availableStock}</Text>
+            <View className="mb-6">
+              <Text className="text-lg font-bold text-gray-800 mb-4">Stock Information</Text>
+              <View className="flex-row flex-wrap gap-3">
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Available Stock</Text>
+                  <Text className="text-lg font-bold text-gray-800">{availableStock}</Text>
                 </View>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Reserved</Text>
-                  <Text style={styles.detailValueLarge}>{selectedItem.committedStock || 0}</Text>
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Reserved</Text>
+                  <Text className="text-lg font-bold text-gray-800">{selectedItem.committedStock || 0}</Text>
                 </View>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Total Sold</Text>
-                  <Text style={styles.detailValueLarge}>{selectedItem.totalSold || 0}</Text>
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Total Sold</Text>
+                  <Text className="text-lg font-bold text-gray-800">{selectedItem.totalSold || 0}</Text>
                 </View>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Min Stock Level</Text>
-                  <Text style={styles.detailValueLarge}>{selectedItem.minStockLevel || 0}</Text>
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Min Stock Level</Text>
+                  <Text className="text-lg font-bold text-gray-800">{selectedItem.minStockLevel || 0}</Text>
                 </View>
               </View>
             </View>
 
             {/* Pricing Information */}
-            <View style={styles.detailSection}>
-              <Text style={styles.detailSectionTitle}>Pricing</Text>
-              <View style={styles.detailGrid}>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Selling Price</Text>
-                  <Text style={styles.detailValueLarge}>₹{sellingPrice}</Text>
+            <View className="mb-6">
+              <Text className="text-lg font-bold text-gray-800 mb-4">Pricing</Text>
+              <View className="flex-row flex-wrap gap-3">
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Selling Price</Text>
+                  <Text className="text-lg font-bold text-gray-800">₹{sellingPrice}</Text>
                   {isOverridden && (
-                    <Text style={styles.overrideNote}>(Custom Price)</Text>
+                    <Text className="text-xs text-green-500 italic mt-1">(Custom Price)</Text>
                   )}
                 </View>
                 
                 {/* Show quantity pricing status */}
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Pricing Type</Text>
-                  <Text style={styles.detailValueLarge}>
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Pricing Type</Text>
+                  <Text className="text-lg font-bold text-gray-800">
                     {hasQPricing ? 'Quantity-Based' : 'Standard'}
                   </Text>
                   {hasQPricing && (
-                    <Text style={styles.pricingTypeNote}>(Per-Piece Discount)</Text>
+                    <Text className="text-xs text-green-500 italic mt-1">(Per-Piece Discount)</Text>
                   )}
                 </View>
                 
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Cost Price</Text>
-                  <Text style={styles.detailValueLarge}>₹{selectedItem.costPrice || 'N/A'}</Text>
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Cost Price</Text>
+                  <Text className="text-lg font-bold text-gray-800">₹{selectedItem.costPrice || 'N/A'}</Text>
                 </View>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Stock Value</Text>
-                  <Text style={styles.detailValueLarge}>₹{itemInventoryValue.toLocaleString()}</Text>
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Stock Value</Text>
+                  <Text className="text-lg font-bold text-gray-800">₹{itemInventoryValue.toLocaleString()}</Text>
                 </View>
               </View>
             </View>
 
             {/* Sales Information */}
-            <View style={styles.detailSection}>
-              <Text style={styles.detailSectionTitle}>Sales Performance</Text>
-              <View style={styles.detailGrid}>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Total Sales Value</Text>
-                  <Text style={styles.detailValueLarge}>₹{itemSalesValue.toLocaleString()}</Text>
+            <View className="mb-6">
+              <Text className="text-lg font-bold text-gray-800 mb-4">Sales Performance</Text>
+              <View className="flex-row flex-wrap gap-3">
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Total Sales Value</Text>
+                  <Text className="text-lg font-bold text-gray-800">₹{itemSalesValue.toLocaleString()}</Text>
                 </View>
-                <View style={styles.detailItemLarge}>
-                  <Text style={styles.detailLabelLarge}>Items Sold</Text>
-                  <Text style={styles.detailValueLarge}>{selectedItem.totalSold || 0}</Text>
+                <View className="w-[48%] bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <Text className="text-sm text-gray-500 font-medium mb-2">Items Sold</Text>
+                  <Text className="text-lg font-bold text-gray-800">{selectedItem.totalSold || 0}</Text>
                 </View>
               </View>
             </View>
 
             {/* Enhanced Quantity Pricing Section with Clear Per-Piece Examples */}
             {hasQPricing && (
-              <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Quantity Pricing (Per-Piece Discount)</Text>
-                <View style={styles.pricingSlabsPreview}>
+              <View className="mb-6">
+                <Text className="text-lg font-bold text-gray-800 mb-4">Quantity Pricing (Per-Piece Discount)</Text>
+                <View className="gap-2 mb-4">
                   {selectedItem.pricingSlabs
                     ?.filter(slab => slab.isActive)
                     .sort((a, b) => a.minQuantity - b.minQuantity)
@@ -1555,21 +1543,21 @@ export default function InventoryScreen() {
                       }
                       
                       return (
-                        <View key={index} style={styles.slabPreviewItem}>
-                          <View style={styles.slabRange}>
-                            <Text style={styles.slabRangeText}>
+                        <View key={index} className="flex-row justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200">
+                          <View className="flex-1">
+                            <Text className="text-sm font-semibold text-gray-800">
                               {slab.minQuantity}+ units
                             </Text>
-                            <Text style={styles.slabDescription}>
+                            <Text className="text-xs text-gray-500 mt-0.5">
                               {slab.discountType === 'FLAT' 
                                 ? `₹${slab.discountValue} off per piece` 
                                 : `${slab.discountValue}% off per piece`
                               }
                             </Text>
                           </View>
-                          <View style={styles.slabDiscount}>
-                            <Text style={styles.slabDiscountPrice}>₹{discountedPricePerPiece.toFixed(0)}</Text>
-                            <Text style={styles.slabDiscountLabel}>per piece</Text>
+                          <View className="items-end">
+                            <Text className="text-base font-bold text-green-700">₹{discountedPricePerPiece.toFixed(0)}</Text>
+                            <Text className="text-xs text-gray-500 mt-0.5 text-center">per piece</Text>
                           </View>
                         </View>
                       );
@@ -1577,8 +1565,8 @@ export default function InventoryScreen() {
                 </View>
                 
                 {/* Enhanced Pricing Example */}
-                <View style={styles.pricingExample}>
-                  <Text style={styles.pricingExampleTitle}>📊 Price Calculation Examples:</Text>
+                <View className="bg-blue-50 p-4 rounded-xl mt-4 border-l-4 border-blue-500">
+                  <Text className="text-base font-bold text-gray-800 mb-3">📊 Price Calculation Examples:</Text>
                   
                   {selectedItem.pricingSlabs
                     ?.filter(slab => slab.isActive)
@@ -1601,20 +1589,20 @@ export default function InventoryScreen() {
                       const savings = regularTotal - discountedTotal;
                       
                       return (
-                        <View key={index} style={styles.pricingExampleItem}>
-                          <Text style={styles.pricingExampleSubtitle}>
+                        <View key={index} className="mb-3 pb-3 border-b border-blue-100">
+                          <Text className="text-sm font-semibold text-blue-600 mb-1.5">
                             For {exampleQuantity} units:
                           </Text>
-                          <Text style={styles.pricingExampleText}>
+                          <Text className="text-xs text-gray-600 mb-1 leading-4">
                             • Regular: ₹{basePrice} × {exampleQuantity} = ₹{regularTotal.toFixed(0)}
                           </Text>
-                          <Text style={styles.pricingExampleText}>
+                          <Text className="text-xs text-gray-600 mb-1 leading-4">
                             • Discounted: ₹{discountedPricePerPiece.toFixed(0)} per piece
                           </Text>
-                          <Text style={styles.pricingExampleText}>
+                          <Text className="text-xs text-gray-600 mb-1 leading-4">
                             • Final: ₹{discountedTotal.toFixed(0)} total
                           </Text>
-                          <Text style={styles.pricingExampleSavings}>
+                          <Text className="text-xs text-green-600 font-semibold leading-4">
                             • You save: ₹{savings.toFixed(0)} ({slab.discountType === 'PERCENTAGE' ? slab.discountValue + '%' : '₹' + slab.discountValue} off per piece)
                           </Text>
                         </View>
@@ -1644,45 +1632,44 @@ export default function InventoryScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setStockModal(false)}
       >
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Manage Stock</Text>
+        <View className="bg-white rounded-t-3xl max-h-[90%]">
+          <View className="flex-row justify-between items-center p-5 border-b border-gray-200">
+            <Text className="text-xl font-bold text-gray-800">Manage Stock</Text>
             <TouchableOpacity onPress={() => setStockModal(false)}>
               <Ionicons name="close" size={24} color={Colors.light.text} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView className="p-5" showsVerticalScrollIndicator={false}>
             {/* Product Header */}
-            <View style={styles.productHeader}>
+            <View className="flex-row items-center bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200">
               <Image
                 source={{ uri: productImage }}
-                style={styles.productHeaderImage}
+                className="w-15 h-15 rounded-lg mr-3"
                 defaultSource={{ uri: "https://via.placeholder.com/80x80?text=No+Img" }}
               />
-              <View style={styles.productHeaderInfo}>
-                <Text style={styles.productHeaderName}>{productName}</Text>
-                <Text style={styles.productHeaderSku}>
+              <View className="flex-1">
+                <Text className="text-base font-semibold text-gray-800 mb-1">{productName}</Text>
+                <Text className="text-sm text-gray-500">
                   SKU: {selectedItem.product?.sku || 'N/A'}
                 </Text>
               </View>
             </View>
 
             {/* Current Stock Info */}
-            <View style={styles.currentStockInfo}>
-              <Text style={styles.currentStockLabel}>Current Available Stock</Text>
-              <Text style={styles.currentStockValue}>{availableStock}</Text>
+            <View className="bg-gray-50 p-4 rounded-lg mb-4 items-center">
+              <Text className="text-sm text-gray-500 mb-1">Current Available Stock</Text>
+              <Text className="text-2xl font-bold text-blue-500">{availableStock}</Text>
             </View>
 
             {/* Transaction Type */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Transaction Type</Text>
-              <View style={styles.transactionTypeButtons}>
+            <View className="mb-4">
+              <Text className="text-sm font-semibold text-gray-800 mb-2">Transaction Type</Text>
+              <View className="flex-row gap-3">
                 <TouchableOpacity
-                  style={[
-                    styles.transactionButton,
-                    transactionType === "STOCK_IN" ? styles.transactionButtonInActive : {}
-                  ]}
+                  className={`flex-1 flex-row items-center justify-center py-3 rounded-lg border-2 gap-2 ${
+                    transactionType === "STOCK_IN" ? 'bg-green-500 border-green-500' : 'border-green-500'
+                  }`}
                   onPress={() => setTransactionType("STOCK_IN")}
                 >
                   <Ionicons 
@@ -1690,19 +1677,17 @@ export default function InventoryScreen() {
                     size={20} 
                     color={transactionType === "STOCK_IN" ? "#FFF" : "#4CAF50"} 
                   />
-                  <Text style={[
-                    styles.transactionButtonText,
-                    transactionType === "STOCK_IN" ? styles.transactionButtonTextActive : { color: "#4CAF50" }
-                  ]}>
+                  <Text className={`text-sm font-semibold ${
+                    transactionType === "STOCK_IN" ? 'text-white' : 'text-green-500'
+                  }`}>
                     Stock In
                   </Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={[
-                    styles.transactionButton,
-                    transactionType === "STOCK_OUT" ? styles.transactionButtonOutActive : {}
-                  ]}
+                  className={`flex-1 flex-row items-center justify-center py-3 rounded-lg border-2 gap-2 ${
+                    transactionType === "STOCK_OUT" ? 'bg-red-500 border-red-500' : 'border-red-500'
+                  }`}
                   onPress={() => setTransactionType("STOCK_OUT")}
                 >
                   <Ionicons 
@@ -1710,10 +1695,9 @@ export default function InventoryScreen() {
                     size={20} 
                     color={transactionType === "STOCK_OUT" ? "#FFF" : "#F44336"} 
                   />
-                  <Text style={[
-                    styles.transactionButtonText,
-                    transactionType === "STOCK_OUT" ? styles.transactionButtonTextActive : { color: "#F44336" }
-                  ]}>
+                  <Text className={`text-sm font-semibold ${
+                    transactionType === "STOCK_OUT" ? 'text-white' : 'text-red-500'
+                  }`}>
                     Stock Out
                   </Text>
                 </TouchableOpacity>
@@ -1721,43 +1705,41 @@ export default function InventoryScreen() {
             </View>
 
             {/* Quantity Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Quantity</Text>
+            <View className="mb-4">
+              <Text className="text-sm font-semibold text-gray-800 mb-2">Quantity</Text>
               <TextInput
-                style={styles.textInput}
+                className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                 placeholder="Enter quantity"
                 keyboardType="numeric"
                 value={qty}
                 onChangeText={setQty}
               />
               {transactionType === "STOCK_OUT" && (
-                <Text style={styles.availableStockHint}>
+                <Text className="text-xs text-gray-500 mt-1">
                   Available: {availableStock} units
                 </Text>
               )}
             </View>
 
             {/* Reason Selection */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Reason</Text>
+            <View className="mb-4">
+              <Text className="text-sm font-semibold text-gray-800 mb-2">Reason</Text>
               <ScrollView 
-                style={styles.reasonScroll}
+                className="max-h-38"
                 showsVerticalScrollIndicator={false}
               >
-                <View style={styles.reasonGrid}>
+                <View className="flex-row flex-wrap gap-2">
                   {REASONS.map((reasonItem) => (
                     <TouchableOpacity
                       key={reasonItem}
-                      style={[
-                        styles.reasonBtn,
-                        reason === reasonItem && styles.reasonBtnActive
-                      ]}
+                      className={`px-4 py-3 rounded-xl border min-w-[48%] ${
+                        reason === reasonItem ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-300'
+                      }`}
                       onPress={() => setReason(reasonItem)}
                     >
-                      <Text style={[
-                        styles.reasonText,
-                        reason === reasonItem && styles.reasonTextActive
-                      ]}>
+                      <Text className={`text-xs text-center ${
+                        reason === reasonItem ? 'text-white font-semibold' : 'text-gray-800'
+                      }`}>
                         {reasonItem.replace(/_/g, ' ')}
                       </Text>
                     </TouchableOpacity>
@@ -1767,29 +1749,27 @@ export default function InventoryScreen() {
             </View>
           </ScrollView>
 
-          <View style={styles.modalFooter}>
+          <View className="flex-row p-5 border-t border-gray-200 gap-3">
             <TouchableOpacity 
-              style={styles.cancelButton}
+              className="flex-1 bg-gray-100 py-3.5 rounded-lg items-center"
               onPress={() => setStockModal(false)}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text className="text-base font-semibold text-gray-800">Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[
-                styles.submitButton,
-                transactionType === "STOCK_IN" ? styles.submitButtonIn : styles.submitButtonOut,
-                !qty && styles.submitButtonDisabled
-              ]}
+              className={`flex-1 py-3.5 rounded-lg items-center ${
+                !qty ? 'bg-gray-300' : transactionType === "STOCK_IN" ? 'bg-green-500' : 'bg-red-500'
+              }`}
               onPress={handleStockUpdate}
               disabled={!qty}
             >
-              <View style={styles.submitButtonContent}>
+              <View className="flex-row items-center justify-center gap-2">
                 <Ionicons 
                   name={transactionType === "STOCK_IN" ? "arrow-down" : "arrow-up"} 
                   size={20} 
                   color="#FFF" 
                 />
-                <Text style={styles.submitButtonText}>
+                <Text className="text-base font-semibold text-white">
                   {transactionType === "STOCK_IN" ? "Add Stock" : "Remove Stock"}
                 </Text>
               </View>
@@ -1805,25 +1785,25 @@ export default function InventoryScreen() {
   // Display errors
   if (error) {
     return (
-      <View style={[styles.container, styles.errorContainer, { paddingTop: insets.top }]}>
+      <View className="flex-1 justify-center items-center bg-white" style={{ paddingTop: insets.top }}>
         <MaterialIcons name="error-outline" size={64} color="#F44336" />
-        <Text style={styles.errorTitle}>Unable to Load Inventory</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <View style={styles.errorButtons}>
+        <Text className="text-xl font-bold text-gray-800 mt-4 mb-2 text-center">Unable to Load Inventory</Text>
+        <Text className="text-base text-gray-500 text-center mb-6 leading-5">{error}</Text>
+        <View className="flex-row gap-3">
           <TouchableOpacity 
-            style={styles.retryButton}
+            className="bg-blue-500 px-6 py-3 rounded-lg"
             onPress={() => {
               setError(null);
               fetchData();
             }}
           >
-            <Text style={styles.retryText}>Try Again</Text>
+            <Text className="text-white font-semibold text-base">Try Again</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={styles.secondaryButton}
+            className="bg-gray-100 px-6 py-3 rounded-lg"
             onPress={() => router.back()}
           >
-            <Text style={styles.secondaryButtonText}>Go Back</Text>
+            <Text className="text-gray-800 font-semibold text-base">Go Back</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1832,21 +1812,21 @@ export default function InventoryScreen() {
 
   if (authLoading || loading) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+      <View className="flex-1 justify-center items-center bg-white" style={{ paddingTop: insets.top }}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
-        <Text style={styles.loadingText}>Loading inventory...</Text>
+        <Text className="text-base text-gray-500 mt-4">Loading inventory...</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-white" style={{ paddingTop: insets.top }}>
       {/* Professional Header with Scanner */}
-      <View style={styles.professionalHeader}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Inventory</Text>
+      <View className="px-4 pt-4 pb-4 bg-white border-b border-gray-200">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-2xl font-bold text-gray-800">Inventory</Text>
           <TouchableOpacity 
-            style={styles.scannerHeaderButton}
+            className="p-2 bg-blue-50 rounded-xl"
             onPress={openScanner}
           >
             <Ionicons name="barcode-outline" size={24} color={Colors.light.accent} />
@@ -1871,37 +1851,36 @@ export default function InventoryScreen() {
 
             {/* Compact Horizontal Recent Activities */}
             {recentActivity.length > 0 && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Recent Activity</Text>
+              <View className="mb-2 bg-white py-3">
+                <View className="flex-row justify-between items-center px-4 mb-3">
+                  <Text className="text-xl font-bold text-gray-800">Recent Activity</Text>
                   <TouchableOpacity>
-                    <Text style={styles.seeAllText}>See All</Text>
+                    <Text className="text-blue-500 text-sm font-semibold">See All</Text>
                   </TouchableOpacity>
                 </View>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.activityScroll}
+                  className="px-4"
                 >
                   {recentActivity.map((log, index) => (
-                    <View key={log._id || index} style={styles.activityCard}>
-                      <View style={[
-                        styles.activityIcon,
-                        { backgroundColor: log.transactionType?.includes('IN') ? '#E8F5E9' : '#FFEBEE' }
-                      ]}>
+                    <View key={log._id || index} className="bg-white p-4 rounded-xl mr-3 min-w-30 border border-gray-200 shadow-sm">
+                      <View className={`w-8 h-8 rounded-full items-center justify-center mb-2 ${
+                        log.transactionType?.includes('IN') ? 'bg-green-100' : 'bg-red-100'
+                      }`}>
                         <MaterialIcons
                           name={log.transactionType?.includes('IN') ? 'arrow-downward' : 'arrow-upward'}
                           size={16}
                           color={log.transactionType?.includes('IN') ? '#4CAF50' : '#F44336'}
                         />
                       </View>
-                      <Text style={styles.activityQuantity}>
+                      <Text className="text-base font-bold text-gray-800 mb-1">
                         {log.quantity}
                       </Text>
-                      <Text style={styles.activityProduct} numberOfLines={1}>
+                      <Text className="text-sm text-gray-800 font-medium mb-1" numberOfLines={1}>
                         {log.product?.name || 'Product'}
                       </Text>
-                      <Text style={styles.activityTime}>
+                      <Text className="text-xs text-gray-500">
                         {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     </View>
@@ -1911,11 +1890,11 @@ export default function InventoryScreen() {
             )}
 
             {/* Search Bar */}
-            <View style={styles.searchSection}>
-              <View style={styles.searchBar}>
+            <View className="flex-row px-4 pt-4 pb-4 gap-2 items-center bg-white">
+              <View className="flex-1 flex-row items-center bg-white rounded-full border-1.5 border-gray-200 px-4 h-13 gap-2.5">
                 <Ionicons name="search" size={20} color={Colors.light.accent} />
                 <TextInput
-                  style={styles.searchInput}
+                  className="flex-1 text-base text-gray-800"
                   placeholder="Search inventory..."
                   placeholderTextColor="#BDBDBD"
                   value={searchQuery}
@@ -1924,7 +1903,7 @@ export default function InventoryScreen() {
               </View>
             </View>
 
-            <Text style={styles.sectionTitle}>
+            <Text className="text-xl font-bold text-gray-800 mx-4 mb-3 mt-2">
               {activeFilter === FILTER_TYPES.LOW_STOCK ? 'Low Stock Items' :
                activeFilter === FILTER_TYPES.TOP_SELLING ? 'Top Selling Items' :
                activeFilter === FILTER_TYPES.HIGH_STOCK ? 'High Stock Items' :
@@ -1946,95 +1925,95 @@ export default function InventoryScreen() {
 
           return (
             <TouchableOpacity 
-              style={styles.productCard}
+              className="bg-white rounded-xl p-4 mx-4 mb-3 border border-gray-200 shadow-sm flex-row items-center relative"
               onPress={() => openDetailModal(item)}
               activeOpacity={0.7}
             >
               {/* Ranking indicator for top selling */}
               {activeFilter === FILTER_TYPES.TOP_SELLING && (
-                <View style={styles.rankingBadge}>
-                  <Text style={styles.rankingText}>#{index + 1}</Text>
+                <View className="absolute top-2 left-2 bg-green-500 w-6 h-6 rounded-full justify-center items-center z-10">
+                  <Text className="text-white text-xs font-bold">#{index + 1}</Text>
                 </View>
               )}
 
               <Image
                 source={{ uri: productImage }}
-                style={styles.productImage}
+                className="w-20 h-20 rounded-xl mr-4"
                 defaultSource={{ uri: "https://via.placeholder.com/80x80?text=No+Img" }}
               />
               
-              <View style={styles.productInfo}>
-                <View style={styles.itemHeader}>
-                  <Text style={styles.productName} numberOfLines={1}>
+              <View className="flex-1">
+                <View className="flex-row justify-between items-start mb-2">
+                  <Text className="text-base font-semibold text-gray-800 flex-1 mr-2" numberOfLines={1}>
                     {productName}
                   </Text>
-                  <Text style={styles.salesValue}>
+                  <Text className="text-sm font-bold text-green-500">
                     ₹{itemSalesValue.toLocaleString()}
                   </Text>
                 </View>
                 
                 {/* Updated Price Display with Per-Piece Pricing */}
-                <View style={styles.priceContainer}>
-                  <View style={styles.priceBackground}>
-                    <Text style={styles.currentPrice}>₹{sellingPrice.toFixed(0) || '0'}</Text>
+                <View className="mb-2">
+                  <View className="bg-blue-50 px-3 py-1.5 rounded-lg flex-row items-center self-start">
+                    <Text className="text-lg font-bold text-blue-500">₹{sellingPrice.toFixed(0) || '0'}</Text>
                     
                     {/* Show per-piece discount badge */}
                     {hasQPricing && (
-                      <View style={styles.pricingBadge}>
+                      <View className="flex-row items-center bg-orange-500 px-1.5 py-0.5 rounded ml-2 gap-0.5">
                         <Ionicons name="pricetag" size={10} color="#FFF" />
-                        <Text style={styles.pricingBadgeText}>Per-Piece Discount</Text>
+                        <Text className="text-white text-2.25 font-semibold">Per-Piece Discount</Text>
                       </View>
                     )}
                     
                     {/* Show if price is overridden */}
                     {isOverridden && !hasQPricing && (
-                      <View style={styles.customPriceBadge}>
-                        <Text style={styles.customPriceBadgeText}>Custom</Text>
+                      <View className="bg-green-500 px-1.5 py-0.5 rounded ml-2">
+                        <Text className="text-white text-2.5 font-semibold">Custom</Text>
                       </View>
                     )}
                   </View>
                   
                   {/* Show discount range if quantity pricing is enabled */}
                   {hasQPricing && item.pricingSlabs && (
-                    <View style={styles.discountRange}>
-                      <Text style={styles.discountRangeText}>
+                    <View className="mt-1">
+                      <Text className="text-xs text-orange-500 font-semibold">
                         Discount from {Math.min(...item.pricingSlabs.map(s => s.minQuantity))}+ units
                       </Text>
                     </View>
                   )}
                 </View>
 
-                <View style={styles.stockStatusRow}>
+                <View className="flex-row items-center mb-3">
                   <MaterialIcons 
                     name={stockStatus.icon} 
                     size={16} 
                     color={stockStatus.color} 
                   />
-                  <Text style={[styles.stockStatusText, { color: stockStatus.color }]}>
+                  <Text className="text-sm font-semibold ml-1.5" style={{ color: stockStatus.color }}>
                     {stockStatus.text}
                   </Text>
                 </View>
 
-                <View style={styles.stockMetrics}>
-                  <View style={styles.metricItem}>
-                    <Text style={styles.metricLabel}>Available</Text>
-                    <Text style={styles.metricValue}>{availableStock}</Text>
+                <View className="bg-gray-50 p-3 rounded-lg mb-2 flex-row justify-between">
+                  <View className="items-center flex-1">
+                    <Text className="text-2.75 text-gray-500 mb-1 font-medium">Available</Text>
+                    <Text className="text-sm font-bold text-gray-800">{availableStock}</Text>
                   </View>
-                  <View style={styles.metricItem}>
-                    <Text style={styles.metricLabel}>Reserved</Text>
-                    <Text style={styles.metricValue}>{item.committedStock || 0}</Text>
+                  <View className="items-center flex-1">
+                    <Text className="text-2.75 text-gray-500 mb-1 font-medium">Reserved</Text>
+                    <Text className="text-sm font-bold text-gray-800">{item.committedStock || 0}</Text>
                   </View>
-                  <View style={styles.metricItem}>
-                    <Text style={styles.metricLabel}>Sold</Text>
-                    <Text style={styles.metricValue}>{item.totalSold || 0}</Text>
+                  <View className="items-center flex-1">
+                    <Text className="text-2.75 text-gray-500 mb-1 font-medium">Sold</Text>
+                    <Text className="text-sm font-bold text-gray-800">{item.totalSold || 0}</Text>
                   </View>
                 </View>
               </View>
 
               {/* Action Buttons */}
-              <View style={styles.categoryActions}>
+              <View className="flex-col gap-2 ml-3">
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.stockButton]}
+                  className="p-2.5 rounded-xl bg-blue-50 items-center justify-center"
                   onPress={(e) => {
                     e.stopPropagation();
                     openStockModal(item);
@@ -2043,7 +2022,7 @@ export default function InventoryScreen() {
                   <Ionicons name="add" size={18} color={Colors.light.accent} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.pricingButton]}
+                  className="p-2.5 rounded-xl bg-orange-50 items-center justify-center"
                   onPress={(e) => {
                     e.stopPropagation();
                     openPricingModal(item);
@@ -2052,7 +2031,7 @@ export default function InventoryScreen() {
                   <Ionicons name="pricetag" size={18} color={Colors.light.accent} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.deleteButton]}
+                  className="p-2.5 rounded-xl bg-red-50 items-center justify-center"
                   onPress={(e) => {
                     e.stopPropagation();
                     handleDeleteItem(item);
@@ -2065,24 +2044,24 @@ export default function InventoryScreen() {
           );
         }}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
+          <View className="items-center justify-center py-15">
             <MaterialIcons name="inventory-2" size={56} color={Colors.light.textSecondary} />
-            <Text style={styles.emptyText}>
+            <Text className="text-lg font-semibold text-gray-800 mt-4">
               {debouncedSearch ? "No products found" : 
                activeFilter === FILTER_TYPES.LOW_STOCK ? "No low stock items" :
                activeFilter === FILTER_TYPES.TOP_SELLING ? "No sales data available" :
                activeFilter === FILTER_TYPES.HIGH_STOCK ? "No inventory items" :
                "No inventory items"}
             </Text>
-            <Text style={styles.emptySubtext}>
+            <Text className="text-sm text-gray-500 mt-2 text-center px-8">
               {debouncedSearch ? "Try a different search term" : 
                activeFilter === FILTER_TYPES.LOW_STOCK ? "All products are well stocked" :
                activeFilter === FILTER_TYPES.TOP_SELLING ? "Sales data will appear here" :
                "Add products and set per-piece pricing"}
             </Text>
             {!debouncedSearch && activeFilter === FILTER_TYPES.ALL && (
-              <TouchableOpacity style={styles.addFirstButton} onPress={openAddProductModal}>
-                <Text style={styles.addFirstButtonText}>Add Product to Inventory</Text>
+              <TouchableOpacity className="bg-blue-500 px-6 py-3 rounded-xl mt-4" onPress={openAddProductModal}>
+                <Text className="text-white font-semibold">Add Product to Inventory</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -2109,7 +2088,7 @@ export default function InventoryScreen() {
 
       {/* FAB - Add Product to Inventory */}
       <TouchableOpacity 
-        style={styles.fab} 
+        className="absolute right-5 bottom-5 bg-blue-500 w-14 h-14 rounded-full justify-center items-center shadow-lg" 
         onPress={openAddProductModal}
       >
         <Ionicons name="add" size={24} color="#FFF" />
@@ -2117,1258 +2096,3 @@ export default function InventoryScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.light.background },
-  centered: { justifyContent: "center", alignItems: "center" },
-  loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
-
-  // Error Styles
-  errorContainer: {
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 40,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  errorText: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  errorButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  retryButton: {
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: '#FFF',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  secondaryButton: {
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  secondaryButtonText: {
-    color: Colors.light.text,
-    fontWeight: '600',
-    fontSize: 16,
-  },
-
-  // Time Filter Styles
-  timeFilterContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
-  },
-  timeFilterScroll: {
-    paddingRight: 16,
-  },
-  timeFilterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F5F5F5',
-    marginRight: 8,
-  },
-  timeFilterButtonActive: {
-    backgroundColor: Colors.light.accent,
-  },
-  timeFilterText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  timeFilterTextActive: {
-    color: '#FFF',
-  },
-
-  // Interactive Summary Grid Styles
-  summaryGrid: { 
-    flexDirection: "row", 
-    flexWrap: "wrap",
-    padding: 16,
-    gap: 12,
-    backgroundColor: "#FFF",
-  },
-  summaryCard: {
-    width: '47%',
-    backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    position: 'relative',
-  },
-  summaryCardActive: {
-    borderWidth: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  salesCard: { 
-    borderLeftWidth: 4, 
-    borderLeftColor: '#4CAF50',
-  },
-  lowStockCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF9800',
-  },
-  inventoryCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.light.accent,
-  },
-  itemsCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#2196F3',
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  summaryValue: { 
-    fontSize: 18, 
-    fontWeight: "700", 
-    color: Colors.light.text, 
-    marginBottom: 4 
-  },
-  summaryLabel: { 
-    fontSize: 12, 
-    color: Colors.light.textSecondary,
-    fontWeight: '500'
-  },
-  timePeriodText: {
-    fontSize: 10,
-    color: '#4CAF50',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  stockAlertText: {
-    fontSize: 10,
-    color: '#FF9800',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  stockInfoText: {
-    fontSize: 10,
-    color: Colors.light.accent,
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  averageOrderText: {
-    fontSize: 10,
-    color: '#2196F3',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  activeFilterIndicator: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-
-  // Filter Indicator
-  filterIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.accent,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-  },
-  filterIndicatorText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 8,
-  },
-  clearFilterButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  // Professional Header with Scanner
-  professionalHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: Colors.light.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  scannerHeaderButton: {
-    padding: 8,
-    backgroundColor: '#F0F8FF',
-    borderRadius: 12,
-  },
-
-  // Enhanced Scanner Styles with Visual Feedback
-  scannerContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  scannerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-  },
-  scannerBackButton: {
-    padding: 8,
-    width: 40,
-  },
-  flashButton: {
-    padding: 8,
-    width: 40,
-    alignItems: 'center',
-  },
-  flashButtonActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 20,
-  },
-  scannerStatsTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  statItemTop: {
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  statNumberTop: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFF',
-    marginBottom: 2,
-  },
-  statLabelTop: {
-    fontSize: 10,
-    color: '#CCC',
-    fontWeight: '500',
-  },
-  cameraContainer: {
-    flex: 1,
-  },
-  cameraWrapper: {
-    flex: 1,
-    position: 'relative',
-  },
-  camera: {
-    flex: 1,
-  },
-  scanOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
-  },
-  maskTop: {
-    flex: 2,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-  },
-  maskBottom: {
-    flex: 2,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-  },
-  scanArea: {
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  scanFrame: {
-    width: 250,
-    height: 150,
-    borderWidth: 2,
-    borderColor: '#FFF',
-    backgroundColor: 'transparent',
-    position: 'relative',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  scanFrameSuccess: {
-    borderColor: '#4CAF50',
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-  },
-  scanFrameError: {
-    borderColor: '#F44336',
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
-  },
-  scanFrameScanning: {
-    borderColor: Colors.light.accent,
-    backgroundColor: 'rgba(0, 122, 255, 0.1)',
-  },
-  successOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(244, 67, 54, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  corner: {
-    position: 'absolute',
-    width: 25,
-    height: 25,
-    borderColor: '#FFF',
-  },
-  cornerTopLeft: {
-    top: -2,
-    left: -2,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 8,
-  },
-  cornerTopRight: {
-    top: -2,
-    right: -2,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 8,
-  },
-  cornerBottomLeft: {
-    bottom: -2,
-    left: -2,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 8,
-  },
-  cornerBottomRight: {
-    bottom: -2,
-    right: -2,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 8,
-  },
-  scanStatusContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  scanInstruction: {
-    fontSize: 14,
-    color: '#FFF',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  scanInstructionSuccess: {
-    color: '#4CAF50',
-  },
-  scanInstructionError: {
-    color: '#F44336',
-  },
-  scanErrorSubtext: {
-    fontSize: 12,
-    color: '#F44336',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  permissionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-    paddingHorizontal: 40,
-  },
-  permissionText: {
-    fontSize: 18,
-    color: '#FFF',
-    marginTop: 16,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  permissionButton: {
-    marginTop: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: Colors.light.accent,
-    borderRadius: 12,
-  },
-  permissionButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  scannerFooter: {
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  scannerHelpText: {
-    fontSize: 14,
-    color: '#CCC',
-    textAlign: 'center',
-  },
-  scannerDebugText: {
-    marginTop: 4,
-    fontSize: 10,
-    color: '#999',
-    textAlign: 'center',
-  },
-
-  // Enhanced Product Header for Stock Modal
-  productHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  productHeaderImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  productHeaderInfo: {
-    flex: 1,
-  },
-  productHeaderName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  productHeaderSku: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-  },
-
-  // Enhanced Submit Button with Centered Content
-  submitButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-
-  // Product Card Styles
-  productCard: {
-    backgroundColor: "#FFF",
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    position: 'relative',
-  },
-  productImage: { 
-    width: 80, 
-    height: 80, 
-    borderRadius: 12, 
-    marginRight: 16 
-  },
-  productInfo: { 
-    flex: 1,
-  },
-  productName: { 
-    fontSize: 16, 
-    fontWeight: "600", 
-    color: Colors.light.text,
-    marginBottom: 8 
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  salesValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#4CAF50',
-  },
-  priceContainer: {
-    marginBottom: 8,
-  },
-  priceBackground: {
-    backgroundColor: '#F0F8FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-  },
-  currentPrice: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.accent,
-  },
-  defaultPrice: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    textDecorationLine: 'line-through',
-    marginLeft: 8,
-  },
-  stockStatusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  stockStatusText: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginLeft: 6,
-  },
-  stockMetrics: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: '#F8F9FA',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  metricItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  metricLabel: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  metricValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-
-  // Action Buttons
-  categoryActions: {
-    flexDirection: "column",
-    gap: 8,
-    marginLeft: 12,
-  },
-  actionButton: {
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stockButton: {
-    backgroundColor: '#E3F2FD',
-  },
-  pricingButton: {
-    backgroundColor: '#FFF3E0',
-  },
-  deleteButton: {
-    backgroundColor: '#FFEBEE',
-  },
-
-  // Ranking Badge for Top Selling
-  rankingBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: '#4CAF50',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  rankingText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-
-  // Pricing Badge - Updated for Per-Piece
-  pricingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF9800',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: 8,
-    gap: 2,
-  },
-  pricingBadgeText: {
-    fontSize: 9,
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  customPriceBadge: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  customPriceBadgeText: {
-    fontSize: 10,
-    color: '#FFF',
-    fontWeight: '600',
-  },
-
-  // New Styles for Per-Piece Pricing
-  discountRange: {
-    marginTop: 4,
-  },
-  discountRangeText: {
-    fontSize: 12,
-    color: '#FF9800',
-    fontWeight: '600',
-  },
-  pricingTypeNote: {
-    fontSize: 11,
-    color: '#4CAF50',
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  slabDescription: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
-  },
-  slabDiscountPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#2E7D32',
-    textAlign: 'center',
-  },
-  slabDiscountLabel: {
-    fontSize: 10,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  pricingExample: {
-    backgroundColor: '#F0F8FF',
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.light.accent,
-  },
-  pricingExampleItem: {
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E3F2FD',
-  },
-  pricingExampleTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 12,
-  },
-  pricingExampleSubtitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.accent,
-    marginBottom: 6,
-  },
-  pricingExampleText: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    marginBottom: 3,
-    lineHeight: 18,
-  },
-  pricingExampleSavings: {
-    fontSize: 13,
-    color: '#2E7D32',
-    fontWeight: '600',
-    marginBottom: 3,
-    lineHeight: 18,
-  },
-
-  // Stock Modal Styles
-  currentStockInfo: {
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  currentStockLabel: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 4,
-  },
-  currentStockValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.accent,
-  },
-  transactionTypeButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  transactionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 2,
-    gap: 8,
-  },
-  transactionButtonInActive: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
-  },
-  transactionButtonOutActive: {
-    backgroundColor: '#F44336',
-    borderColor: '#F44336',
-  },
-  transactionButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  transactionButtonTextActive: {
-    color: '#FFF',
-  },
-  submitButtonIn: {
-    backgroundColor: '#4CAF50',
-  },
-  submitButtonOut: {
-    backgroundColor: '#F44336',
-  },
-
-  // Detail Modal Styles
-  detailHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  detailImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    marginRight: 16,
-  },
-  detailTitle: {
-    flex: 1,
-  },
-  detailName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  detailSKU: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-  },
-  detailActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  detailActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  stockInAction: {
-    backgroundColor: '#4CAF50',
-  },
-  stockOutAction: {
-    backgroundColor: '#F44336',
-  },
-  deleteAction: {
-    backgroundColor: '#FF5722',
-  },
-  detailActionText: {
-    color: '#FFF',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  detailSection: {
-    marginBottom: 24,
-  },
-  detailSectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 16,
-  },
-  detailGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  detailItemLarge: {
-    width: '48%',
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  detailLabelLarge: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  detailValueLarge: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  overrideNote: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontStyle: 'italic',
-    marginTop: 4,
-  },
-
-  // Pricing Slabs Preview
-  pricingSlabsPreview: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  slabPreviewItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  slabRange: {
-    flex: 1,
-  },
-  slabRangeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-  },
-  detailModal: {
-    maxHeight: '95%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  modalBody: {
-    padding: 20,
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: Colors.light.accent,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-
-  // Input Styles
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: Colors.light.text,
-    backgroundColor: '#FFF',
-  },
-
-  // Reason Selection
-  reasonScroll: {
-    maxHeight: 150,
-  },
-  reasonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  reasonBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    backgroundColor: '#FFF',
-    minWidth: '48%',
-  },
-  reasonBtnActive: {
-    backgroundColor: Colors.light.accent,
-    borderColor: Colors.light.accent,
-  },
-  reasonText: {
-    fontSize: 13,
-    color: Colors.light.text,
-    textAlign: 'center',
-  },
-  reasonTextActive: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-
-  // Add Product Modal Styles
-  searchLoading: {
-    marginTop: 8,
-  },
-  searchResults: {
-    marginTop: 12,
-    marginBottom: 16,
-  },
-  resultsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  productResult: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  productResultSelected: {
-    backgroundColor: '#E3F2FD',
-    borderColor: Colors.light.accent,
-  },
-  productResultImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  productResultInfo: {
-    flex: 1,
-  },
-  productResultName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 2,
-  },
-  productResultSku: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    marginBottom: 2,
-  },
-  productResultPrice: {
-    fontSize: 12,
-    color: Colors.light.accent,
-    fontWeight: '500',
-  },
-  selectedProductSection: {
-    marginBottom: 20,
-  },
-  selectedProductCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  selectedProductImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    marginRight: 16,
-  },
-  selectedProductInfo: {
-    flex: 1,
-  },
-  selectedProductName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  selectedProductSku: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 2,
-  },
-  selectedProductCategory: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-
-  // All other existing styles
-  searchSection: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    gap: 8,
-    alignItems: 'center',
-    backgroundColor: Colors.light.white,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.white,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: '#E8E8E8',
-    paddingHorizontal: 16,
-    height: 52,
-    gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: Colors.light.text,
-    fontWeight: '400',
-  },
-  section: { 
-    marginBottom: 8,
-    backgroundColor: Colors.light.white,
-    paddingVertical: 12,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  sectionTitle: { 
-    fontSize: 20, 
-    fontWeight: "700", 
-    color: Colors.light.text,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: Colors.light.accent,
-    fontWeight: '600'
-  },
-  activityScroll: {
-    paddingHorizontal: 16,
-  },
-  activityCard: {
-    backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 12,
-    marginRight: 12,
-    minWidth: 120,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  activityIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  activityQuantity: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  activityProduct: {
-    fontSize: 13,
-    color: Colors.light.text,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  activityTime: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-  },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginTop: 8,
-    textAlign: 'center',
-    paddingHorizontal: 32,
-  },
-  addFirstButton: {
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 16,
-  },
-  addFirstButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  fab: {
-    position: "absolute",
-    right: 20,
-    bottom: 20,
-    backgroundColor: Colors.light.accent,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-});

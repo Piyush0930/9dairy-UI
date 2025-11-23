@@ -11,7 +11,6 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -82,10 +81,10 @@ const customerAPI = {
 
 function EditableField({ label, value, onChange, placeholder, keyboardType = "default", multiline = false, maxLength }) {
   return (
-    <View style={styles.editableField}>
-      <Text style={styles.editableLabel}>{label}</Text>
+    <View className="mb-5">
+      <Text className="text-sm font-medium text-gray-500 mb-2">{label}</Text>
       <TextInput
-        style={[styles.editableInput, multiline && styles.multilineInput]}
+        className={`border border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 bg-white ${multiline ? 'min-h-20 text-top' : ''}`}
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
@@ -406,33 +405,33 @@ export default function Account() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+      <View className="flex-1 justify-center items-center bg-gray-50" style={{ paddingTop: insets.top }}>
         <ActivityIndicator size="large" color={Colors.light.tint} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+        <Text className="mt-4 text-base text-gray-500">Loading profile...</Text>
       </View>
     );
   }
 
   if (!customerProfile) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
-        <Text style={styles.loadingText}>Failed to load profile. Please try again.</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadProfile}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+      <View className="flex-1 justify-center items-center bg-gray-50" style={{ paddingTop: insets.top }}>
+        <Text className="text-base text-gray-500">Failed to load profile. Please try again.</Text>
+        <TouchableOpacity className="bg-blue-500 px-5 py-2.5 rounded-lg mt-4" onPress={loadProfile}>
+          <Text className="text-white text-base font-semibold">Retry</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
       {/* Header with Edit Button */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>My Profile</Text>
+      <View className="bg-white px-5 pt-5 pb-5 border-b border-gray-100">
+        <View className="flex-row justify-between items-center mb-5">
+          <Text className="text-2xl font-bold text-gray-900">My Profile</Text>
           {!isEditing && (
             <TouchableOpacity
-              style={styles.editButton}
+              className="flex-row items-center bg-blue-500 px-4 py-2 rounded-lg gap-1.5"
               onPress={handleEditToggle}
               disabled={saving}
             >
@@ -441,33 +440,33 @@ export default function Account() {
                 size={20}
                 color={Colors.light.white}
               />
-              <Text style={styles.editButtonText}>Edit</Text>
+              <Text className="text-white text-sm font-semibold">Edit</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarCircle}>
+        <View className="flex-row items-center gap-4">
+          <View className="w-20 h-20 rounded-full bg-blue-50 justify-center items-center overflow-hidden relative">
             <Image
               source={{ uri: "https://img.icons8.com/color/96/user.png" }}
-              style={styles.avatar}
+              className="w-15 h-15"
             />
             {customerProfile?.subscription?.isActive && (
-              <View style={styles.premiumBadge}>
-                <Text style={styles.premiumBadgeText}>Premium</Text>
+              <View className="absolute -bottom-0.5 bg-blue-500 px-2 py-1 rounded-xl">
+                <Text className="text-white text-xs font-bold">Premium</Text>
               </View>
             )}
           </View>
-          <View style={styles.headerInfo}>
-            <Text style={styles.profileName}>
+          <View className="flex-1">
+            <Text className="text-xl font-bold text-gray-900 mb-1">
               {customerProfile?.personalInfo?.fullName || "Guest User"}
             </Text>
-            <Text style={styles.profileEmail}>
+            <Text className="text-sm text-gray-500 font-normal mb-2">
               {customerProfile?.personalInfo?.email || "No email set"}
             </Text>
-            <View style={styles.walletBalance}>
+            <View className="flex-row items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-2xl self-start">
               <Ionicons name="wallet-outline" size={16} color={Colors.light.tint} />
-              <Text style={styles.walletBalanceText}>
+              <Text className="text-sm font-semibold text-blue-500">
                 {formatWalletBalance(customerProfile?.walletBalance)}
               </Text>
             </View>
@@ -476,8 +475,8 @@ export default function Account() {
       </View>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        className="flex-1"
+        contentContainerClassName="pt-5 pb-25"
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -488,12 +487,12 @@ export default function Account() {
         }
       >
         {/* Personal Information Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
+        <View className="bg-white mx-4 rounded-xl mb-4 overflow-hidden shadow-sm shadow-black/5">
+          <View className="flex-row items-center px-4 py-4 border-b border-gray-100 gap-3">
             <Ionicons name="person-circle-outline" size={20} color={Colors.light.tint} />
-            <Text style={styles.sectionTitle}>Personal Information</Text>
+            <Text className="text-lg font-semibold text-gray-900">Personal Information</Text>
           </View>
-          <View style={styles.sectionContent}>
+          <View className="p-4">
             {isEditing ? (
               <>
                 <EditableField
@@ -517,13 +516,13 @@ export default function Account() {
                   keyboardType="phone-pad"
                   maxLength={10}
                 />
-                <View style={styles.editableField}>
-                  <Text style={styles.editableLabel}>Date of Birth</Text>
+                <View className="mb-5">
+                  <Text className="text-sm font-medium text-gray-500 mb-2">Date of Birth</Text>
                   <TouchableOpacity
-                    style={styles.datePickerButton}
+                    className="border border-gray-300 rounded-lg px-4 py-3 text-base bg-white"
                     onPress={showDatepicker}
                   >
-                    <Text style={[styles.datePickerText, { color: editForm.dateOfBirth ? Colors.light.text : Colors.light.textSecondary }]}>
+                    <Text className={`text-base ${editForm.dateOfBirth ? 'text-gray-900' : 'text-gray-500'}`}>
                       {editForm.dateOfBirth ? formatDate(editForm.dateOfBirth) : 'Select date of birth'}
                     </Text>
                   </TouchableOpacity>
@@ -542,27 +541,27 @@ export default function Account() {
               </>
             ) : (
               <>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Full Name</Text>
-                  <Text style={styles.infoValue}>
+                <View className="flex-row justify-between items-start mb-4">
+                  <Text className="text-sm font-medium text-gray-500 flex-1">Full Name</Text>
+                  <Text className="text-base font-normal text-gray-900 flex-1 text-right">
                     {customerProfile?.personalInfo?.fullName || 'Not set'}
                   </Text>
                 </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Email</Text>
-                  <Text style={styles.infoValue}>
+                <View className="flex-row justify-between items-start mb-4">
+                  <Text className="text-sm font-medium text-gray-500 flex-1">Email</Text>
+                  <Text className="text-base font-normal text-gray-900 flex-1 text-right">
                     {customerProfile?.personalInfo?.email || 'Not set'}
                   </Text>
                 </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Alternate Phone</Text>
-                  <Text style={styles.infoValue}>
+                <View className="flex-row justify-between items-start mb-4">
+                  <Text className="text-sm font-medium text-gray-500 flex-1">Alternate Phone</Text>
+                  <Text className="text-base font-normal text-gray-900 flex-1 text-right">
                     {customerProfile?.personalInfo?.alternatePhone || 'Not set'}
                   </Text>
                 </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Date of Birth</Text>
-                  <Text style={styles.infoValue}>
+                <View className="flex-row justify-between items-start mb-4">
+                  <Text className="text-sm font-medium text-gray-500 flex-1">Date of Birth</Text>
+                  <Text className="text-base font-normal text-gray-900 flex-1 text-right">
                     {formatDate(customerProfile?.personalInfo?.dateOfBirth)}
                   </Text>
                 </View>
@@ -572,12 +571,12 @@ export default function Account() {
         </View>
 
         {/* Delivery Address Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
+        <View className="bg-white mx-4 rounded-xl mb-4 overflow-hidden shadow-sm shadow-black/5">
+          <View className="flex-row items-center px-4 py-4 border-b border-gray-100 gap-3">
             <Ionicons name="location-outline" size={20} color={Colors.light.tint} />
-            <Text style={styles.sectionTitle}>Delivery Address</Text>
+            <Text className="text-lg font-semibold text-gray-900">Delivery Address</Text>
           </View>
-          <View style={styles.sectionContent}>
+          <View className="p-4">
             {isEditing ? (
               <>
                 <EditableField
@@ -592,8 +591,8 @@ export default function Account() {
                   onChange={(text) => setEditForm(prev => ({ ...prev, addressLine2: text }))}
                   placeholder="Enter address line 2"
                 />
-                <View style={styles.row}>
-                  <View style={styles.halfInput}>
+                <View className="flex-row gap-3">
+                  <View className="flex-1">
                     <EditableField
                       label="City"
                       value={editForm.city}
@@ -601,7 +600,7 @@ export default function Account() {
                       placeholder="City"
                     />
                   </View>
-                  <View style={styles.halfInput}>
+                  <View className="flex-1">
                     <EditableField
                       label="State"
                       value={editForm.state}
@@ -610,8 +609,8 @@ export default function Account() {
                     />
                   </View>
                 </View>
-                <View style={styles.row}>
-                  <View style={styles.halfInput}>
+                <View className="flex-row gap-3">
+                  <View className="flex-1">
                     <EditableField
                       label="Pincode"
                       value={editForm.pincode}
@@ -621,7 +620,7 @@ export default function Account() {
                       maxLength={6}
                     />
                   </View>
-                  <View style={styles.halfInput}>
+                  <View className="flex-1">
                     <EditableField
                       label="Landmark"
                       value={editForm.landmark}
@@ -632,12 +631,12 @@ export default function Account() {
                 </View>
               </>
             ) : (
-              <View style={styles.addressCard}>
-                <Text style={styles.addressText}>
+              <View className="bg-gray-50 p-4 rounded-xl border-l-4 border-l-blue-500">
+                <Text className="text-base font-medium text-gray-900 mb-2 leading-5.5">
                   {getFormattedAddress()}
                 </Text>
                 {customerProfile?.deliveryAddress?.landmark && (
-                  <Text style={styles.landmarkText}>
+                  <Text className="text-sm text-gray-500 mb-1">
                     Landmark: {customerProfile.deliveryAddress.landmark}
                   </Text>
                 )}
@@ -650,17 +649,17 @@ export default function Account() {
 
         {/* Save and Cancel Buttons when editing */}
         {isEditing && (
-          <View style={styles.saveSection}>
-            <View style={styles.buttonRow}>
+          <View className="px-4 mb-5">
+            <View className="flex-row gap-3">
               <TouchableOpacity
-                style={styles.cancelButton}
+                className="flex-1 items-center justify-center bg-white border border-blue-500 py-4 rounded-xl"
                 onPress={handleEditToggle}
                 disabled={saving}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text className="text-blue-500 text-base font-semibold">Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.saveButton}
+                className="flex-1 flex-row items-center justify-center bg-blue-500 py-4 rounded-xl gap-2"
                 onPress={handleSaveProfile}
                 disabled={saving}
               >
@@ -669,7 +668,7 @@ export default function Account() {
                 ) : (
                   <>
                     <Ionicons name="save-outline" size={20} color={Colors.light.white} />
-                    <Text style={styles.saveButtonText}>Save</Text>
+                    <Text className="text-white text-base font-semibold">Save</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -678,444 +677,34 @@ export default function Account() {
         )}
 
         {/* Logout Button */}
-        <View style={styles.menuSection}>
+        <View className="bg-white mx-4 rounded-xl mb-4 overflow-hidden shadow-sm shadow-black/5">
           <TouchableOpacity
-            style={styles.logoutButton}
+            className="flex-row items-center py-4.5 px-5 gap-4"
             onPress={handleLogout}
           >
             <MaterialIcons name="logout" size={24} color="#FF6B6B" />
-            <Text style={styles.logoutButtonText}>Logout</Text>
+            <Text className="text-base font-medium text-red-400">Logout</Text>
           </TouchableOpacity>
         </View>
 
         {/* Privacy Policy Link */}
-        <View style={styles.menuSection}>
+        <View className="bg-white mx-4 rounded-xl mb-4 overflow-hidden shadow-sm shadow-black/5">
           <TouchableOpacity
-            style={styles.privacyButton}
+            className="flex-row items-center py-4.5 px-5 gap-4"
             onPress={() => router.push('/privacy-policy')}
           >
             <Ionicons name="shield-checkmark-outline" size={24} color={Colors.light.text} />
-            <Text style={styles.privacyButtonText}>Privacy Policy</Text>
+            <Text className="text-base font-medium text-gray-900">Privacy Policy</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.versionContainer}>
-          <Text style={styles.versionText}>Version 1.0.0</Text>
-          <Text style={styles.madeWithText}>Made with ❤️ by Dairy Nine</Text>
+        <View className="mt-8 items-center px-5">
+          <Text className="text-sm text-gray-500 mb-2">Version 1.0.0</Text>
+          <Text className="text-sm text-gray-500 font-medium">Made with ❤️ by Dairy Nine</Text>
         </View>
 
-        <View style={styles.bottomPadding} />
+        <View className="h-5" />
       </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.backgroundLight,
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-  },
-  header: {
-    backgroundColor: Colors.light.white,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.tint,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  editButtonText: {
-    color: Colors.light.white,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  profileHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-  },
-  avatarCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#E3F2FD",
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-    position: 'relative',
-  },
-  avatar: {
-    width: 60,
-    height: 60,
-  },
-  premiumBadge: {
-    position: 'absolute',
-    bottom: -2,
-    backgroundColor: Colors.light.tint,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  premiumBadgeText: {
-    color: Colors.light.white,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  headerInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  profileEmail: {
-    fontSize: 15,
-    color: Colors.light.textSecondary,
-    fontWeight: "400",
-    marginBottom: 8,
-  },
-  walletBalance: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F0F9FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-  },
-  walletBalanceText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.tint,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingTop: 20,
-    paddingBottom: 100,
-  },
-  section: {
-    backgroundColor: Colors.light.white,
-    marginHorizontal: 16,
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  sectionContent: {
-    padding: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  infoLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.light.textSecondary,
-    flex: 1,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '400',
-    color: Colors.light.text,
-    flex: 1,
-    textAlign: 'right',
-  },
-  editableField: {
-    marginBottom: 20,
-  },
-  editableLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-  },
-  editableInput: {
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: Colors.light.text,
-    backgroundColor: Colors.light.white,
-  },
-  datePickerButton: {
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: Colors.light.white,
-  },
-  datePickerText: {
-    fontSize: 16,
-    color: Colors.light.text,
-  },
-  multilineInput: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfInput: {
-    flex: 1,
-  },
-  radioGroup: {
-    flexDirection: 'row',
-    gap: 20,
-    marginTop: 8,
-  },
-  radioOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: Colors.light.tint,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioSelected: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.light.tint,
-  },
-  radioLabel: {
-    fontSize: 16,
-    color: Colors.light.text,
-  },
-  addressCard: {
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.light.tint,
-  },
-  addressText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: Colors.light.text,
-    marginBottom: 8,
-    lineHeight: 22,
-  },
-  landmarkText: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 4,
-  },
-  saveSection: {
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.white,
-    borderWidth: 1,
-    borderColor: Colors.light.tint,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  cancelButtonText: {
-    color: Colors.light.tint,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.tint,
-    paddingVertical: 16,
-    borderRadius: 12,
-    gap: 8,
-  },
-  saveButtonText: {
-    color: Colors.light.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  menuSection: {
-    backgroundColor: Colors.light.white,
-    marginHorizontal: 16,
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    gap: 16,
-  },
-  logoutButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#FF6B6B",
-  },
-  privacyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    gap: 16,
-  },
-  privacyButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: Colors.light.text,
-  },
-  versionContainer: {
-    marginTop: 32,
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  versionText: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-  },
-  madeWithText: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    fontWeight: "500",
-  },
-  bottomPadding: {
-    height: 20,
-  },
-  retryButton: {
-    backgroundColor: Colors.light.tint,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  retryButtonText: {
-    color: Colors.light.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  orderItem: {
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.light.tint,
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  orderId: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  orderStatus: {
-    fontSize: 14,
-    fontWeight: '500',
-    textTransform: 'capitalize',
-  },
-  orderDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  orderDate: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
-  orderTotal: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.tint,
-  },
-  orderItems: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    lineHeight: 20,
-  },
-  noOrdersText: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    marginTop: 20,
-  },
-});

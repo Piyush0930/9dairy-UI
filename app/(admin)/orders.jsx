@@ -11,7 +11,6 @@ import {
   Alert,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -92,8 +91,6 @@ function getStatusBackgroundColor(status) {
 /* ---------- PRICE HELPER FUNCTIONS ---------- */
 
 const getItemPrice = (item) => {
-  // 🔥 CRITICAL FIX: Always use the price stored in the order item (this is the final charged override price)
-  // NOT the product.price which is the default catalog price
   return item.price || item.finalPrice || 0;
 };
 
@@ -102,7 +99,7 @@ const isPriceOverridden = (item) => {
 };
 
 const getItemTotal = (item) => {
-  const price = getItemPrice(item); // This uses the override price
+  const price = getItemPrice(item);
   const quantity = item.quantity || 0;
   return price * quantity;
 };
@@ -125,7 +122,6 @@ export default function AdminOrders() {
   const [activeFilter, setActiveFilter] = useState("orders");
   const [expandedOrder, setExpandedOrder] = useState(null);
 
-  /* ---------- API HELPERS ---------- */
   const handleApiError = (error, msg) => {
     console.error("API Error:", error);
     Alert.alert("Error", msg || "Something went wrong.");
@@ -154,34 +150,16 @@ export default function AdminOrders() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to fetch orders");
       
-      console.log('📦 Raw orders data:', data.orders);
-      
-      // Process orders - ENSURE ONLY OVERRIDE PRICES ARE USED
       const processedOrders = (data.orders || []).map(order => {
-        console.log(`🛒 Processing order ${order.orderId}:`, {
-          items: order.items,
-          totalAmount: order.totalAmount,
-          finalAmount: order.finalAmount,
-          priceSource: order.priceSource
-        });
-        
         const processedItems = order.items?.map(item => {
-          const finalPrice = getItemPrice(item); // This is the override price
+          const finalPrice = getItemPrice(item);
           const isOverridden = isPriceOverridden(item);
-          
-          console.log(`📦 Order item ${item.product?.name}:`, {
-            storedPrice: item.price, // This should be the override price
-            productPrice: item.product?.price, // This is the default price (IGNORE THIS)
-            finalPrice: finalPrice,
-            isPriceOverridden: isOverridden,
-          });
           
           return {
             ...item,
-            // 🔥 OVERRIDE the product price with the actual charged price
             product: item.product ? {
               ...item.product,
-              price: finalPrice // Replace product price with override price
+              price: finalPrice
             } : item.product,
             price: finalPrice,
             finalPrice: finalPrice,
@@ -190,15 +168,8 @@ export default function AdminOrders() {
           };
         }) || [];
         
-        // Calculate totals based on override prices
         const calculatedSubtotal = processedItems.reduce((sum, item) => sum + getItemTotal(item), 0);
         const calculatedTotal = order.finalAmount || calculatedSubtotal;
-        
-        console.log(`💰 Order ${order.orderId} totals:`, {
-          calculatedSubtotal,
-          calculatedTotal,
-          storedFinalAmount: order.finalAmount,
-        });
         
         return {
           ...order,
@@ -233,9 +204,6 @@ export default function AdminOrders() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to fetch offline orders");
       
-      console.log('📦 Raw offline orders data:', data.orders);
-      
-      // Process offline orders - ENSURE ONLY OVERRIDE PRICES ARE USED
       const processedOrders = (data.orders || []).map(order => {
         const processedItems = order.items?.map(item => {
           const finalPrice = getItemPrice(item);
@@ -243,10 +211,9 @@ export default function AdminOrders() {
           
           return {
             ...item,
-            // 🔥 OVERRIDE the product price with the actual charged price
             product: item.product ? {
               ...item.product,
-              price: finalPrice // Replace product price with override price
+              price: finalPrice
             } : item.product,
             price: finalPrice,
             finalPrice: finalPrice,
@@ -255,7 +222,6 @@ export default function AdminOrders() {
           };
         }) || [];
         
-        // Calculate totals based on override prices
         const calculatedSubtotal = processedItems.reduce((sum, item) => sum + getItemTotal(item), 0);
         const calculatedTotal = order.finalAmount || calculatedSubtotal;
         
@@ -292,9 +258,6 @@ export default function AdminOrders() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to fetch order history");
       
-      console.log('📦 Raw order history data:', data.orders);
-      
-      // Process orders for history view - ENSURE ONLY OVERRIDE PRICES ARE USED
       const processedOrders = (data.orders || []).map(order => {
         const processedItems = order.items?.map(item => {
           const finalPrice = getItemPrice(item);
@@ -302,10 +265,9 @@ export default function AdminOrders() {
           
           return {
             ...item,
-            // 🔥 OVERRIDE the product price with the actual charged price
             product: item.product ? {
               ...item.product,
-              price: finalPrice // Replace product price with override price
+              price: finalPrice
             } : item.product,
             price: finalPrice,
             finalPrice: finalPrice,
@@ -348,7 +310,6 @@ export default function AdminOrders() {
     }
   };
 
-  /* ---------- LOAD DATA ON FILTER CHANGE ---------- */
   useEffect(() => {
     if (!authLoading && authToken && isAuthenticated) {
       setLoading(true);
@@ -364,15 +325,10 @@ export default function AdminOrders() {
     }
   }, [activeFilter, authToken, authLoading, isAuthenticated]);
 
-  /* ---------- NAVIGATE TO OFFLINE ORDER PAGE WITH SCANNER AUTO-OPEN ---------- */
   const navigateToOfflineOrder = () => {
-    router.push({
-      pathname: "/(admin)/offline-order",
-      params: { autoOpenScanner: "true" }
-    });
+    router.push("/(admin)/offline-order");
   };
 
-  /* ---------- ORDER STATUS ACTIONS ---------- */
   const updateOrderStatus = async (orderId, newStatus) => {
     if (!(await validateAuthBeforeCall())) return;
     try {
@@ -386,7 +342,7 @@ export default function AdminOrders() {
       });
       if (!res.ok) throw new Error((await res.json()).message);
       Alert.alert("Success", "Status updated");
-      onRefresh(); // Refresh current view
+      onRefresh();
     } catch (e) {
       handleApiError(e);
     }
@@ -401,7 +357,7 @@ export default function AdminOrders() {
       });
       if (!res.ok) throw new Error((await res.json()).message);
       Alert.alert("Success", "Order cancelled");
-      onRefresh(); // Refresh current view
+      onRefresh();
     } catch (e) {
       handleApiError(e);
     }
@@ -431,61 +387,59 @@ export default function AdminOrders() {
     ]);
   };
 
-  /* ---------- FIXED SHARE FUNCTIONS (NO DEPRECATION) ---------- */
   const shareOrderInvoice = async (orderId) => {
-  if (!(await validateAuthBeforeCall())) return;
-  try {
-    const uri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
-    
-    // Use legacy downloadAsync temporarily
-    const dl = await downloadAsync(
-      `${API_BASE_URL}/orders/${orderId}/invoice`,
-      uri,
-      { headers: { Authorization: `Bearer ${authToken}` } }
-    );
-    
-    if (dl.status !== 200) throw new Error('Download failed');
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
-  } catch (e) {
-    handleApiError(e, "Failed to share invoice");
-  }
-};
+    if (!(await validateAuthBeforeCall())) return;
+    try {
+      const uri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
+      
+      const dl = await downloadAsync(
+        `${API_BASE_URL}/orders/${orderId}/invoice`,
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      
+      if (dl.status !== 200) throw new Error('Download failed');
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share invoice");
+    }
+  };
 
-const shareOverallInvoice = async () => {
-  if (!(await validateAuthBeforeCall())) return;
-  try {
-    const uri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split("T")[0]}.pdf`;
-    
-    const dl = await downloadAsync(
-      `${API_BASE_URL}/admin/invoices/pdf`,
-      uri,
-      { headers: { Authorization: `Bearer ${authToken}` } }
-    );
-    
-    if (dl.status !== 200) throw new Error('Download failed');
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
-  } catch (e) {
-    handleApiError(e, "Failed to share invoice");
-  }
-};
+  const shareOverallInvoice = async () => {
+    if (!(await validateAuthBeforeCall())) return;
+    try {
+      const uri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split("T")[0]}.pdf`;
+      
+      const dl = await downloadAsync(
+        `${API_BASE_URL}/admin/invoices/pdf`,
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      
+      if (dl.status !== 200) throw new Error('Download failed');
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share invoice");
+    }
+  };
 
-const shareOfflineOrders = async () => {
-  if (!(await validateAuthBeforeCall())) return;
-  try {
-    const uri = FileSystem.documentDirectory + `offline-orders-${new Date().toISOString().split("T")[0]}.pdf`;
-    
-    const dl = await downloadAsync(
-      `${API_BASE_URL}/admin/invoices/offline-orders`,
-      uri,
-      { headers: { Authorization: `Bearer ${authToken}` } }
-    );
-    
-    if (dl.status !== 200) throw new Error('Download failed');
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
-  } catch (e) {
-    handleApiError(e, "Failed to share offline orders");
-  }
-};
+  const shareOfflineOrders = async () => {
+    if (!(await validateAuthBeforeCall())) return;
+    try {
+      const uri = FileSystem.documentDirectory + `offline-orders-${new Date().toISOString().split("T")[0]}.pdf`;
+      
+      const dl = await downloadAsync(
+        `${API_BASE_URL}/admin/invoices/offline-orders`,
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      
+      if (dl.status !== 200) throw new Error('Download failed');
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share offline orders");
+    }
+  };
 
   const handleShareAll = () => {
     if (activeFilter === "history") {
@@ -495,7 +449,6 @@ const shareOfflineOrders = async () => {
     }
   };
 
-  /* ---------- FILTERED DATA ---------- */
   const filteredOrders =
     activeFilter === "orders"
       ? (orders || []).filter(o => o.orderStatus !== "delivered" && o.orderStatus !== "cancelled")
@@ -505,22 +458,22 @@ const shareOfflineOrders = async () => {
 
   if (authLoading) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+      <View className="flex-1 justify-center items-center bg-white" style={{ paddingTop: insets.top }}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text className="mt-4 text-base text-gray-500">Loading...</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-white" style={{ paddingTop: insets.top }}>
       {/* PROFESSIONAL HEADER */}
-      <View style={styles.professionalHeader}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Orders</Text>
+      <View className="px-4 pt-4 pb-4 bg-white border-b border-gray-200 min-h-18 justify-center">
+        <View className="flex-row items-center justify-between h-10">
+          <Text className="text-2xl font-bold text-gray-900">Orders</Text>
           {(activeFilter === "history" || activeFilter === "offline") && (
             <TouchableOpacity 
-              style={styles.shareButton} 
+              className="w-10 h-10 rounded-lg bg-blue-50 justify-center items-center border border-blue-200"
               onPress={handleShareAll}
             >
               <MaterialIcons name="share" size={20} color={Colors.light.accent} />
@@ -530,56 +483,56 @@ const shareOfflineOrders = async () => {
       </View>
 
       {/* FILTER TABS */}
-      <View style={styles.filterContainer}>
+      <View className="flex-row mx-4 mt-2 mb-4 bg-white rounded-xl p-1 border border-gray-300 shadow-sm">
         <TouchableOpacity
-          style={[styles.filterButton, activeFilter === "orders" && styles.filterButtonActive]}
+          className={`flex-1 items-center justify-center py-2.5 rounded-lg ${activeFilter === "orders" ? "bg-blue-500" : ""}`}
           onPress={() => setActiveFilter("orders")}
         >
-          <Text style={[styles.filterButtonText, activeFilter === "orders" && styles.filterButtonTextActive]}>
+          <Text className={`text-sm font-semibold ${activeFilter === "orders" ? "text-white" : "text-gray-500"}`}>
             Active Orders
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.filterButton, activeFilter === "history" && styles.filterButtonActive]}
+          className={`flex-1 items-center justify-center py-2.5 rounded-lg ${activeFilter === "history" ? "bg-blue-500" : ""}`}
           onPress={() => setActiveFilter("history")}
         >
-          <Text style={[styles.filterButtonText, activeFilter === "history" && styles.filterButtonTextActive]}>
+          <Text className={`text-sm font-semibold ${activeFilter === "history" ? "text-white" : "text-gray-500"}`}>
             Order History
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.filterButton, activeFilter === "offline" && styles.filterButtonActive]}
+          className={`flex-1 items-center justify-center py-2.5 rounded-lg ${activeFilter === "offline" ? "bg-blue-500" : ""}`}
           onPress={() => setActiveFilter("offline")}
         >
-          <Text style={[styles.filterButtonText, activeFilter === "offline" && styles.filterButtonTextActive]}>
+          <Text className={`text-sm font-semibold ${activeFilter === "offline" ? "text-white" : "text-gray-500"}`}>
             Offline Orders
           </Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.light.accent]} />}
       >
         {loading && !refreshing ? (
-          <View style={styles.loadingContainer}>
+          <View className="items-center justify-center p-10">
             <ActivityIndicator size="large" color={Colors.light.accent} />
-            <Text style={styles.loadingText}>Loading orders...</Text>
+            <Text className="mt-4 text-base text-gray-500">Loading orders...</Text>
           </View>
         ) : filteredOrders.length === 0 ? (
-          <View style={styles.emptyContainer}>
+          <View className="items-center justify-center p-10">
             <MaterialIcons name="inventory" size={48} color={Colors.light.textSecondary} />
-            <Text style={styles.emptyText}>
+            <Text className="mt-4 text-base text-gray-500 text-center">
               {activeFilter === "orders"
                 ? "No active orders"
                 : activeFilter === "history"
                   ? "No order history"
                   : "No offline orders"}
             </Text>
-            <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-              <Text style={styles.refreshButtonText}>Refresh</Text>
+            <TouchableOpacity className="mt-4 bg-blue-500 px-5 py-2.5 rounded-lg" onPress={onRefresh}>
+              <Text className="text-white text-sm font-semibold">Refresh</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -588,116 +541,102 @@ const shareOfflineOrders = async () => {
             const isExpanded = expandedOrder === order._id;
             const finalAmount = getOrderTotal(order);
             
-            console.log(`🎯 Rendering order ${order.orderId}:`, {
-              finalAmount,
-              calculatedTotal: order.calculatedTotal,
-              priceSource: order.priceSource,
-              items: order.items?.map(item => ({
-                name: item.product?.name,
-                price: item.price, // This is the override price
-                productPrice: item.product?.price, // This should now match the override price
-                isOverridden: item.isPriceOverridden,
-              }))
-            });
-            
             return (
               <TouchableOpacity
                 key={order._id}
-                style={styles.orderCard}
+                className="bg-white rounded-2xl p-4 mb-4 border border-gray-300 shadow-sm"
                 onPress={() => setExpandedOrder(isExpanded ? null : order._id)}
                 activeOpacity={0.7}
               >
                 {/* CARD HEADER */}
-                <View style={styles.orderHeader}>
-                  <View style={styles.orderIdRow}>
-                    <Text style={styles.orderIdLarge}>Order #{order.orderId}</Text>
-                    <Text style={styles.orderDate}>
+                <View className="flex-row justify-between items-start mb-3">
+                  <View className="flex-1 mr-3">
+                    <Text className="text-base font-bold text-gray-900 mb-1">Order #{order.orderId}</Text>
+                    <Text className="text-sm text-gray-500">
                       {new Date(order.createdAt).toLocaleDateString("en-IN")}
                     </Text>
-                    <Text style={[
-                      styles.orderTypeBadge,
-                      order.orderType === 'offline' ? styles.offlineBadge : styles.onlineBadge
-                    ]}>
+                    <Text className={`text-xs font-semibold px-1.5 py-0.5 rounded mt-0.5 self-start ${
+                      order.orderType === 'offline' 
+                        ? 'text-blue-500 bg-blue-50' 
+                        : 'text-green-500 bg-green-50'
+                    }`}>
                       {order.orderType === 'offline' ? 'Offline' : 'Online'}
                     </Text>
                   </View>
                   <View
-                    style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor: getStatusBackgroundColor(order.orderStatus),
-                        borderColor: getStatusColor(order.orderStatus),
-                      },
-                    ]}
+                    className="flex-row items-center gap-1.5 py-1.5 px-3 rounded-full border min-w-25 justify-center"
+                    style={{
+                      backgroundColor: getStatusBackgroundColor(order.orderStatus),
+                      borderColor: getStatusColor(order.orderStatus),
+                    }}
                   >
                     {getStatusIcon(order.orderStatus)}
-                    <Text style={[styles.statusText, { color: getStatusColor(order.orderStatus) }]}>
+                    <Text className="text-xs font-bold" style={{ color: getStatusColor(order.orderStatus) }}>
                       {getStatusText(order.orderStatus)}
                     </Text>
                   </View>
                 </View>
 
                 {/* CUSTOMER */}
-                <View style={styles.customerSection}>
-                  <Text style={styles.sectionTitleSmall}>Customer:</Text>
-                  <Text style={styles.itemText}>
+                <View className="mb-3">
+                  <Text className="text-sm font-semibold text-gray-900 mb-1.5">Customer:</Text>
+                  <Text className="text-sm text-gray-500 mb-1">
                     {order.customerName ||
                       order.customer?.personalInfo?.fullName ||
                       order.customer?.fullName ||
                       (order.orderType === 'offline' ? "Walk-in Customer" : "N/A")}
                   </Text>
-                  <Text style={styles.itemText}>
+                  <Text className="text-sm text-gray-500">
                     {order.customer?.personalInfo?.phone || order.customer?.phone || order.customerPhone || "N/A"}
                   </Text>
                 </View>
 
                 {/* DISTANCE */}
                 {order.distance && (
-                  <View style={styles.distanceSection}>
+                  <View className="flex-row items-center mb-2 gap-1.5">
                     <MaterialIcons name="location-pin" size={14} color={Colors.light.accent} />
-                    <Text style={styles.distanceText}>{order.distance} km away</Text>
+                    <Text className="text-sm text-blue-500 font-semibold">{order.distance} km away</Text>
                   </View>
                 )}
 
                 {/* ITEMS SUMMARY */}
-                <View style={styles.itemsSection}>
-                  <Text style={styles.sectionTitleSmall}>Items:</Text>
+                <View className="mb-3">
+                  <Text className="text-sm font-semibold text-gray-900 mb-1.5">Items:</Text>
                   {order.items?.slice(0, 2).map((it, i) => (
-                    <View key={i} style={styles.itemRow}>
-                      <Text style={styles.itemText}>
+                    <View key={i} className="flex-row justify-between items-center mb-1">
+                      <Text className="text-sm text-gray-500">
                         {it.product?.name || it.name} - {it.quantity}x {it.unit || "unit"}
                       </Text>
-                      <View style={styles.priceContainer}>
-                        <Text style={styles.itemPriceText}>
-                          {/* 🔥 This now shows the override price consistently */}
+                      <View className="flex-row items-center gap-1">
+                        <Text className="text-sm font-semibold text-blue-500">
                           ₹{getItemPrice(it).toFixed(2)}
                         </Text>
                         {isPriceOverridden(it) && (
-                          <View style={styles.overrideBadgeSmall}>
+                          <View className="flex-row items-center bg-blue-500 px-1 py-0.25 rounded gap-0.25">
                             <Ionicons name="pricetag" size={8} color="#FFF" />
-                            <Text style={styles.overrideTextSmall}>Custom</Text>
+                            <Text className="text-xxs text-white font-semibold">Custom</Text>
                           </View>
                         )}
                       </View>
                     </View>
                   ))}
                   {order.items?.length > 2 && (
-                    <Text style={styles.moreItemsText}>+{order.items.length - 2} more</Text>
+                    <Text className="text-sm text-gray-500 italic">+{order.items.length - 2} more</Text>
                   )}
                 </View>
 
                 {/* BILLING */}
-                <View style={styles.billingSection}>
-                  <View style={styles.billingRow}>
-                    <Text style={styles.billingLabel}>Total Amount:</Text>
-                    <Text style={styles.totalValue}>₹{finalAmount.toFixed(2)}</Text>
+                <View className="mb-3">
+                  <View className="flex-row justify-between items-center mb-1">
+                    <Text className="text-sm text-gray-500">Total Amount:</Text>
+                    <Text className="text-base font-bold text-blue-500">₹{finalAmount.toFixed(2)}</Text>
                   </View>
                 </View>
 
                 {/* DELIVERY */}
-                <View style={styles.deliverySection}>
+                <View className="flex-row items-center mb-3 gap-1.5">
                   <MaterialIcons name="schedule" size={14} color={Colors.light.textSecondary} />
-                  <Text style={styles.deliveryLabel}>
+                  <Text className="text-sm text-gray-500">
                     Delivery: {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("en-IN") : "N/A"} at{" "}
                     {order.deliveryTime || "N/A"}
                   </Text>
@@ -705,10 +644,10 @@ const shareOfflineOrders = async () => {
 
                 {/* EXPAND BUTTON */}
                 <TouchableOpacity
-                  style={styles.expandButton}
+                  className="flex-row items-center justify-center py-2.5 border-t border-gray-300"
                   onPress={() => setExpandedOrder(isExpanded ? null : order._id)}
                 >
-                  <Text style={styles.expandButtonText}>{isExpanded ? "Show Less" : "Show More Details"}</Text>
+                  <Text className="text-sm font-semibold text-blue-500 mr-2">{isExpanded ? "Show Less" : "Show More Details"}</Text>
                   <MaterialIcons
                     name={isExpanded ? "expand-less" : "expand-more"}
                     size={20}
@@ -718,27 +657,26 @@ const shareOfflineOrders = async () => {
 
                 {/* EXPANDED CONTENT */}
                 {isExpanded && (
-                  <View style={styles.expandedContent}>
+                  <View className="mt-3 pt-3 border-t border-gray-300">
                     {/* ALL ITEMS */}
-                    <View style={styles.detailedItemsSection}>
-                      <Text style={styles.sectionTitleSmall}>All Items:</Text>
+                    <View className="mb-4">
+                      <Text className="text-sm font-semibold text-gray-900 mb-1.5">All Items:</Text>
                       {order.items?.map((it, i) => (
-                        <View key={i} style={styles.detailedItemRow}>
-                          <View style={styles.detailedItemInfo}>
-                            <Text style={styles.detailedItemName}>{it.product?.name || it.name}</Text>
+                        <View key={i} className="flex-row justify-between items-start mb-3 pl-2">
+                          <View className="flex-1">
+                            <Text className="text-sm text-gray-900 font-semibold mb-1">{it.product?.name || it.name}</Text>
                             {isPriceOverridden(it) && (
-                              <View style={styles.overrideBadge}>
+                              <View className="flex-row items-center bg-blue-500 px-1.5 py-0.5 rounded gap-0.5 self-start">
                                 <Ionicons name="pricetag" size={10} color="#FFF" />
-                                <Text style={styles.overrideText}>Custom Price</Text>
+                                <Text className="text-xxs text-white font-semibold">Custom Price</Text>
                               </View>
                             )}
                           </View>
-                          <View style={styles.detailedItemPricing}>
-                            <Text style={styles.detailedItemText}>
-                              {/* 🔥 This now shows the override price consistently */}
+                          <View className="items-end">
+                            <Text className="text-sm text-gray-500 mb-0.5">
                               {it.quantity}x {it.unit || "unit"} @ ₹{getItemPrice(it).toFixed(2)}
                             </Text>
-                            <Text style={styles.detailedItemTotal}>
+                            <Text className="text-sm font-bold text-blue-500">
                               ₹{getItemTotal(it).toFixed(2)}
                             </Text>
                           </View>
@@ -747,78 +685,76 @@ const shareOfflineOrders = async () => {
                     </View>
 
                     {/* BILLING DETAIL */}
-                    <View style={styles.detailedBillingSection}>
-                      <View style={styles.billingRow}>
-                        <Text style={styles.billingLabel}>Subtotal:</Text>
-                        <Text style={styles.billingValue}>
+                    <View className="bg-blue-50 rounded-lg p-3 mb-4 border border-blue-200">
+                      <View className="flex-row justify-between items-center mb-1">
+                        <Text className="text-sm text-gray-500">Subtotal:</Text>
+                        <Text className="text-sm text-gray-900">
                           ₹{(order.calculatedSubtotal || order.totalAmount || 0).toFixed(2)}
                         </Text>
                       </View>
                       {order.discount > 0 && (
-                        <View style={styles.billingRow}>
-                          <Text style={styles.billingLabel}>Discount:</Text>
-                          <Text style={styles.discountText}>-₹{order.discount.toFixed(2)}</Text>
+                        <View className="flex-row justify-between items-center mb-1">
+                          <Text className="text-sm text-gray-500">Discount:</Text>
+                          <Text className="text-sm text-green-500 font-semibold">-₹{order.discount.toFixed(2)}</Text>
                         </View>
                       )}
-                      <View style={[styles.billingRow, styles.totalRow]}>
-                        <Text style={styles.totalLabel}>Total Amount:</Text>
-                        <Text style={styles.totalValue}>₹{finalAmount.toFixed(2)}</Text>
+                      <View className="flex-row justify-between items-center pt-2 mt-1 border-t border-blue-200">
+                        <Text className="text-base font-semibold text-gray-900">Total Amount:</Text>
+                        <Text className="text-base font-bold text-blue-500">₹{finalAmount.toFixed(2)}</Text>
                       </View>
                     </View>
 
                     {/* ADDRESS */}
                     {order.deliveryAddress && (
-                      <View style={styles.addressSection}>
-                        <Text style={styles.sectionTitleSmall}>Delivery Address:</Text>
-                        <Text style={styles.addressText}>{order.deliveryAddress.addressLine1}</Text>
+                      <View className="mb-4">
+                        <Text className="text-sm font-semibold text-gray-900 mb-1.5">Delivery Address:</Text>
+                        <Text className="text-sm text-gray-500 mb-0.5">{order.deliveryAddress.addressLine1}</Text>
                         {order.deliveryAddress.addressLine2 && (
-                          <Text style={styles.addressText}>{order.deliveryAddress.addressLine2}</Text>
+                          <Text className="text-sm text-gray-500 mb-0.5">{order.deliveryAddress.addressLine2}</Text>
                         )}
-                        <Text style={styles.addressText}>
+                        <Text className="text-sm text-gray-500 mb-0.5">
                           {order.deliveryAddress.city}, {order.deliveryAddress.state} - {order.deliveryAddress.pincode}
                         </Text>
                         {order.deliveryAddress.landmark && (
-                          <Text style={styles.addressText}>Landmark: {order.deliveryAddress.landmark}</Text>
+                          <Text className="text-sm text-gray-500">Landmark: {order.deliveryAddress.landmark}</Text>
                         )}
                       </View>
                     )}
 
                     {/* PAYMENT */}
-                    <View style={styles.paymentSection}>
-                      <Text style={styles.sectionTitleSmall}>Payment:</Text>
-                      <Text style={styles.paymentText}>Method: {order.paymentMethod || "N/A"}</Text>
-                      <Text style={styles.paymentText}>Status: {order.paymentStatus || "N/A"}</Text>
-                      <Text style={styles.paymentText}>
+                    <View className="mb-4">
+                      <Text className="text-sm font-semibold text-gray-900 mb-1.5">Payment:</Text>
+                      <Text className="text-sm text-gray-500 mb-0.5">Method: {order.paymentMethod || "N/A"}</Text>
+                      <Text className="text-sm text-gray-500 mb-0.5">Status: {order.paymentStatus || "N/A"}</Text>
+                      <Text className="text-sm text-gray-500">
                         Type: {order.orderType === 'offline' ? 'Offline Order' : 'Online Order'}
                       </Text>
                     </View>
 
                     {/* INSTRUCTIONS */}
                     {order.specialInstructions && (
-                      <View style={styles.instructionsSection}>
-                        <Text style={styles.sectionTitleSmall}>Instructions:</Text>
-                        <Text style={styles.instructionsText}>{order.specialInstructions}</Text>
+                      <View className="mb-4">
+                        <Text className="text-sm font-semibold text-gray-900 mb-1.5">Instructions:</Text>
+                        <Text className="text-sm text-gray-500 italic">{order.specialInstructions}</Text>
                       </View>
                     )}
 
                     {/* PROGRESS BAR */}
                     {activeFilter !== "offline" && order.orderStatus !== "cancelled" && (
-                      <View style={styles.progressContainer}>
-                        <Text style={styles.sectionTitleSmall}>Order Progress:</Text>
-                        <View style={styles.progressBar}>
+                      <View className="mt-2">
+                        <Text className="text-sm font-semibold text-gray-900 mb-1.5">Order Progress:</Text>
+                        <View className="flex-row items-center mb-1 mt-2">
                           {statusOrder.map((st, idx) => {
                             const cur = statusOrder.indexOf(order.orderStatus);
                             const done = idx <= cur;
                             const current = idx === cur;
                             const clickable = idx >= cur;
                             return (
-                              <View key={st} style={styles.progressStep}>
+                              <View key={st} className="flex-row items-center flex-1">
                                 <TouchableOpacity
-                                  style={[
-                                    styles.progressDot,
-                                    done && styles.progressDotCompleted,
-                                    current && styles.progressDotCurrent,
-                                  ]}
+                                  className={`w-6 h-6 rounded-full items-center justify-center ${
+                                    done ? "bg-blue-500" : "bg-gray-300"
+                                  } ${current ? "border-2 border-white" : ""}`}
                                   onPress={() => clickable && handleStatusChange(order.orderId, st)}
                                   disabled={!clickable}
                                 >
@@ -826,14 +762,14 @@ const shareOfflineOrders = async () => {
                                 </TouchableOpacity>
                                 {idx < statusOrder.length - 1 && (
                                   <View
-                                    style={[styles.progressLine, done && styles.progressLineCompleted]}
+                                    className={`flex-1 h-0.5 ${done ? "bg-blue-500" : "bg-gray-300"}`}
                                   />
                                 )}
                               </View>
                             );
                           })}
                         </View>
-                        <View style={styles.progressLabels}>
+                        <View className="flex-row justify-between">
                           {statusOrder.map((st, idx) => {
                             const cur = statusOrder.indexOf(order.orderStatus);
                             const done = idx <= cur;
@@ -841,11 +777,9 @@ const shareOfflineOrders = async () => {
                             return (
                               <Text
                                 key={st}
-                                style={[
-                                  styles.progressLabel,
-                                  done && styles.progressLabelCompleted,
-                                  current && styles.progressLabelCurrent,
-                                ]}
+                                className={`text-xxs text-center flex-1 ${
+                                  done ? "text-blue-500 font-semibold" : "text-gray-500"
+                                } ${current ? "font-bold" : ""}`}
                               >
                                 {getStatusText(st)}
                               </Text>
@@ -856,18 +790,18 @@ const shareOfflineOrders = async () => {
                     )}
 
                     {/* ADMIN ACTIONS */}
-                    <View style={styles.adminActions}>
-                      <TouchableOpacity style={styles.actionButton} onPress={() => shareOrderInvoice(order.orderId)}>
+                    <View className="flex-row justify-between mt-3 pt-3 border-t border-gray-300">
+                      <TouchableOpacity className="flex-row items-center bg-blue-50 px-4 py-2.5 rounded-lg flex-1 mr-2 justify-center" onPress={() => shareOrderInvoice(order.orderId)}>
                         <MaterialIcons name="share" size={18} color={Colors.light.accent} />
-                        <Text style={styles.actionButtonText}>Share Invoice</Text>
+                        <Text className="ml-1.5 text-sm font-semibold text-blue-500">Share Invoice</Text>
                       </TouchableOpacity>
                       {order.orderStatus !== "cancelled" && order.orderStatus !== "delivered" && (
                         <TouchableOpacity
-                          style={[styles.actionButton, styles.cancelButton]}
+                          className="flex-row items-center bg-red-50 px-4 py-2.5 rounded-lg flex-1 ml-2 justify-center"
                           onPress={() => cancelOrder(order.orderId)}
                         >
                           <MaterialIcons name="cancel" size={18} color="#F44336" />
-                          <Text style={[styles.actionButtonText, { color: "#F44336" }]}>Cancel Order</Text>
+                          <Text className="ml-1.5 text-sm font-semibold text-red-500">Cancel Order</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -879,264 +813,10 @@ const shareOfflineOrders = async () => {
         )}
       </ScrollView>
 
-      {/* Floating Scanner Button - Now navigates directly to offline order page with auto-open scanner */}
-      <TouchableOpacity style={styles.floatingScannerButton} onPress={navigateToOfflineOrder}>
-        <Ionicons name="barcode" size={24} color="#FFF" />
+      {/* Floating Scanner Button */}
+      <TouchableOpacity className="absolute bottom-5 right-5 bg-blue-500 w-15 h-15 rounded-full items-center justify-center shadow-lg" onPress={navigateToOfflineOrder}>
+        <Ionicons name="barcode" size={40} color="#FFF" />
       </TouchableOpacity>
     </View>
   );
 }
-
-/* ---------- STYLES ---------- */
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.light.background },
-  centered: { justifyContent: "center", alignItems: "center" },
-  loadingText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary },
-  
-  /* PROFESSIONAL HEADER */
-  professionalHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: Colors.light.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
-    minHeight: 72,
-    justifyContent: 'center',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 40,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  shareButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(33, 150, 243, 0.2)',
-  },
-
-  filterContainer: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 16,
-    backgroundColor: "#FFF",
-    borderRadius: 12,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  filterButton: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 8 },
-  filterButtonActive: { backgroundColor: Colors.light.accent },
-  filterButtonText: { fontSize: 14, fontWeight: "600", color: Colors.light.textSecondary },
-  filterButtonTextActive: { color: "#FFF" },
-  scrollView: { flex: 1 },
-  scrollContent: { 
-    paddingHorizontal: 16, 
-    paddingTop: 8,
-    paddingBottom: 100 
-  },
-  loadingContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
-  emptyContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
-  emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: "center" },
-  refreshButton: { marginTop: 16, backgroundColor: Colors.light.accent, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  refreshButtonText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
-  orderCard: {
-    backgroundColor: "#FFF",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-
-  orderHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
-  orderIdRow: { flex: 1, marginRight: 12 },
-  orderIdLarge: { fontSize: 16, fontWeight: "700", color: Colors.light.text, marginBottom: 4 },
-  orderDate: { fontSize: 13, color: Colors.light.textSecondary },
-  orderTypeBadge: {
-    fontSize: 10,
-    fontWeight: '600',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-    marginTop: 2,
-  },
-  offlineBadge: {
-    color: Colors.light.accent,
-    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-  },
-  onlineBadge: {
-    color: '#4CAF50',
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    minWidth: 100,
-    justifyContent: "center",
-  },
-  statusText: { fontSize: 12, fontWeight: "700" },
-  customerSection: { marginBottom: 12 },
-  itemsSection: { marginBottom: 12 },
-  sectionTitleSmall: { fontSize: 14, fontWeight: "600", color: Colors.light.text, marginBottom: 6 },
-  itemText: { fontSize: 14, color: Colors.light.textSecondary, marginBottom: 4 },
-  itemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  priceContainer: { flexDirection: "row", alignItems: "center", gap: 4 },
-  itemPriceText: { fontSize: 14, fontWeight: "600", color: Colors.light.accent },
-  overrideBadgeSmall: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
-    gap: 1,
-  },
-  overrideTextSmall: { fontSize: 7, color: "#FFF", fontWeight: "600" },
-  moreItemsText: { fontSize: 12, color: Colors.light.textSecondary, fontStyle: "italic" },
-  billingSection: { marginBottom: 12 },
-  billingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  billingLabel: { fontSize: 14, color: Colors.light.textSecondary },
-  billingValue: { fontSize: 14, color: Colors.light.text },
-  totalRow: { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 8, marginTop: 4 },
-  totalLabel: { fontSize: 16, fontWeight: "600", color: Colors.light.text },
-  totalValue: { fontSize: 16, fontWeight: "700", color: Colors.light.accent },
-  discountText: { fontSize: 14, color: "#4CAF50", fontWeight: "600" },
-  deliverySection: { flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 6 },
-  deliveryLabel: { fontSize: 14, color: Colors.light.textSecondary },
-  expandButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
-  },
-  expandButtonText: { fontSize: 14, fontWeight: "600", color: Colors.light.accent, marginRight: 8 },
-  expandedContent: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.light.border },
-  detailedItemsSection: { marginBottom: 16 },
-  detailedItemRow: { 
-    flexDirection: "row", 
-    justifyContent: "space-between", 
-    alignItems: "flex-start", 
-    marginBottom: 12, 
-    paddingLeft: 8 
-  },
-  detailedItemInfo: { flex: 1 },
-  detailedItemName: { fontSize: 14, color: Colors.light.text, marginBottom: 4, fontWeight: "600" },
-  detailedItemPricing: { alignItems: "flex-end" },
-  detailedItemText: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
-  detailedItemTotal: { fontSize: 14, fontWeight: "700", color: Colors.light.accent },
-  overrideBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    gap: 2,
-    alignSelf: 'flex-start',
-  },
-  overrideText: { fontSize: 8, color: "#FFF", fontWeight: "600" },
-  detailedBillingSection: {
-    backgroundColor: "rgba(33, 150, 243, 0.05)",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "rgba(33, 150, 243, 0.1)",
-  },
-  addressSection: { marginBottom: 16 },
-  addressText: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
-  paymentSection: { marginBottom: 16 },
-  paymentText: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
-  instructionsSection: { marginBottom: 16 },
-  instructionsText: { fontSize: 13, color: Colors.light.textSecondary, fontStyle: "italic" },
-  progressContainer: { marginTop: 8 },
-  progressBar: { flexDirection: "row", alignItems: "center", marginBottom: 4, marginTop: 8 },
-  progressStep: { flexDirection: "row", alignItems: "center", flex: 1 },
-  progressDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.light.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  progressDotCompleted: { backgroundColor: Colors.light.accent },
-  progressDotCurrent: { backgroundColor: Colors.light.accent, borderWidth: 2, borderColor: "#FFF" },
-  progressLine: { flex: 1, height: 2, backgroundColor: Colors.light.border, marginHorizontal: 4 },
-  progressLineCompleted: { backgroundColor: Colors.light.accent },
-  progressLabels: { flexDirection: "row", justifyContent: "space-between" },
-  progressLabel: { fontSize: 10, color: Colors.light.textSecondary, textAlign: "center", flex: 1 },
-  progressLabelCompleted: { color: Colors.light.accent, fontWeight: "600" },
-  progressLabelCurrent: { color: Colors.light.accent, fontWeight: "700" },
-  adminActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(33, 150, 243, 0.1)",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    flex: 1,
-    marginRight: 8,
-    justifyContent: "center",
-  },
-  cancelButton: { backgroundColor: "rgba(244, 67, 54, 0.1)", marginRight: 0, marginLeft: 8 },
-  actionButtonText: { marginLeft: 6, fontSize: 14, fontWeight: "600", color: Colors.light.accent },
-  distanceSection: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 6 },
-  distanceText: { fontSize: 13, color: Colors.light.accent, fontWeight: "600" },
-
-  floatingScannerButton: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    backgroundColor: Colors.light.accent,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-});

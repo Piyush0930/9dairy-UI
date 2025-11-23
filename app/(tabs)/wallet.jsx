@@ -1,7 +1,6 @@
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
 } from "react-native";
@@ -13,78 +12,78 @@ export default function WalletScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Dairy Nine Wallet</Text>
+    <View className="flex-1 bg-white" style={{ paddingTop: insets.top }}>
+      <View className="px-4 py-4 border-b border-gray-200 bg-white">
+        <Text className="text-2xl font-bold text-gray-900">Dairy Nine Wallet</Text>
       </View>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        className="flex-1"
+        contentContainerClassName="p-4"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.balanceCard}>
-          <View style={styles.walletIconContainer}>
+        <View className="bg-blue-500 rounded-2xl p-8 items-center mb-6 shadow-lg shadow-black/15">
+          <View className="w-18 h-18 rounded-full bg-white/20 justify-center items-center mb-4">
             <Ionicons name="wallet-outline" size={32} color="#FFFFFF" />
           </View>
-          <Text style={styles.balanceLabel}>Current Balance</Text>
-          <Text style={styles.balanceAmount}>₹300</Text>
-          <View style={styles.balanceActions}>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>Add Money</Text>
+          <Text className="text-sm text-white/80 mb-2 font-medium">Current Balance</Text>
+          <Text className="text-5xl font-bold text-white mb-6">₹300</Text>
+          <View className="flex-row gap-3 w-full">
+            <TouchableOpacity className="flex-1 bg-white py-3 rounded-xl items-center">
+              <Text className="text-blue-500 text-base font-bold">Add Money</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionButton, styles.actionButtonSecondary]}>
-              <Text style={styles.actionButtonTextSecondary}>Withdraw</Text>
+            <TouchableOpacity className="flex-1 bg-white/20 border border-white py-3 rounded-xl items-center">
+              <Text className="text-white text-base font-bold">Withdraw</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.comingSoonCard}>
-          <View style={styles.comingSoonIconContainer}>
+        <View className="bg-white rounded-xl p-8 items-center mb-6 border-2 border-blue-100 border-dashed">
+          <View className="mb-4">
             <MaterialIcons name="trending-up" size={48} color="#4FC3F7" />
           </View>
-          <Text style={styles.comingSoonTitle}>Coming Soon</Text>
-          <Text style={styles.comingSoonMessage}>
+          <Text className="text-2xl font-bold text-gray-900 mb-3">Coming Soon</Text>
+          <Text className="text-sm text-gray-600 text-center leading-5">
             Complete wallet functionality with transactions, offers, and rewards will be available soon.
           </Text>
         </View>
 
-        <View style={styles.featuresContainer}>
-          <Text style={styles.featuresTitle}>Upcoming Features</Text>
+        <View className="mb-6">
+          <Text className="text-lg font-bold text-gray-900 mb-4">Upcoming Features</Text>
           
-          <View style={styles.featureCard}>
-            <View style={styles.featureIconContainer}>
+          <View className="flex-row items-center bg-white p-4 rounded-xl mb-3 border border-gray-200">
+            <View className="w-12 h-12 rounded-xl bg-gray-100 justify-center items-center mr-3">
               <MaterialIcons name="history" size={24} color={Colors.light.tint} />
             </View>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Transaction History</Text>
-              <Text style={styles.featureDescription}>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-gray-900 mb-1">Transaction History</Text>
+              <Text className="text-sm text-gray-600">
                 Track all your wallet transactions
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color="#BDBDBD" />
           </View>
 
-          <View style={styles.featureCard}>
-            <View style={styles.featureIconContainer}>
-              <Text style={styles.featureEmoji}>🎁</Text>
+          <View className="flex-row items-center bg-white p-4 rounded-xl mb-3 border border-gray-200">
+            <View className="w-12 h-12 rounded-xl bg-gray-100 justify-center items-center mr-3">
+              <Text className="text-2xl">🎁</Text>
             </View>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Cashback & Offers</Text>
-              <Text style={styles.featureDescription}>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-gray-900 mb-1">Cashback & Offers</Text>
+              <Text className="text-sm text-gray-600">
                 Earn rewards on every purchase
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color="#BDBDBD" />
           </View>
 
-          <View style={styles.featureCard}>
-            <View style={styles.featureIconContainer}>
-              <Text style={styles.featureEmoji}>🔒</Text>
+          <View className="flex-row items-center bg-white p-4 rounded-xl mb-3 border border-gray-200">
+            <View className="w-12 h-12 rounded-xl bg-gray-100 justify-center items-center mr-3">
+              <Text className="text-2xl">🔒</Text>
             </View>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Secure Payments</Text>
-              <Text style={styles.featureDescription}>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-gray-900 mb-1">Secure Payments</Text>
+              <Text className="text-sm text-gray-600">
                 Bank-grade security for your money
               </Text>
             </View>
@@ -92,165 +91,8 @@ export default function WalletScreen() {
           </View>
         </View>
 
-        <View style={styles.bottomPadding} />
+        <View className="h-15" />
       </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-    backgroundColor: Colors.light.white,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  balanceCard: {
-    backgroundColor: Colors.light.tint,
-    borderRadius: 20,
-    padding: 32,
-    alignItems: "center",
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  walletIconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  balanceLabel: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.8)",
-    marginBottom: 8,
-    fontWeight: "500",
-  },
-  balanceAmount: {
-    fontSize: 48,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    marginBottom: 24,
-  },
-  balanceActions: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-  },
-  actionButton: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  actionButtonSecondary: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderWidth: 1,
-    borderColor: "#FFFFFF",
-  },
-  actionButtonText: {
-    color: Colors.light.tint,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  actionButtonTextSecondary: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  comingSoonCard: {
-    backgroundColor: "#FFF",
-    borderRadius: 16,
-    padding: 32,
-    alignItems: "center",
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: "#E3F2FD",
-    borderStyle: "dashed",
-  },
-  comingSoonIconContainer: {
-    marginBottom: 16,
-  },
-  comingSoonTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: Colors.light.text,
-    marginBottom: 12,
-  },
-  comingSoonMessage: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  featuresContainer: {
-    marginBottom: 24,
-  },
-  featuresTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.light.text,
-    marginBottom: 16,
-  },
-  featureCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  featureIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.backgroundLight,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  featureEmoji: {
-    fontSize: 24,
-  },
-  featureContent: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  featureDescription: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-  },
-  bottomPadding: {
-    height: 60,
-  },
-});

@@ -12,7 +12,6 @@ import {
   Modal,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -230,59 +229,59 @@ export default function ProductsManagement() {
     
     return (
       <TouchableOpacity 
-        style={styles.productCard}
+        className="bg-white rounded-xl p-4 mb-3 border border-gray-200 flex-row items-start shadow-sm min-h-[140px]"
         onPress={() => openProductDetail(item)}
         activeOpacity={0.7}
       >
         {/* Product Image */}
-        <View style={styles.imageContainer}>
+        <View className="relative mr-4">
           <Image
             source={{ 
               uri: item.image || 'https://via.placeholder.com/100'
             }}
-            style={styles.productImage}
+            className="w-20 h-20 rounded-xl bg-gray-100"
             resizeMode="cover"
           />
           {/* Featured Badge */}
           {item.isFeatured && (
-            <View style={styles.featuredBadge}>
+            <View className="absolute -top-1.5 -left-1.5 bg-blue-500 rounded-lg w-5 h-5 justify-center items-center shadow">
               <Ionicons name="star" size={12} color="#FFF" />
             </View>
           )}
         </View>
 
         {/* Product Info */}
-        <View style={styles.productInfo}>
+        <View className="flex-1 mr-3">
           {/* Title Row */}
-          <View style={styles.titleRow}>
-            <Text style={styles.productName} numberOfLines={1}>
+          <View className="flex-row justify-between items-start mb-1.5">
+            <Text className="text-base font-bold text-gray-900 flex-1 mr-2 leading-5" numberOfLines={1}>
               {item.name}
             </Text>
           </View>
 
           {/* Category */}
-          <Text style={styles.productCategory} numberOfLines={1}>
+          <Text className="text-sm text-blue-500 font-semibold mb-2" numberOfLines={1}>
             {item.category?.name || 'Uncategorized'}
           </Text>
 
           {/* Description */}
           {item.description && (
-            <Text style={styles.productDescription} numberOfLines={2}>
+            <Text className="text-sm text-gray-500 leading-4.5 mb-3" numberOfLines={2}>
               {item.description}
             </Text>
           )}
 
           {/* Size Badge and Price Row */}
-          <View style={styles.bottomSection}>
-            <View style={styles.sizePriceRow}>
-              <View style={styles.unitBadge}>
-                <Text style={styles.unitText}>{unitDisplay}</Text>
+          <View className="mt-auto">
+            <View className="flex-row items-center justify-between">
+              <View className="bg-gray-100 px-2.5 py-1.5 rounded-lg">
+                <Text className="text-xs text-gray-500 font-semibold">{unitDisplay}</Text>
               </View>
-              <View style={styles.priceSection}>
-                <Text style={styles.productPrice}>₹{item.price}</Text>
+              <View className="flex-row items-center gap-2">
+                <Text className="text-lg font-bold text-blue-500">₹{item.price}</Text>
                 {discount && (
-                  <View style={styles.discountContainer}>
-                    <Text style={styles.discountBadge}>{discount}</Text>
+                  <View className="bg-green-50 px-2 py-1 rounded">
+                    <Text className="text-xs text-green-600 font-semibold">{discount}</Text>
                   </View>
                 )}
               </View>
@@ -292,10 +291,7 @@ export default function ProductsManagement() {
 
         {/* Minimal Add Button */}
         <TouchableOpacity
-          style={[
-            styles.addButton,
-            isAdding && styles.addButtonDisabled
-          ]}
+          className={`bg-blue-500 w-11 h-11 rounded-xl justify-center items-center shadow ${isAdding ? 'opacity-60' : ''}`}
           onPress={(e) => {
             e.stopPropagation();
             addProductToInventory(item);
@@ -330,56 +326,58 @@ export default function ProductsManagement() {
         presentationStyle="pageSheet"
         onRequestClose={closeProductDetail}
       >
-        <View style={styles.detailContainer}>
+        <View className="flex-1 bg-gray-50">
           {/* Header */}
-          <View style={styles.detailHeader}>
+          <View className="flex-row items-center justify-between px-5 py-4 bg-white border-b border-gray-200">
             <TouchableOpacity 
-              style={styles.backButton}
+              className="p-1"
               onPress={closeProductDetail}
             >
               <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
             </TouchableOpacity>
-            <Text style={styles.detailTitle}>Product Details</Text>
-            <View style={styles.headerSpacer} />
+            <Text className="text-lg font-bold text-gray-900">Product Details</Text>
+            <View className="w-8" />
           </View>
 
           <ScrollView 
-            style={styles.detailContent}
+            className="flex-1"
             showsVerticalScrollIndicator={false}
           >
             {/* Product Image */}
-            <View style={styles.detailImageContainer}>
+            <View className="relative h-64 bg-white">
               <Image
                 source={{ uri: product.image || 'https://via.placeholder.com/300' }}
-                style={styles.detailImage}
+                className="w-full h-full"
                 resizeMode="cover"
               />
               {product.isFeatured && (
-                <View style={styles.detailFeaturedBadge}>
+                <View className="absolute top-3 left-3 flex-row items-center bg-blue-500 px-2.5 py-1 rounded gap-1">
                   <Ionicons name="star" size={14} color="#FFF" />
-                  <Text style={styles.detailFeaturedText}>Featured</Text>
+                  <Text className="text-xs text-white font-semibold">Featured</Text>
                 </View>
               )}
             </View>
 
             {/* Product Info Card */}
-            <View style={styles.infoCard}>
+            <View className="bg-white m-4 rounded-xl p-5 shadow-sm">
               {/* Basic Info */}
-              <View style={styles.basicInfoSection}>
-                <Text style={styles.detailProductName}>{product.name}</Text>
-                <View style={styles.metaInfoRow}>
-                  <Text style={styles.detailCategory}>{product.category?.name || 'Uncategorized'}</Text>
-                  <Text style={styles.detailUnitText}>{unitDisplay}</Text>
+              <View className="mb-5">
+                <Text className="text-xl font-bold text-gray-900 mb-2 leading-6">{product.name}</Text>
+                <View className="flex-row justify-between items-center mb-4">
+                  <Text className="text-base text-blue-500 font-semibold">{product.category?.name || 'Uncategorized'}</Text>
+                  <Text className="text-sm text-gray-500 font-semibold bg-gray-100 px-2.5 py-1.5 rounded-lg">
+                    {unitDisplay}
+                  </Text>
                 </View>
                 
                 {/* Product Price */}
-                <View style={styles.priceSectionDetail}>
-                  <Text style={styles.priceLabel}>Product Price:</Text>
-                  <View style={styles.priceValueContainer}>
-                    <Text style={styles.productPriceDetail}>₹{product.price}</Text>
+                <View className="flex-row items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-100">
+                  <Text className="text-sm text-gray-500 font-semibold">Product Price:</Text>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-base font-bold text-blue-500">₹{product.price}</Text>
                     {discount && (
-                      <View style={styles.discountContainerDetail}>
-                        <Text style={styles.discountBadgeDetail}>{discount}</Text>
+                      <View className="bg-green-50 px-2 py-1 rounded">
+                        <Text className="text-xs text-green-600 font-semibold">{discount}</Text>
                       </View>
                     )}
                   </View>
@@ -388,37 +386,37 @@ export default function ProductsManagement() {
 
               {/* Description */}
               {product.description && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Description</Text>
-                  <Text style={styles.detailDescription}>{product.description}</Text>
+                <View className="mb-5 pb-4 border-b border-gray-200">
+                  <Text className="text-base font-bold text-gray-900 mb-2">Description</Text>
+                  <Text className="text-sm text-gray-900 leading-5">{product.description}</Text>
                 </View>
               )}
 
               {/* Product Details - 2x2 Grid */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Product Details</Text>
-                <View style={styles.detailsGrid}>
-                  <View style={styles.detailItem}>
+              <View className="mb-5 pb-4 border-b border-gray-200">
+                <Text className="text-base font-bold text-gray-900 mb-2">Product Details</Text>
+                <View className="flex-row flex-wrap gap-3">
+                  <View className="w-[48%] bg-gray-50 p-3 rounded-lg border border-gray-200 items-center">
                     <Ionicons name="cube-outline" size={16} color={Colors.light.textSecondary} />
-                    <Text style={styles.detailLabel}>Unit Type</Text>
-                    <Text style={styles.detailValue}>{product.unit}</Text>
+                    <Text className="text-xs text-gray-500 mt-1.5 mb-0.5 text-center">Unit Type</Text>
+                    <Text className="text-sm font-semibold text-gray-900 text-center">{product.unit}</Text>
                   </View>
                   {product.unitSize && (
-                    <View style={styles.detailItem}>
+                    <View className="w-[48%] bg-gray-50 p-3 rounded-lg border border-gray-200 items-center">
                       <Ionicons name="resize-outline" size={16} color={Colors.light.textSecondary} />
-                      <Text style={styles.detailLabel}>Size/Weight</Text>
-                      <Text style={styles.detailValue}>{product.unitSize}</Text>
+                      <Text className="text-xs text-gray-500 mt-1.5 mb-0.5 text-center">Size/Weight</Text>
+                      <Text className="text-sm font-semibold text-gray-900 text-center">{product.unitSize}</Text>
                     </View>
                   )}
-                  <View style={styles.detailItem}>
+                  <View className="w-[48%] bg-gray-50 p-3 rounded-lg border border-gray-200 items-center">
                     <Ionicons name="water-outline" size={16} color={Colors.light.textSecondary} />
-                    <Text style={styles.detailLabel}>Milk Type</Text>
-                    <Text style={styles.detailValue}>{product.milkType || 'Not specified'}</Text>
+                    <Text className="text-xs text-gray-500 mt-1.5 mb-0.5 text-center">Milk Type</Text>
+                    <Text className="text-sm font-semibold text-gray-900 text-center">{product.milkType || 'Not specified'}</Text>
                   </View>
-                  <View style={styles.detailItem}>
+                  <View className="w-[48%] bg-gray-50 p-3 rounded-lg border border-gray-200 items-center">
                     <Ionicons name="pricetag-outline" size={16} color={Colors.light.textSecondary} />
-                    <Text style={styles.detailLabel}>Category</Text>
-                    <Text style={styles.detailValue}>
+                    <Text className="text-xs text-gray-500 mt-1.5 mb-0.5 text-center">Category</Text>
+                    <Text className="text-sm font-semibold text-gray-900 text-center">
                       {product.category?.name || 'Uncategorized'}
                     </Text>
                   </View>
@@ -427,32 +425,32 @@ export default function ProductsManagement() {
 
               {/* Nutritional Information - 2x2 Grid */}
               {product.nutritionalInfo && Object.values(product.nutritionalInfo).some(val => val) && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Nutritional Information</Text>
-                  <Text style={styles.nutritionSubtitle}>(per 100{product.unit})</Text>
-                  <View style={styles.nutritionGrid}>
+                <View className="mb-5 pb-4 border-b border-gray-200">
+                  <Text className="text-base font-bold text-gray-900 mb-2">Nutritional Information</Text>
+                  <Text className="text-xs text-gray-500 mb-3 italic">(per 100{product.unit})</Text>
+                  <View className="flex-row flex-wrap gap-3">
                     {product.nutritionalInfo.calories && (
-                      <View style={styles.nutritionItem}>
-                        <Text style={styles.nutritionValue}>{product.nutritionalInfo.calories}</Text>
-                        <Text style={styles.nutritionLabel}>Calories</Text>
+                      <View className="w-[48%] items-center bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <Text className="text-sm font-bold text-blue-500 mb-1">{product.nutritionalInfo.calories}</Text>
+                        <Text className="text-xs text-gray-500 text-center">Calories</Text>
                       </View>
                     )}
                     {product.nutritionalInfo.protein && (
-                      <View style={styles.nutritionItem}>
-                        <Text style={styles.nutritionValue}>{product.nutritionalInfo.protein}g</Text>
-                        <Text style={styles.nutritionLabel}>Protein</Text>
+                      <View className="w-[48%] items-center bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <Text className="text-sm font-bold text-blue-500 mb-1">{product.nutritionalInfo.protein}g</Text>
+                        <Text className="text-xs text-gray-500 text-center">Protein</Text>
                       </View>
                     )}
                     {product.nutritionalInfo.fat && (
-                      <View style={styles.nutritionItem}>
-                        <Text style={styles.nutritionValue}>{product.nutritionalInfo.fat}g</Text>
-                        <Text style={styles.nutritionLabel}>Fat</Text>
+                      <View className="w-[48%] items-center bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <Text className="text-sm font-bold text-blue-500 mb-1">{product.nutritionalInfo.fat}g</Text>
+                        <Text className="text-xs text-gray-500 text-center">Fat</Text>
                       </View>
                     )}
                     {product.nutritionalInfo.carbohydrates && (
-                      <View style={styles.nutritionItem}>
-                        <Text style={styles.nutritionValue}>{product.nutritionalInfo.carbohydrates}g</Text>
-                        <Text style={styles.nutritionLabel}>Carbs</Text>
+                      <View className="w-[48%] items-center bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <Text className="text-sm font-bold text-blue-500 mb-1">{product.nutritionalInfo.carbohydrates}g</Text>
+                        <Text className="text-xs text-gray-500 text-center">Carbs</Text>
                       </View>
                     )}
                   </View>
@@ -461,12 +459,12 @@ export default function ProductsManagement() {
 
               {/* Tags */}
               {product.tags && product.tags.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Tags</Text>
-                  <View style={styles.tagsContainer}>
+                <View className="mb-5 pb-4 border-b border-gray-200">
+                  <Text className="text-base font-bold text-gray-900 mb-2">Tags</Text>
+                  <View className="flex-row flex-wrap gap-1.5">
                     {product.tags.map((tag, index) => (
-                      <View key={index} style={styles.tag}>
-                        <Text style={styles.tagText}>{tag}</Text>
+                      <View key={index} className="bg-gray-100 px-2.5 py-1 rounded-xl border border-gray-200">
+                        <Text className="text-xs text-gray-900">{tag}</Text>
                       </View>
                     ))}
                   </View>
@@ -476,12 +474,9 @@ export default function ProductsManagement() {
           </ScrollView>
 
           {/* Add to Inventory Button */}
-          <View style={styles.detailFooter}>
+          <View className="p-4 bg-white border-t border-gray-200">
             <TouchableOpacity
-              style={[
-                styles.detailAddButton,
-                isAdding && styles.detailAddButtonDisabled,
-              ]}
+              className={`bg-blue-500 flex-row items-center justify-center py-3.5 rounded-lg gap-2 ${isAdding ? 'bg-gray-400' : ''}`}
               onPress={() => addProductToInventory(product)}
               disabled={isAdding}
             >
@@ -490,7 +485,7 @@ export default function ProductsManagement() {
               ) : (
                 <>
                   <Ionicons name="add-circle-outline" size={20} color="#FFF" />
-                  <Text style={styles.detailAddButtonText}>
+                  <Text className="text-white font-semibold text-base">
                     Add to Inventory
                   </Text>
                 </>
@@ -503,12 +498,12 @@ export default function ProductsManagement() {
   };
 
   const EmptyList = () => (
-    <View style={styles.emptyContainer}>
+    <View className="items-center justify-center py-15">
       <MaterialIcons name="inventory-2" size={56} color={Colors.light.textSecondary} />
-      <Text style={styles.emptyText}>
+      <Text className="text-lg font-semibold text-gray-900 mt-4">
         {searchQuery ? 'No products found' : 'No products available'}
       </Text>
-      <Text style={styles.emptySubtext}>
+      <Text className="text-sm text-gray-500 mt-2 text-center px-8">
         {searchQuery
           ? 'Try a different search term'
           : 'Products will appear here once added by admin'}
@@ -521,9 +516,9 @@ export default function ProductsManagement() {
   // ──────────────────────────────────────────────────────────────
   if (authLoading || loading) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top + 16 }]}>
+      <View className={`flex-1 bg-gray-50 justify-center items-center pt-[${insets.top + 16}px]`}>
         <ActivityIndicator size="large" color={Colors.light.accent} />
-        <Text style={styles.loadingText}>Loading Products…</Text>
+        <Text className="mt-4 text-base text-gray-500">Loading Products…</Text>
       </View>
     );
   }
@@ -532,14 +527,14 @@ export default function ProductsManagement() {
   // MAIN RETURN (READ-ONLY PRODUCTS PAGE)
   // ──────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className={`flex-1 bg-gray-50 pt-[${insets.top}px]`}>
       {/* OPTIMIZED HEADER WITH SEARCH */}
-      <View style={styles.optimizedHeader}>
-        <Text style={styles.optimizedHeaderTitle}>Products</Text>
-        <View style={styles.optimizedSearchContainer}>
-          <Ionicons name="search" size={18} color={Colors.light.textSecondary} style={styles.optimizedSearchIcon} />
+      <View className="flex-row items-center justify-between px-5 py-4 bg-white border-b border-gray-200">
+        <Text className="text-2xl font-bold text-gray-900 flex-1">Products</Text>
+        <View className="flex-row items-center bg-gray-100 rounded-xl px-3 py-2 flex-1 ml-4">
+          <Ionicons name="search" size={18} color={Colors.light.textSecondary} className="mr-2" />
           <TextInput
-            style={styles.optimizedSearchInput}
+            className="flex-1 text-sm text-gray-900 p-0"
             placeholder="Search products..."
             placeholderTextColor={Colors.light.textSecondary}
             value={searchQuery}
@@ -549,17 +544,17 @@ export default function ProductsManagement() {
       </View>
 
       {/* IMPROVED STATS CARD */}
-      <View style={styles.statsCard}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{products.length}</Text>
-          <Text style={styles.statLabel}>Total Products</Text>
+      <View className="flex-row items-center bg-white mx-5 my-4 rounded-xl py-5 px-2.5 shadow-sm">
+        <View className="flex-1 items-center px-2.5">
+          <Text className="text-2xl font-bold text-blue-500 mb-1">{products.length}</Text>
+          <Text className="text-xs text-gray-500 font-semibold text-center">Total Products</Text>
         </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>
+        <View className="w-px h-10 bg-gray-100" />
+        <View className="flex-1 items-center px-2.5">
+          <Text className="text-2xl font-bold text-blue-500 mb-1">
             {products.filter(p => p.isFeatured).length}
           </Text>
-          <Text style={styles.statLabel}>Featured Products</Text>
+          <Text className="text-xs text-gray-500 font-semibold text-center">Featured Products</Text>
         </View>
       </View>
 
@@ -568,7 +563,7 @@ export default function ProductsManagement() {
         data={filteredProducts}
         renderItem={renderProduct}
         keyExtractor={(item) => item._id}
-        contentContainerStyle={styles.listContent}
+        className="px-5 pb-5"
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={<EmptyList />}
         refreshControl={
@@ -586,504 +581,3 @@ export default function ProductsManagement() {
     </View>
   );
 }
-
-// ──────────────────────────────────────────────────────────────
-// OPTIMIZED STYLES
-// ──────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-  },
-
-  // Optimized Header
-  optimizedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: Colors.light.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8',
-  },
-  optimizedHeaderTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.text,
-    flex: 1,
-  },
-  optimizedSearchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flex: 1,
-    marginLeft: 16,
-  },
-  optimizedSearchIcon: {
-    marginRight: 8,
-  },
-  optimizedSearchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.light.text,
-    padding: 0,
-  },
-
-  // Improved Stats Card
-  statsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.white,
-    marginHorizontal: 20,
-    marginVertical: 16,
-    borderRadius: 16,
-    paddingVertical: 20,
-    paddingHorizontal: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 10,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.accent,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: '#F0F0F0',
-  },
-
-  // Product List
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  productCard: {
-    backgroundColor: Colors.light.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    minHeight: 140,
-  },
-  imageContainer: {
-    position: 'relative',
-    marginRight: 16,
-  },
-  productImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
-  },
-  featuredBadge: {
-    position: 'absolute',
-    top: -6,
-    left: -6,
-    backgroundColor: Colors.light.accent,
-    borderRadius: 8,
-    width: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  productInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.light.text,
-    flex: 1,
-    marginRight: 8,
-    lineHeight: 20,
-  },
-  productCategory: {
-    fontSize: 14,
-    color: Colors.light.accent,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  productDescription: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  bottomSection: {
-    marginTop: 'auto',
-  },
-  sizePriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  unitBadge: {
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  unitText: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-  },
-  priceSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  productPrice: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.accent,
-  },
-  discountContainer: {
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  discountBadge: {
-    fontSize: 11,
-    color: '#4CAF50',
-    fontWeight: '600',
-  },
-
-  // Add Button
-  addButton: {
-    backgroundColor: Colors.light.accent,
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  addButtonDisabled: {
-    opacity: 0.6,
-  },
-
-  // Empty State
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginTop: 8,
-    textAlign: 'center',
-    paddingHorizontal: 32,
-  },
-
-  // Product Detail Styles
-  detailContainer: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  detailHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: Colors.light.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  backButton: {
-    padding: 4,
-  },
-  detailTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  headerSpacer: {
-    width: 32,
-  },
-  detailContent: {
-    flex: 1,
-  },
-  detailImageContainer: {
-    position: 'relative',
-    height: 250,
-    backgroundColor: Colors.light.white,
-  },
-  detailImage: {
-    width: '100%',
-    height: '100%',
-  },
-  detailFeaturedBadge: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
-  },
-  detailFeaturedText: {
-    fontSize: 11,
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  infoCard: {
-    backgroundColor: Colors.light.white,
-    margin: 16,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  basicInfoSection: {
-    marginBottom: 20,
-  },
-  detailProductName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 8,
-    lineHeight: 26,
-  },
-  metaInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  detailCategory: {
-    fontSize: 15,
-    color: Colors.light.accent,
-    fontWeight: '600',
-  },
-  detailUnitText: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  priceSectionDetail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F0F8FF',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E3F2FD',
-  },
-  priceLabel: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-  },
-  priceValueContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  productPriceDetail: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.light.accent,
-  },
-  discountContainerDetail: {
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  discountBadgeDetail: {
-    fontSize: 11,
-    color: '#4CAF50',
-    fontWeight: '600',
-  },
-
-  section: {
-    marginBottom: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  nutritionSubtitle: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  detailDescription: {
-    fontSize: 14,
-    color: Colors.light.text,
-    lineHeight: 20,
-  },
-  // 2x2 Grid Layouts
-  detailsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  detailItem: {
-    width: '48%',
-    backgroundColor: '#F9F9F9',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    alignItems: 'center',
-  },
-  detailLabel: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    marginTop: 6,
-    marginBottom: 2,
-    textAlign: 'center',
-  },
-  detailValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.light.text,
-    textAlign: 'center',
-  },
-  nutritionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  nutritionItem: {
-    width: '48%',
-    alignItems: 'center',
-    backgroundColor: '#F0F8FF',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E3F2FD',
-  },
-  nutritionValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.light.accent,
-    marginBottom: 4,
-  },
-  nutritionLabel: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  tag: {
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  tagText: {
-    fontSize: 11,
-    color: Colors.light.text,
-  },
-  detailFooter: {
-    padding: 16,
-    backgroundColor: Colors.light.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
-  },
-  detailAddButton: {
-    backgroundColor: Colors.light.accent,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 10,
-    gap: 8,
-  },
-  detailAddButtonDisabled: {
-    backgroundColor: '#CCCCCC',
-  },
-  detailAddButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-    fontSize: 15,
-  },
-});

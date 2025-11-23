@@ -9,7 +9,6 @@ import {
   Alert,
   Image,
   ScrollView,
-  StyleSheet,
   Switch,
   Text,
   TextInput,
@@ -136,13 +135,6 @@ export default function ProfileScreen() {
     }));
   };
 
-  // Profile stats data
-  const profileStats = [
-    { label: 'Total Orders', value: '1,247', icon: 'receipt-outline', color: '#3B82F6' },
-    { label: 'Products', value: '156', icon: 'cube-outline', color: '#10B981' },
-    { label: 'Retailers', value: '89', icon: 'storefront-outline', color: '#8B5CF6' },
-    { label: 'This Month', value: '₹2.4L', icon: 'trending-up-outline', color: '#F59E0B' },
-  ];
 
   // Menu items
   const menuItems = [
@@ -176,14 +168,14 @@ export default function ProfileScreen() {
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Profile</Text>
-          <Text style={styles.headerSubtitle}>Manage your account settings</Text>
+      <View className="flex-row justify-between items-center px-5 py-4 bg-white border-b border-gray-200">
+        <View className="flex-1">
+          <Text className="text-2xl font-bold text-gray-800 mb-0.5">Profile</Text>
+          <Text className="text-sm text-gray-500">Manage your account settings</Text>
         </View>
-        <TouchableOpacity style={styles.editButton} onPress={isEditing ? handleCancel : handleEdit}>
+        <TouchableOpacity className="p-2" onPress={isEditing ? handleCancel : handleEdit}>
           <Ionicons 
             name={isEditing ? "close-outline" : "create-outline"} 
             size={22} 
@@ -193,57 +185,60 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView 
-        style={styles.scrollView}
+        className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingBottom: 20 }}
       >
         {/* Profile Header Section */}
-        <View style={styles.profileSection}>
-          <View style={styles.profileHeader}>
+        <View className="bg-white mx-5 rounded-xl p-5 shadow-lg mt-4">
+          <View className="flex-row items-start">
             {/* Profile Image */}
-            <View style={styles.imageContainer}>
-              <View style={styles.profileImageWrapper}>
-                <View style={styles.profileImage}>
+            <View className="items-center mr-5">
+              <View className="relative mb-3">
+                <View className="w-24 h-24 rounded-full border-4 border-gray-100 overflow-hidden">
                   {profileImage ? (
-                    <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                    <Image source={{ uri: profileImage }} className="w-24 h-24" />
                   ) : (
-                    <View style={styles.defaultAvatar}>
-                      <Text style={styles.avatarText}>
+                    <View className="w-full h-full rounded-full bg-blue-500 justify-center items-center">
+                      <Text className="text-2xl font-bold text-white">
                         {profileData.name.split(' ').map(n => n[0]).join('')}
                       </Text>
                     </View>
                   )}
                 </View>
-                <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
+                <TouchableOpacity 
+                  className="absolute bottom-0 right-0 bg-blue-500 w-8 h-8 rounded-full justify-center items-center border-2 border-white"
+                  onPress={pickImage}
+                >
                   <Ionicons name="camera" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
               
               {!isEditing && (
-                <TouchableOpacity style={styles.changePhotoButton} onPress={pickImage}>
-                  <Text style={styles.changePhotoText}>Change Photo</Text>
+                <TouchableOpacity className="px-3 py-1.5 bg-gray-50 rounded-lg" onPress={pickImage}>
+                  <Text className="text-xs text-gray-500 font-semibold">Change Photo</Text>
                 </TouchableOpacity>
               )}
             </View>
 
             {/* Profile Info */}
-            <View style={styles.profileInfo}>
+            <View className="flex-1">
               {isEditing ? (
-                <View style={styles.editForm}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Full Name</Text>
+                <View className="gap-4">
+                  <View className="gap-1.5">
+                    <Text className="text-sm font-semibold text-gray-700">Full Name</Text>
                     <TextInput
-                      style={styles.textInput}
+                      className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                       value={editedData.name}
                       onChangeText={(text) => setEditedData({ ...editedData, name: text })}
                       placeholder="Enter your name"
                     />
                   </View>
                   
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Phone Number</Text>
+                  <View className="gap-1.5">
+                    <Text className="text-sm font-semibold text-gray-700">Phone Number</Text>
                     <TextInput
-                      style={styles.textInput}
+                      className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                       value={editedData.phone}
                       onChangeText={(text) => setEditedData({ ...editedData, phone: text })}
                       placeholder="Enter phone number"
@@ -252,10 +247,10 @@ export default function ProfileScreen() {
                     />
                   </View>
                   
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Email Address</Text>
+                  <View className="gap-1.5">
+                    <Text className="text-sm font-semibold text-gray-700">Email Address</Text>
                     <TextInput
-                      style={styles.textInput}
+                      className="border border-gray-300 rounded-lg p-3 text-base text-gray-800 bg-white"
                       value={editedData.email}
                       onChangeText={(text) => setEditedData({ ...editedData, email: text })}
                       placeholder="Enter email address"
@@ -266,21 +261,21 @@ export default function ProfileScreen() {
                 </View>
               ) : (
                 <>
-                  <Text style={styles.profileName}>{profileData.name}</Text>
-                  <Text style={styles.profileRole}>{profileData.role}</Text>
+                  <Text className="text-2xl font-bold text-gray-800 mb-1">{profileData.name}</Text>
+                  <Text className="text-base text-blue-500 font-semibold mb-4">{profileData.role}</Text>
                   
-                  <View style={styles.profileDetails}>
-                    <View style={styles.detailItem}>
+                  <View className="gap-2 mb-4">
+                    <View className="flex-row items-center gap-2">
                       <Ionicons name="call-outline" size={16} color="#64748B" />
-                      <Text style={styles.detailText}>{profileData.phone}</Text>
+                      <Text className="text-sm text-gray-500">{profileData.phone}</Text>
                     </View>
-                    <View style={styles.detailItem}>
+                    <View className="flex-row items-center gap-2">
                       <Ionicons name="mail-outline" size={16} color="#64748B" />
-                      <Text style={styles.detailText}>{profileData.email}</Text>
+                      <Text className="text-sm text-gray-500">{profileData.email}</Text>
                     </View>
-                    <View style={styles.detailItem}>
+                    <View className="flex-row items-center gap-2">
                       <Ionicons name="calendar-outline" size={16} color="#64748B" />
-                      <Text style={styles.detailText}>Joined {new Date(profileData.joinDate).toLocaleDateString('en-IN', { 
+                      <Text className="text-sm text-gray-500">Joined {new Date(profileData.joinDate).toLocaleDateString('en-IN', { 
                         year: 'numeric', 
                         month: 'long', 
                         day: 'numeric' 
@@ -288,9 +283,12 @@ export default function ProfileScreen() {
                     </View>
                   </View>
 
-                  <View style={styles.statusBadge}>
-                    <View style={[styles.statusDot, { backgroundColor: profileData.status === 'Active' ? '#10B981' : '#EF4444' }]} />
-                    <Text style={styles.statusText}>{profileData.status}</Text>
+                  <View className="flex-row items-center bg-green-50 px-3 py-1.5 rounded-full self-start">
+                    <View 
+                      className="w-2 h-2 rounded-full mr-1.5" 
+                      style={{ backgroundColor: profileData.status === 'Active' ? '#10B981' : '#EF4444' }} 
+                    />
+                    <Text className="text-xs text-green-800 font-semibold">{profileData.status}</Text>
                   </View>
                 </>
               )}
@@ -299,17 +297,17 @@ export default function ProfileScreen() {
 
           {/* Save/Cancel Buttons for Edit Mode */}
           {isEditing && (
-            <View style={styles.editActions}>
+            <View className="flex-row gap-3 mt-5">
               <TouchableOpacity 
-                style={[styles.actionButton, styles.cancelButton]} 
+                className="flex-1 flex-row items-center justify-center py-3 rounded-lg bg-gray-50 border border-gray-300"
                 onPress={handleCancel}
                 disabled={loading}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text className="text-base font-semibold text-gray-700">Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.actionButton, styles.saveButton]} 
+                className="flex-1 flex-row items-center justify-center py-3 rounded-lg bg-blue-500 gap-2"
                 onPress={handleSave}
                 disabled={loading}
               >
@@ -318,7 +316,7 @@ export default function ProfileScreen() {
                 ) : (
                   <>
                     <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                    <Text className="text-base font-semibold text-white">Save Changes</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -329,15 +327,15 @@ export default function ProfileScreen() {
         
 
         {/* Notification Settings */}
-        <View style={styles.settingsSection}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
-          <View style={styles.settingsCard}>
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
+        <View className="px-5 mb-5">
+          <Text className="text-lg font-bold text-gray-800 mb-3">Notifications</Text>
+          <View className="bg-white rounded-xl p-4 shadow-sm">
+            <View className="flex-row items-center justify-between py-3 border-b border-gray-100">
+              <View className="flex-row items-center flex-1">
                 <Ionicons name="notifications-outline" size={20} color="#3B82F6" />
-                <View style={styles.settingText}>
-                  <Text style={styles.settingTitle}>Order Alerts</Text>
-                  <Text style={styles.settingDescription}>Get notified for new orders</Text>
+                <View className="ml-3 flex-1">
+                  <Text className="text-base font-semibold text-gray-800 mb-0.5">Order Alerts</Text>
+                  <Text className="text-sm text-gray-500">Get notified for new orders</Text>
                 </View>
               </View>
               <Switch
@@ -348,12 +346,12 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
+            <View className="flex-row items-center justify-between py-3 border-b border-gray-100">
+              <View className="flex-row items-center flex-1">
                 <Ionicons name="archive-outline" size={20} color="#10B981" />
-                <View style={styles.settingText}>
-                  <Text style={styles.settingTitle}>Stock Updates</Text>
-                  <Text style={styles.settingDescription}>Low stock alerts</Text>
+                <View className="ml-3 flex-1">
+                  <Text className="text-base font-semibold text-gray-800 mb-0.5">Stock Updates</Text>
+                  <Text className="text-sm text-gray-500">Low stock alerts</Text>
                 </View>
               </View>
               <Switch
@@ -364,12 +362,12 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
+            <View className="flex-row items-center justify-between py-3 border-b border-gray-100">
+              <View className="flex-row items-center flex-1">
                 <Ionicons name="pricetag-outline" size={20} color="#F59E0B" />
-                <View style={styles.settingText}>
-                  <Text style={styles.settingTitle}>Price Changes</Text>
-                  <Text style={styles.settingDescription}>Product price updates</Text>
+                <View className="ml-3 flex-1">
+                  <Text className="text-base font-semibold text-gray-800 mb-0.5">Price Changes</Text>
+                  <Text className="text-sm text-gray-500">Product price updates</Text>
                 </View>
               </View>
               <Switch
@@ -380,12 +378,12 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
+            <View className="flex-row items-center justify-between py-3">
+              <View className="flex-row items-center flex-1">
                 <Ionicons name="server-outline" size={20} color="#8B5CF6" />
-                <View style={styles.settingText}>
-                  <Text style={styles.settingTitle}>System Notifications</Text>
-                  <Text style={styles.settingDescription}>App updates and maintenance</Text>
+                <View className="ml-3 flex-1">
+                  <Text className="text-base font-semibold text-gray-800 mb-0.5">System Notifications</Text>
+                  <Text className="text-sm text-gray-500">App updates and maintenance</Text>
                 </View>
               </View>
               <Switch
@@ -400,23 +398,20 @@ export default function ProfileScreen() {
 
         {/* Menu Sections */}
         {menuItems.map((section, sectionIndex) => (
-          <View key={sectionIndex} style={styles.menuSection}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <View style={styles.menuCard}>
+          <View key={sectionIndex} className="px-5 mb-5">
+            <Text className="text-lg font-bold text-gray-800 mb-3">{section.title}</Text>
+            <View className="bg-white rounded-xl shadow-sm">
               {section.items.map((item, itemIndex) => (
                 <TouchableOpacity
                   key={itemIndex}
-                  style={[
-                    styles.menuItem,
-                    itemIndex < section.items.length - 1 && styles.menuItemBorder
-                  ]}
+                  className={`flex-row items-center justify-between py-4 px-4 ${itemIndex < section.items.length - 1 ? 'border-b border-gray-100' : ''}`}
                   onPress={item.onPress}
                 >
-                  <View style={styles.menuItemLeft}>
-                    <View style={styles.menuIcon}>
+                  <View className="flex-row items-center flex-1">
+                    <View className="w-10 h-10 rounded-full bg-blue-50 justify-center items-center mr-3">
                       <Ionicons name={item.icon} size={20} color="#3B82F6" />
                     </View>
-                    <Text style={styles.menuText}>{item.label}</Text>
+                    <Text className="text-base text-gray-800 font-medium">{item.label}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
                 </TouchableOpacity>
@@ -426,17 +421,17 @@ export default function ProfileScreen() {
         ))}
 
         {/* Action Buttons */}
-        <View style={styles.actionsSection}>
+        <View className="px-5 gap-3">
           <TouchableOpacity 
-            style={[styles.actionButton, styles.logoutButton]}
+            className="flex-row items-center justify-center py-3 rounded-lg bg-red-50 border border-red-200 gap-2"
             onPress={handleLogout}
           >
             <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-            <Text style={styles.logoutButtonText}>Logout</Text>
+            <Text className="text-base font-semibold text-red-500">Logout</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.actionButton, styles.deleteButton]}
+            className="flex-row items-center justify-center py-3 rounded-lg bg-gray-50 border border-gray-200 gap-2"
             onPress={() => Alert.alert(
               'Delete Account',
               'This action cannot be undone. All your data will be permanently deleted.',
@@ -447,388 +442,12 @@ export default function ProfileScreen() {
             )}
           >
             <Ionicons name="trash-outline" size={20} color="#9CA3AF" />
-            <Text style={styles.deleteButtonText}>Delete Account</Text>
+            <Text className="text-base font-semibold text-gray-500">Delete Account</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.bottomSpacer} />
+        <View className="h-5" />
       </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  editButton: {
-    padding: 8,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-  
-  // Profile Section
-  profileSection: {
-    backgroundColor: '#FFFFFF',
-    margin: 20,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  imageContainer: {
-    alignItems: 'center',
-    marginRight: 20,
-  },
-  profileImageWrapper: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 3,
-    borderColor: '#F1F5F9',
-  },
-  defaultAvatar: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 50,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  cameraButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#3B82F6',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  changePhotoButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-  },
-  changePhotoText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  profileRole: {
-    fontSize: 16,
-    color: '#3B82F6',
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  profileDetails: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#065F46',
-    fontWeight: '600',
-  },
-  
-  // Edit Form
-  editForm: {
-    gap: 16,
-  },
-  inputGroup: {
-    gap: 6,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#1F2937',
-    backgroundColor: '#FFFFFF',
-  },
-  editActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-    gap: 8,
-  },
-  cancelButton: {
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-  },
-  saveButton: {
-    backgroundColor: '#3B82F6',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  
-  // Stats Section
-  statsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 12,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  
-  // Settings Section
-  settingsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  settingsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-  },
-  settingInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  settingText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  settingTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  settingDescription: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  
-  // Menu Sections
-  menuSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  menuCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  menuItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  menuItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  menuIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  menuText: {
-    fontSize: 16,
-    color: '#1E293B',
-    fontWeight: '500',
-  },
-  
-  // Actions Section
-  actionsSection: {
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  logoutButton: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  deleteButton: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  logoutButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
-  deleteButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  
-  bottomSpacer: {
-    height: 20,
-  },
-});

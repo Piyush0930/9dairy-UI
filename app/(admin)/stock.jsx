@@ -14,7 +14,6 @@ import {
   Platform,
   SafeAreaView,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -498,37 +497,34 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
     const currentQty = cartItem?.qty || 0;
 
     return (
-      <View style={styles.productCard}>
+      <View className="flex-row bg-white rounded-xl p-4 mb-3 shadow-sm border border-gray-100">
         {/* Product Image */}
-        <View style={styles.productImageContainer}>
+        <View className="w-20 h-20 rounded-xl overflow-hidden bg-gray-50">
           {item.image ? (
-            <Image source={{ uri: item.image }} style={styles.productImage} />
+            <Image source={{ uri: item.image }} className="w-20 h-20" />
           ) : (
-            <View style={styles.productImagePlaceholder}>
+            <View className="w-20 h-20 justify-center items-center bg-gray-100">
               <MaterialIcons name="inventory" size={28} color={Colors.light.textSecondary} />
             </View>
           )}
         </View>
 
         {/* Product Info */}
-        <View style={styles.productInfo}>
-          <View style={styles.productHeader}>
-            <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+        <View className="flex-1 ml-4 justify-between">
+          <View className="flex-1">
+            <Text className="text-base font-semibold text-gray-800 leading-5 mb-1" numberOfLines={2}>{item.name}</Text>
             {item.sku && (
-              <Text style={styles.productSku}>SKU: {item.sku}</Text>
+              <Text className="text-xs text-gray-500 mb-2">SKU: {item.sku}</Text>
             )}
           </View>
           
-          <View style={styles.productFooter}>
-            <Text style={styles.productPrice}>₹{item.unitPrice?.toFixed(2)}</Text>
+          <View className="flex-row justify-between items-center mt-2">
+            <Text className="text-lg font-bold text-gray-800 flex-1">₹{item.unitPrice?.toFixed(2)}</Text>
             
             {/* Stock Badge */}
             {item.availableQty != null && (
-              <View style={[
-                styles.stockBadge,
-                { backgroundColor: item.availableQty > 0 ? '#10B981' : '#EF4444' }
-              ]}>
-                <Text style={styles.stockBadgeText}>
+              <View className="px-2 py-1 rounded-lg mr-2" style={{ backgroundColor: item.availableQty > 0 ? '#10B981' : '#EF4444' }}>
+                <Text className="text-xs font-semibold text-white">
                   {item.availableQty > 0 ? `${item.availableQty} in stock` : 'Out of stock'}
                 </Text>
               </View>
@@ -536,18 +532,18 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
             
             {/* Quantity Controls */}
             {currentQty > 0 ? (
-              <View style={styles.quantityControls}>
+              <View className="flex-row items-center bg-gray-50 border border-gray-200 rounded-lg p-1">
                 <TouchableOpacity 
-                  style={styles.quantityButton}
+                  className="w-7 h-7 justify-center items-center bg-white rounded-lg"
                   onPress={() => updateCartItemQty(item._id, currentQty - 1)}
                 >
                   <Ionicons name="remove" size={16} color="#64748B" />
                 </TouchableOpacity>
                 
-                <Text style={styles.quantityText}>{currentQty}</Text>
+                <Text className="text-sm font-semibold text-gray-800 min-w-7 text-center">{currentQty}</Text>
                 
                 <TouchableOpacity 
-                  style={styles.quantityButton}
+                  className="w-7 h-7 justify-center items-center bg-white rounded-lg"
                   onPress={() => updateCartItemQty(item._id, currentQty + 1)}
                 >
                   <Ionicons name="add" size={16} color="#64748B" />
@@ -555,11 +551,11 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
               </View>
             ) : (
               <TouchableOpacity 
-                style={styles.addToCartButton}
+                className="flex-row items-center bg-blue-500 px-4 py-2 rounded-lg gap-1.5"
                 onPress={() => addToCart(item)}
               >
                 <Ionicons name="add" size={18} color="#FFFFFF" />
-                <Text style={styles.addToCartText}>Add</Text>
+                <Text className="text-white text-sm font-semibold">Add</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -570,42 +566,42 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
 
   // RENDER CART ITEM
   const renderCartItem = ({ item }) => (
-    <View style={styles.cartItem}>
-      <View style={styles.cartItemImageContainer}>
+    <View className="flex-row items-center bg-white rounded-lg p-4 mb-3 border border-gray-100">
+      <View className="w-12 h-12 rounded-lg overflow-hidden bg-gray-50">
         {item.product.image ? (
-          <Image source={{ uri: item.product.image }} style={styles.cartItemImage} />
+          <Image source={{ uri: item.product.image }} className="w-12 h-12" />
         ) : (
-          <View style={styles.cartItemImagePlaceholder}>
+          <View className="w-12 h-12 justify-center items-center bg-gray-100">
             <MaterialIcons name="inventory" size={20} color={Colors.light.textSecondary} />
           </View>
         )}
       </View>
 
-      <View style={styles.cartItemInfo}>
-        <Text style={styles.cartItemName} numberOfLines={2}>{item.product.name}</Text>
-        <Text style={styles.cartItemPrice}>₹{item.unitPrice?.toFixed(2)} each</Text>
-        <Text style={styles.cartItemTotal}>₹{(item.unitPrice * item.qty).toFixed(2)}</Text>
+      <View className="flex-1 ml-3 mr-3">
+        <Text className="text-base font-semibold text-gray-800 mb-1" numberOfLines={2}>{item.product.name}</Text>
+        <Text className="text-sm text-gray-500 mb-1">₹{item.unitPrice?.toFixed(2)} each</Text>
+        <Text className="text-base font-bold text-gray-800">₹{(item.unitPrice * item.qty).toFixed(2)}</Text>
       </View>
 
-      <View style={styles.cartItemControls}>
+      <View className="flex-row items-center bg-gray-50 border border-gray-200 rounded-lg p-1">
         <TouchableOpacity 
-          style={styles.cartQuantityButton}
+          className="w-7 h-7 justify-center items-center bg-white rounded-lg"
           onPress={() => updateCartItemQty(item.productId, item.qty - 1)}
         >
           <Ionicons name="remove" size={16} color="#64748B" />
         </TouchableOpacity>
         
-        <Text style={styles.cartQuantityText}>{item.qty}</Text>
+        <Text className="text-sm font-semibold text-gray-800 min-w-7 text-center">{item.qty}</Text>
         
         <TouchableOpacity 
-          style={styles.cartQuantityButton}
+          className="w-7 h-7 justify-center items-center bg-white rounded-lg"
           onPress={() => updateCartItemQty(item.productId, item.qty + 1)}
         >
           <Ionicons name="add" size={16} color="#64748B" />
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.removeCartItemButton}
+          className="w-8 h-8 justify-center items-center bg-red-50 border border-red-200 rounded-lg ml-2"
           onPress={() => removeFromCart(item.productId)}
         >
           <Ionicons name="trash-outline" size={16} color="#EF4444" />
@@ -626,19 +622,19 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
 
     return (
       <TouchableOpacity 
-        style={styles.orderItem}
+        className="bg-white rounded-xl p-4 mb-3 shadow-sm border border-gray-100"
         onPress={() => {
           setSelectedOrder(item);
           setOrderDetailModalVisible(true);
           fetchOrderDetail(item._id);
         }}
       >
-        <View style={styles.orderHeader}>
+        <View className="flex-row justify-between items-start mb-3">
           <View>
-            <Text style={styles.orderNumber}>
+            <Text className="text-base font-bold text-gray-800 mb-1">
               Order #{item.orderNumber || item._id?.slice(-8) || 'N/A'}
             </Text>
-            <Text style={styles.orderDate}>
+            <Text className="text-sm text-gray-500">
               {new Date(item.createdAt).toLocaleDateString('en-IN', {
                 day: 'numeric',
                 month: 'short',
@@ -646,31 +642,28 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
               })}
             </Text>
           </View>
-          <View style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) }
-          ]}>
-            <Text style={styles.statusText}>
+          <View className="px-2 py-1 rounded-xl" style={{ backgroundColor: getStatusColor(item.status) }}>
+            <Text className="text-xs font-semibold text-white">
               {getStatusText(item.status)}
             </Text>
           </View>
         </View>
         
-        <View style={styles.orderDetails}>
-          <Text style={styles.orderItems}>
+        <View className="flex-row justify-between items-center mb-3">
+          <Text className="text-sm text-gray-500">
             {item.items?.length || 0} items • {item.totalRequestedQty || 
               item.items?.reduce((sum, it) => sum + (it.requestedQty || 0), 0) || 0} units
           </Text>
-          <Text style={styles.orderTotal}>₹{totalValue.toFixed(2)}</Text>
+          <Text className="text-lg font-bold text-gray-800">₹{totalValue.toFixed(2)}</Text>
         </View>
         
-        <View style={styles.orderFooter}>
+        <View className="flex-row justify-end">
           <TouchableOpacity 
-            style={styles.invoiceButton}
+            className="flex-row items-center bg-blue-50 px-3 py-2 rounded-lg gap-1.5"
             onPress={() => shareOrderInvoice(item._id)}
           >
             <Feather name="share" size={16} color="#3B82F6" />
-            <Text style={styles.invoiceButtonText}>Share Invoice</Text>
+            <Text className="text-blue-500 text-sm font-semibold">Share Invoice</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -686,13 +679,13 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
       : 0;
 
     return (
-      <View style={styles.orderDetailContainer}>
-        <View style={styles.orderDetailHeader}>
+      <View className="flex-1 p-4">
+        <View className="flex-row justify-between items-start mb-5">
           <View>
-            <Text style={styles.orderDetailTitle}>
+            <Text className="text-xl font-bold text-gray-800 mb-1">
               Order #{orderDetail.orderNumber || orderDetail._id}
             </Text>
-            <Text style={styles.orderDetailDate}>
+            <Text className="text-sm text-gray-500">
               {new Date(orderDetail.createdAt).toLocaleDateString('en-IN', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -701,51 +694,48 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
               })}
             </Text>
           </View>
-          <View style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(orderDetail.status) }
-          ]}>
-            <Text style={styles.statusText}>
+          <View className="px-2 py-1 rounded-xl" style={{ backgroundColor: getStatusColor(orderDetail.status) }}>
+            <Text className="text-xs font-semibold text-white">
               {getStatusText(orderDetail.status)}
             </Text>
           </View>
         </View>
 
         {/* Bill Table */}
-        <View style={styles.billContainer}>
-          <View style={styles.billHeader}>
-            <Text style={styles.billHeaderText}>Item Description</Text>
-            <Text style={styles.billHeaderText}>Qty</Text>
-            <Text style={styles.billHeaderText}>Price</Text>
-            <Text style={styles.billHeaderText}>Amount</Text>
+        <View className="bg-white rounded-lg border border-gray-200 mb-5 overflow-hidden">
+          <View className="flex-row bg-gray-50 px-4 py-3 border-b border-gray-200">
+            <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-2">Item Description</Text>
+            <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-1 text-center">Qty</Text>
+            <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-1 text-center">Price</Text>
+            <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-1 text-right">Amount</Text>
           </View>
 
-          <ScrollView style={styles.billItems}>
+          <ScrollView className="max-h-72">
             {orderDetail.items?.map((item, index) => (
-              <View key={index} style={styles.billRow}>
-                <Text style={styles.billItemName}>
+              <View key={index} className="flex-row px-4 py-3 border-b border-gray-100">
+                <Text className="text-sm font-medium text-gray-800 flex-2">
                   {item.product?.name || `Product ${item.productId}`}
                 </Text>
-                <Text style={styles.billItemQty}>{item.requestedQty}</Text>
-                <Text style={styles.billItemPrice}>₹{item.unitPrice?.toFixed(2)}</Text>
-                <Text style={styles.billItemTotal}>₹{(item.unitPrice * item.requestedQty).toFixed(2)}</Text>
+                <Text className="text-sm font-medium text-gray-500 flex-1 text-center">{item.requestedQty}</Text>
+                <Text className="text-sm font-medium text-gray-500 flex-1 text-center">₹{item.unitPrice?.toFixed(2)}</Text>
+                <Text className="text-sm font-semibold text-gray-800 flex-1 text-right">₹{(item.unitPrice * item.requestedQty).toFixed(2)}</Text>
               </View>
             ))}
           </ScrollView>
 
-          <View style={styles.billTotal}>
-            <Text style={styles.billTotalLabel}>Total Amount</Text>
-            <Text style={styles.billTotalValue}>₹{totalValue.toFixed(2)}</Text>
+          <View className="flex-row justify-between items-center px-4 py-4 bg-gray-50 border-t-2 border-gray-200">
+            <Text className="text-base font-semibold text-gray-800">Total Amount</Text>
+            <Text className="text-xl font-bold text-blue-500">₹{totalValue.toFixed(2)}</Text>
           </View>
         </View>
 
-        <View style={styles.orderDetailActions}>
+        <View className="items-center">
           <TouchableOpacity 
-            style={styles.shareInvoiceButton}
+            className="flex-row items-center bg-blue-500 px-6 py-3.5 rounded-xl gap-2 w-full justify-center"
             onPress={() => shareOrderInvoice(orderDetail._id)}
           >
             <Feather name="share" size={20} color="#FFFFFF" />
-            <Text style={styles.shareInvoiceButtonText}>Share Invoice</Text>
+            <Text className="text-white text-base font-semibold">Share Invoice</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -762,29 +752,29 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
   const renderProductsScreen = () => (
     <>
       {/* Header */}
-      <View style={styles.header}>
+      <View className="flex-row justify-between items-center px-5 py-4 bg-white border-b border-gray-200">
         <View>
-          <Text style={styles.headerTitle}>Order Stock</Text>
+          <Text className="text-2xl font-bold text-gray-800">Order Stock</Text>
         </View>
         
         <TouchableOpacity 
-          style={styles.historyButton}
+          className="flex-row items-center bg-gray-50 px-3 py-2 rounded-lg gap-1.5"
           onPress={() => {
             setHistoryModalVisible(true);
             fetchOrders();
           }}
         >
           <Feather name="clock" size={20} color={Colors.light.text} />
-          <Text style={styles.historyButtonText}>History</Text>
+          <Text className="text-sm font-semibold text-gray-600">History</Text>
         </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
+      <View className="px-5 py-4 bg-white border-b border-gray-200">
+        <View className="flex-row items-center bg-gray-50 px-3 py-2 rounded-xl border border-gray-200">
           <Ionicons name="search" size={20} color={Colors.light.textSecondary} />
           <TextInput
-            style={styles.searchInput}
+            className="flex-1 ml-2 text-base text-gray-800 py-1"
             placeholder="Search products..."
             placeholderTextColor={Colors.light.textSecondary}
             value={search}
@@ -800,21 +790,21 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
       </View>
 
       {/* Products List */}
-      <View style={styles.productsContainer}>
+      <View className="flex-1">
         {loadingProducts && products.length === 0 ? (
-          <View style={styles.centered}>
+          <View className="flex-1 justify-center items-center p-10">
             <ActivityIndicator size="large" color={Colors.light.accent} />
-            <Text style={styles.loadingText}>Loading products...</Text>
+            <Text className="mt-3 text-base text-gray-500 text-center">Loading products...</Text>
           </View>
         ) : error ? (
-          <View style={styles.centered}>
+          <View className="flex-1 justify-center items-center p-10">
             <MaterialIcons name="error-outline" size={48} color="#EF4444" />
-            <Text style={styles.errorText}>{error}</Text>
+            <Text className="mt-3 text-base text-red-500 text-center">{error}</Text>
             <TouchableOpacity 
-              style={styles.retryButton}
+              className="mt-4 bg-blue-500 px-5 py-2.5 rounded-lg"
               onPress={() => fetchProducts({ refresh: true })}
             >
-              <Text style={styles.retryButtonText}>Try Again</Text>
+              <Text className="text-white text-sm font-semibold">Try Again</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -827,12 +817,12 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
             onEndReachedThreshold={0.5}
             refreshing={refreshing}
             onRefresh={() => fetchProducts({ refresh: true })}
-            contentContainerStyle={styles.productsList}
+            className="p-4 pb-24"
             ListEmptyComponent={
-              <View style={styles.emptyState}>
+              <View className="items-center py-14 px-10">
                 <MaterialIcons name="inventory" size={64} color={Colors.light.border} />
-                <Text style={styles.emptyTitle}>No Products Found</Text>
-                <Text style={styles.emptySubtitle}>
+                <Text className="mt-4 text-lg font-semibold text-gray-600 text-center">No Products Found</Text>
+                <Text className="mt-2 text-sm text-gray-500 text-center leading-5">
                   {search ? 'Try adjusting your search terms' : 'No products available at the moment'}
                 </Text>
               </View>
@@ -843,17 +833,17 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
 
       {/* Bottom Order Bar */}
       {cart.length > 0 && (
-        <View style={styles.bottomOrderBar}>
-          <View style={styles.orderBarContent}>
-            <View style={styles.orderSummary}>
-              <Text style={styles.orderItemsCount}>{cartTotalQty} items</Text>
-              <Text style={styles.orderTotalValue}>₹{cartTotalValue.toFixed(2)}</Text>
+        <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 pb-5 pt-4 shadow-lg">
+          <View className="flex-row items-center justify-between px-5">
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-gray-800">{cartTotalQty} items</Text>
+              <Text className="text-xl font-bold text-blue-500 mt-0.5">₹{cartTotalValue.toFixed(2)}</Text>
             </View>
             <TouchableOpacity 
-              style={styles.continueButton}
+              className="flex-row items-center bg-green-500 px-5 py-3 rounded-xl gap-2 min-w-28 justify-center"
               onPress={() => setCurrentScreen('cart')}
             >
-              <Text style={styles.continueButtonText}>Continue</Text>
+              <Text className="text-white text-base font-semibold">Continue</Text>
               <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
@@ -865,30 +855,30 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
   // RENDER CART SCREEN
   const renderCartScreen = () => (
     <>
-      <View style={styles.cartHeader}>
+      <View className="flex-row items-center justify-between px-5 py-4 bg-white border-b border-gray-200">
         <TouchableOpacity 
-          style={styles.backButton}
+          className="p-1"
           onPress={() => setCurrentScreen('products')}
         >
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </TouchableOpacity>
-        <Text style={styles.cartTitle}>Review Order</Text>
-        <View style={styles.cartHeaderRight} />
+        <Text className="text-xl font-bold text-gray-800">Review Order</Text>
+        <View className="w-8" />
       </View>
 
-      <View style={styles.cartContainer}>
+      <View className="flex-1">
         {cart.length === 0 ? (
-          <View style={styles.emptyCart}>
+          <View className="flex-1 justify-center items-center p-10">
             <Feather name="shopping-cart" size={64} color={Colors.light.border} />
-            <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
-            <Text style={styles.emptyCartSubtitle}>
+            <Text className="mt-4 text-lg font-semibold text-gray-600">Your cart is empty</Text>
+            <Text className="mt-2 text-sm text-gray-500 text-center">
               Add products to your order to continue
             </Text>
             <TouchableOpacity 
-              style={styles.continueShoppingButton}
+              className="mt-5 bg-blue-500 px-5 py-3 rounded-lg"
               onPress={() => setCurrentScreen('products')}
             >
-              <Text style={styles.continueShoppingText}>Continue Shopping</Text>
+              <Text className="text-white text-sm font-semibold">Continue Shopping</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -897,25 +887,22 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
             renderItem={renderCartItem}
             keyExtractor={(item) => String(item.productId)}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.cartList}
+            className="p-4"
             ListHeaderComponent={
-              <Text style={styles.cartListTitle}>Order Items ({cart.length})</Text>
+              <Text className="text-lg font-bold text-gray-800 mb-4">Order Items ({cart.length})</Text>
             }
           />
         )}
       </View>
 
       {cart.length > 0 && (
-        <View style={styles.cartFooter}>
-          <View style={styles.cartTotal}>
-            <Text style={styles.cartTotalLabel}>Total Amount</Text>
-            <Text style={styles.cartTotalValue}>₹{cartTotalValue.toFixed(2)}</Text>
+        <View className="bg-white border-t border-gray-200 p-5">
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className="text-lg font-semibold text-gray-800">Total Amount</Text>
+            <Text className="text-2xl font-bold text-blue-500">₹{cartTotalValue.toFixed(2)}</Text>
           </View>
           <TouchableOpacity 
-            style={[
-              styles.placeOrderButton,
-              submitting && styles.placeOrderButtonDisabled
-            ]}
+            className={`flex-row items-center justify-center py-4 rounded-xl gap-2 ${submitting ? 'bg-gray-400' : 'bg-green-500'}`}
             onPress={submitOrder}
             disabled={submitting}
           >
@@ -923,7 +910,7 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <>
-                <Text style={styles.placeOrderButtonText}>Place Order</Text>
+                <Text className="text-white text-lg font-bold">Place Order</Text>
                 <Ionicons name="checkmark" size={20} color="#FFFFFF" />
               </>
             )}
@@ -934,7 +921,7 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView className="flex-1 bg-gray-50" style={{ paddingTop: insets.top }}>
       {currentScreen === 'products' && renderProductsScreen()}
       {currentScreen === 'cart' && renderCartScreen()}
 
@@ -944,11 +931,11 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Order History</Text>
+        <SafeAreaView className="flex-1 bg-gray-50">
+          <View className="flex-row justify-between items-center px-5 py-4 bg-white border-b border-gray-200">
+            <Text className="text-xl font-bold text-gray-800">Order History</Text>
             <TouchableOpacity 
-              style={styles.closeButton}
+              className="p-1"
               onPress={() => setHistoryModalVisible(false)}
             >
               <Ionicons name="close" size={24} color={Colors.light.text} />
@@ -956,22 +943,22 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
           </View>
 
           {loadingOrders ? (
-            <View style={styles.centered}>
+            <View className="flex-1 justify-center items-center p-10">
               <ActivityIndicator size="large" color={Colors.light.accent} />
-              <Text style={styles.loadingText}>Loading orders...</Text>
+              <Text className="mt-3 text-base text-gray-500 text-center">Loading orders...</Text>
             </View>
           ) : (
             <FlatList
               data={orders}
               renderItem={renderOrderItem}
               keyExtractor={(item) => String(item._id)}
-              contentContainerStyle={styles.ordersList}
+              className="p-4"
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
-                <View style={styles.emptyState}>
+                <View className="items-center py-14 px-10">
                   <Feather name="package" size={64} color={Colors.light.border} />
-                  <Text style={styles.emptyTitle}>No Orders Yet</Text>
-                  <Text style={styles.emptySubtitle}>
+                  <Text className="mt-4 text-lg font-semibold text-gray-600 text-center">No Orders Yet</Text>
+                  <Text className="mt-2 text-sm text-gray-500 text-center leading-5">
                     Your orders will appear here once you place them
                   </Text>
                 </View>
@@ -987,11 +974,11 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Order Details</Text>
+        <SafeAreaView className="flex-1 bg-gray-50">
+          <View className="flex-row justify-between items-center px-5 py-4 bg-white border-b border-gray-200">
+            <Text className="text-xl font-bold text-gray-800">Order Details</Text>
             <TouchableOpacity 
-              style={styles.closeButton}
+              className="p-1"
               onPress={() => setOrderDetailModalVisible(false)}
             >
               <Ionicons name="close" size={24} color={Colors.light.text} />
@@ -1003,702 +990,3 @@ export default function RetailerStockOrderScreen({ navigation, route }) {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  // Products Screen Styles
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  historyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  historyButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  searchContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 16,
-    color: '#1E293B',
-    paddingVertical: 4,
-  },
-  productsContainer: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  errorText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#EF4444',
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 16,
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  productsList: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  // Product Card Styles
-  productCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  productImageContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#F8FAFC',
-  },
-  productImage: {
-    width: 80,
-    height: 80,
-  },
-  productImagePlaceholder: {
-    width: 80,
-    height: 80,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-  },
-  productInfo: {
-    flex: 1,
-    marginLeft: 16,
-    justifyContent: 'space-between',
-  },
-  productHeader: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-    lineHeight: 22,
-    marginBottom: 4,
-  },
-  productSku: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 8,
-  },
-  productFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  productPrice: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    flex: 1,
-  },
-  stockBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  stockBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  quantityControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    padding: 4,
-  },
-  quantityButton: {
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 6,
-  },
-  quantityText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    minWidth: 30,
-    textAlign: 'center',
-  },
-  addToCartButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  addToCartText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  bottomOrderBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingBottom: 20,
-    paddingTop: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  orderBarContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-  },
-  orderSummary: {
-    flex: 1,
-  },
-  orderItemsCount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  orderTotalValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#3B82F6',
-    marginTop: 2,
-  },
-  continueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-    minWidth: 120,
-    justifyContent: 'center',
-  },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#475569',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  // Cart Screen Styles
-  cartHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  backButton: {
-    padding: 4,
-  },
-  cartTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  cartHeaderRight: {
-    width: 32,
-  },
-  cartContainer: {
-    flex: 1,
-  },
-  emptyCart: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyCartTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#475569',
-    marginTop: 16,
-  },
-  emptyCartSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  continueShoppingButton: {
-    marginTop: 20,
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  continueShoppingText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cartList: {
-    padding: 16,
-  },
-  cartListTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 16,
-  },
-  cartItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  cartItemImageContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#F8FAFC',
-  },
-  cartItemImage: {
-    width: 50,
-    height: 50,
-  },
-  cartItemImagePlaceholder: {
-    width: 50,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-  },
-  cartItemInfo: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 12,
-  },
-  cartItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  cartItemPrice: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 4,
-  },
-  cartItemTotal: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  cartItemControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    padding: 4,
-  },
-  cartQuantityButton: {
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 6,
-  },
-  cartQuantityText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    minWidth: 30,
-    textAlign: 'center',
-  },
-  removeCartItemButton: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  cartFooter: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    padding: 20,
-  },
-  cartTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cartTotalLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  cartTotalValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#3B82F6',
-  },
-  placeOrderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10B981',
-    paddingVertical: 16,
-    borderRadius: 12,
-    gap: 8,
-  },
-  placeOrderButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-  },
-  placeOrderButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  // Modal Styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  ordersList: {
-    padding: 16,
-  },
-  // Order Item Styles
-  orderItem: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  orderNumber: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  orderDate: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  orderDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  orderItems: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  orderTotal: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  orderFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  invoiceButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  invoiceButtonText: {
-    color: '#3B82F6',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  // Order Detail Styles
-  orderDetailContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  orderDetailHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  orderDetailTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  orderDetailDate: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  // Bill Table Styles
-  billContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  billHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  billHeaderText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  billItems: {
-    maxHeight: 300,
-  },
-  billRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  billItemName: {
-    flex: 2,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1E293B',
-  },
-  billItemQty: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  billItemPrice: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  billItemTotal: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    textAlign: 'right',
-  },
-  billTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: '#F8FAFC',
-    borderTopWidth: 2,
-    borderTopColor: '#E2E8F0',
-  },
-  billTotalLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  billTotalValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#3B82F6',
-  },
-  orderDetailActions: {
-    alignItems: 'center',
-  },
-  shareInvoiceButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  shareInvoiceButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});

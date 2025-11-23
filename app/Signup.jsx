@@ -1,5 +1,3 @@
-// C:\Users\Krishna\OneDrive\Desktop\frontend-dairy9\9dairy-UI\app\Signup.jsx
-
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -8,7 +6,6 @@ import {
   Dimensions,
   Image,
   StatusBar,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -306,33 +303,33 @@ export default function Signup() {
 
   return (
     <KeyboardAwareScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      className="flex-1 bg-white"
+      contentContainerStyle={{ flexGrow: 1 }}
       enableOnAndroid={true}
       keyboardShouldPersistTaps="handled"
       extraScrollHeight={20}
       showsVerticalScrollIndicator={false}
     >
-      <View>
+      <View className="flex-1 px-6 pt-10 pb-10">
         <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
         {/* Header Section */}
-        <View style={styles.header}>
+        <View className="items-center mb-5">
           <Image
             source={require('../assets/images/logo.jpeg')}
-            style={styles.logo}
+            className="w-36 h-28 mb-2"
             resizeMode="contain"
           />
-          <Text style={styles.headerSubtitle}>Create your account</Text>
+          <Text className="text-base text-slate-500 font-medium">Create your account</Text>
         </View>
 
         {/* Main Content */}
-        <View style={styles.mainContent}>
+        <View className="flex-1">
           {/* Form Fields */}
-          <View style={styles.formContainer}>
-            <View style={styles.inputContainer}>
+          <View className="mb-8">
+            <View className="flex-row items-center border border-slate-300 rounded-lg px-4 py-3 mb-4 bg-slate-100 min-h-[56px]">
               <TextInput
-                style={styles.input}
+                className="flex-1 text-base text-slate-800"
                 placeholder="Full Name *"
                 placeholderTextColor="#94a3b8"
                 value={fullName}
@@ -342,23 +339,23 @@ export default function Signup() {
               />
             </View>
 
-            <View style={styles.locationContainer}>
-              <Text style={styles.locationLabel}>Address *</Text>
+            <View className="mb-4">
+              <Text className="text-base text-slate-800 font-medium mb-2">Address *</Text>
               <LocationPicker
                 onLocationSelect={handleLocationSelect}
                 placeholder="Enter your address"
                 showCurrentLocation={true}
-                style={styles.locationPicker}
+                style={{ zIndex: 1000 }}
               />
             </View>
 
-            <View style={styles.inputContainer}>
-              <View style={styles.flagContainer}>
-                <Text style={styles.flag}>🇮🇳</Text>
-                <Text style={styles.countryCode}>+91</Text>
+            <View className="flex-row items-center border border-slate-300 rounded-lg px-4 py-3 mb-4 bg-slate-100 min-h-[56px]">
+              <View className="flex-row items-center pr-3 border-r border-r-slate-300">
+                <Text className="text-lg mr-2">🇮🇳</Text>
+                <Text className="text-sm text-slate-800 font-semibold">+91</Text>
               </View>
               <TextInput
-                style={[styles.input, { marginLeft: 12 }]}
+                className="flex-1 text-base text-slate-800 ml-3"
                 placeholder="Contact Number *"
                 placeholderTextColor="#94a3b8"
                 keyboardType="phone-pad"
@@ -372,7 +369,7 @@ export default function Signup() {
 
             {!otpShown ? (
               <TouchableOpacity
-                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                className={`bg-blue-500 rounded-lg py-4 items-center justify-center mb-4 ${loading ? 'bg-gray-400' : ''}`}
                 onPress={() => handleGetOtp(false)}
                 activeOpacity={0.8}
                 disabled={loading}
@@ -380,23 +377,23 @@ export default function Signup() {
                 {loading ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Get OTP</Text>
+                  <Text className="text-white text-base font-bold">Get OTP</Text>
                 )}
               </TouchableOpacity>
             ) : (
               <>
                 {/* OTP Section */}
-                <Text style={styles.otpTitle}>Enter 6-digit OTP</Text>
-                <Text style={styles.otpSubtitle}>
+                <Text className="text-lg text-slate-900 mb-2 font-semibold text-center">Enter 6-digit OTP</Text>
+                <Text className="text-sm text-slate-500 mb-6 text-center">
                   OTP sent to +91 {contactNo}
                 </Text>
                 
-                <View style={styles.otpContainer}>
+                <View className="flex-row justify-between mb-6 px-2">
                   {otp.map((value, index) => (
                     <TextInput
                       key={index}
                       ref={(ref) => (otpRefs.current[index] = ref)}
-                      style={[styles.otpInput, value && styles.otpInputActive]}
+                      className={`w-12 h-12 border-2 border-slate-300 rounded-lg text-xl font-bold bg-white text-slate-900 text-center ${value ? 'border-blue-500 bg-blue-50' : ''}`}
                       keyboardType="number-pad"
                       maxLength={1}
                       value={value}
@@ -409,7 +406,7 @@ export default function Signup() {
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                  className={`bg-blue-500 rounded-lg py-4 items-center justify-center mb-4 ${loading ? 'bg-gray-400' : ''}`}
                   onPress={handleVerify}
                   activeOpacity={0.8}
                   disabled={loading}
@@ -417,33 +414,33 @@ export default function Signup() {
                   {loading ? (
                     <ActivityIndicator color="#ffffff" size="small" />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Verify & Sign Up</Text>
+                    <Text className="text-white text-base font-bold">Verify & Sign Up</Text>
                   )}
                 </TouchableOpacity>
 
                 {/* Resend OTP Option */}
                 <TouchableOpacity 
-                  style={styles.resendContainer}
+                  className="items-center mb-3 py-2"
                   onPress={() => handleGetOtp(true)}
                   disabled={resendLoading}
                 >
                   {resendLoading ? (
                     <ActivityIndicator color="#3b82f6" size="small" />
                   ) : (
-                    <Text style={styles.resendText}>
-                      Didn't receive OTP? <Text style={styles.resendTextBold}>Resend</Text>
+                    <Text className="text-sm text-slate-500">
+                      Didn't receive OTP? <Text className="text-blue-500 font-semibold">Resend</Text>
                     </Text>
                   )}
                 </TouchableOpacity>
 
                 {/* Edit Number Option */}
                 <TouchableOpacity 
-                  style={styles.editNumberContainer}
+                  className="items-center mb-6 py-2"
                   onPress={() => setOtpShown(false)}
                   disabled={loading}
                 >
-                  <Text style={styles.editNumberText}>
-                    Wrong number? <Text style={styles.editNumberTextBold}>Edit</Text>
+                  <Text className="text-sm text-slate-500">
+                    Wrong number? <Text className="text-red-500 font-semibold">Edit</Text>
                   </Text>
                 </TouchableOpacity>
               </>
@@ -452,17 +449,17 @@ export default function Signup() {
             {/* Signin Link */}
             <TouchableOpacity 
               onPress={handleSigninLink} 
-              style={styles.linkContainer}
+              className="items-center mb-6 py-2"
               disabled={loading}
             >
-              <Text style={styles.linkText}>
-                Already have an account? <Text style={styles.linkTextBold}>Sign In</Text>
+              <Text className="text-base text-slate-500">
+                Already have an account? <Text className="text-blue-500 font-semibold">Sign In</Text>
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Footer */}
-          <Text style={styles.footerText}>
+          <Text className="text-xs text-slate-400 text-center leading-4">
             By signing up, you agree to our Terms & Privacy Policy
           </Text>
         </View>
@@ -470,196 +467,3 @@ export default function Signup() {
     </KeyboardAwareScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  contentContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 40,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  logo: {
-    width: 150,
-    height: 120,
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  mainContent: {
-    flex: 1,
-  },
-  formContainer: {
-    marginBottom: 32,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    marginBottom: 16,
-    backgroundColor: '#f8fafc',
-    minHeight: 56,
-  },
-  flagContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 12,
-    borderRightWidth: 1.5,
-    borderRightColor: '#e2e8f0',
-  },
-  flag: {
-    fontSize: 18,
-    marginRight: 6,
-  },
-  countryCode: {
-    fontSize: 14,
-    color: '#1e293b',
-    fontWeight: '600',
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1e293b',
-    paddingVertical: 8,
-    fontWeight: '500',
-  },
-  locationContainer: {
-    marginBottom: 16,
-  },
-  locationLabel: {
-    fontSize: 16,
-    color: '#1e293b',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  locationPicker: {
-    zIndex: 1000,
-  },
-  otpTitle: {
-    fontSize: 18,
-    color: '#0f172a',
-    marginBottom: 8,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  otpSubtitle: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    paddingHorizontal: 10,
-  },
-  otpInput: {
-    width: 48,
-    height: 48,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    fontSize: 20,
-    fontWeight: '700',
-    backgroundColor: '#ffffff',
-    color: '#0f172a',
-    textAlign: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  otpInputActive: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#f0f9ff',
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-  primaryButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
-    shadowColor: '#9ca3af',
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  resendContainer: {
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingVertical: 8,
-  },
-  resendText: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  resendTextBold: {
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  editNumberContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingVertical: 8,
-  },
-  editNumberText: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  editNumberTextBold: {
-    color: '#ef4444',
-    fontWeight: '600',
-  },
-  linkContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingVertical: 8,
-  },
-  linkText: {
-    fontSize: 16,
-    color: '#64748b',
-  },
-  linkTextBold: {
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-});
