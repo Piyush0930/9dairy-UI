@@ -36,6 +36,7 @@ const statusOrder = [
 function getStatusIcon(status) {
   switch (status) {
     case "delivered":
+    case "completed": // ✅ ADD THIS
       return <FontAwesome name="check-circle" size={16} color="#4CAF50" />;
     case "out_for_delivery":
       return <MaterialIcons name="local-shipping" size={16} color={Colors.light.accent} />;
@@ -55,6 +56,7 @@ function getStatusIcon(status) {
 function getStatusText(status) {
   switch (status) {
     case "delivered": return "Delivered";
+    case "completed": return "Completed"; // ✅ ADD THIS
     case "out_for_delivery": return "Out for Delivery";
     case "pending": return "Pending";
     case "confirmed": return "Confirmed";
@@ -66,7 +68,9 @@ function getStatusText(status) {
 
 function getStatusColor(status) {
   switch (status) {
-    case "delivered": return "#4CAF50";
+    case "delivered":
+    case "completed": // ✅ ADD THIS
+       return "#4CAF50";
     case "out_for_delivery": return Colors.light.accent;
     case "pending": return "#FF9800";
     case "confirmed": return "#2196F3";
@@ -78,7 +82,9 @@ function getStatusColor(status) {
 
 function getStatusBackgroundColor(status) {
   switch (status) {
-    case "delivered": return "rgba(76, 175, 80, 0.1)";
+    case "delivered":
+    case "completed": // ✅ ADD THIS
+       return "rgba(76, 175, 80, 0.1)";
     case "out_for_delivery": return "rgba(33, 150, 243, 0.1)";
     case "pending": return "rgba(255, 152, 0, 0.1)";
     case "confirmed": return "rgba(33, 150, 243, 0.1)";
@@ -345,16 +351,31 @@ export default function AdminOrders() {
   const getFilteredOrders = () => {
     switch (activeFilter) {
       case "orders":
-        // Active online orders (not delivered/cancelled)
-        return activeOrders.filter(order => 
-          order.orderStatus !== "delivered" && 
-          order.orderStatus !== "cancelled"
-        );
+        // Active online orders (not delivered/cancelled) + pending offline orders
+        return activeOrders.filter(order => {
+          if (order.orderType === 'offline') {
+            // For offline orders, show only pending ones in active tab
+            return order.orderStatus === 'pending';
+          } else {
+            // For online orders, show non-delivered/non-cancelled
+            return order.orderStatus !== "delivered" && 
+                   order.orderStatus !== "cancelled";
+          }
+        });
       case "history":
-        // Online order history (delivered/cancelled)
-        return orderHistory;
+        // Online order history (delivered/cancelled) + completed offline orders
+        return orderHistory.filter(order => {
+          if (order.orderType === 'offline') {
+            // For offline orders, show completed ones in history
+            return order.orderStatus === 'completed';
+          } else {
+            // For online orders, show delivered/cancelled
+            return order.orderStatus === 'delivered' || 
+                   order.orderStatus === 'cancelled';
+          }
+        });
       case "offline":
-        // All offline orders
+        // All offline orders (all statuses)
         return offlineOrders;
       default:
         return [];
@@ -406,6 +427,141 @@ export default function AdminOrders() {
       handleApiError(e);
     }
   };
+
+  /* ---------- OFFLINE ORDER CANCELLATION FUNCTIONS ---------- */
+  
+  // ✅ OFFLINE ORDER CANCELLATION HANDLER
+  // ✅ UPDATED OFFLINE ORDER CANCELLATION HANDLER
+const handleOfflineOrderCancel = (orderId) => {
+  console.log('🎯 handleOfflineOrderCancel TRIGGERED for order:', orderId);
+  
+  Alert.alert(
+    "Cancel Offline Order",
+    "This will restore inventory stock and mark the order as cancelled.",
+    [
+      {
+        text: "Confirm Cancellation",
+        onPress: () => cancelOfflineOrder(orderId, "Retailer initiated cancellation")
+      },
+      {
+        text: "Cancel",
+        style: "cancel",
+        onPress: () => console.log('❌ Cancellation cancelled')
+      }
+    ]
+  );
+};
+
+  // ✅ PROMPT FOR CUSTOM REASON
+  const promptCustomReason = (orderId) => {
+    Alert.prompt(
+      "Cancellation Reason",
+      "Please specify the reason for cancellation:",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Confirm",
+          onPress: (reason) => {
+            if (reason && reason.trim()) {
+              cancelOfflineOrder(orderId, reason.trim());
+            } else {
+              Alert.alert("Error", "Please provide a cancellation reason");
+            }
+          }
+        }
+      ],
+      "plain-text"
+    );
+  };
+
+  // ✅ ENHANCED OFFLINE ORDER CANCELLATION FUNCTION
+  // ✅ ENHANCED OFFLINE ORDER CANCELLATION FUNCTION
+const cancelOfflineOrder = async (orderId, reason) => {
+  if (!(await validateAuthBeforeCall())) return;
+  
+  try {
+    console.log(`🔄 Cancelling offline order ${orderId} with reason: ${reason}`);
+    
+    Alert.alert("Processing", "Cancelling offline order and restoring inventory...");
+    
+    // First, let's get the order details to confirm it's an offline order
+    const orderRes = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    
+    if (!orderRes.ok) {
+      throw new Error("Failed to fetch order details");
+    }
+    
+    const orderData = await orderRes.json();
+    const order = orderData.order;
+    
+    if (!order) {
+      throw new Error("Order not found");
+    }
+    
+    console.log('📦 Order details:', {
+      orderId: order.orderId,
+      orderType: order.orderType,
+      hasCustomer: !!order.customer
+    });
+    
+    // Use the offline-specific endpoint for offline orders
+    if (order.orderType === 'offline') {
+      const cancelRes = await fetch(`${API_BASE_URL}/orders/offline/${orderId}/cancel`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason }),
+      });
+      
+      const cancelData = await cancelRes.json();
+      
+      if (!cancelRes.ok) {
+        // If offline endpoint fails, provide specific guidance
+        if (cancelData.message && cancelData.message.includes('Customer profile')) {
+          throw new Error("Offline order cancellation requires special handling. Please use the admin panel.");
+        } else {
+          throw new Error(cancelData.message || "Failed to cancel offline order");
+        }
+      }
+      
+      Alert.alert("Success", "Offline order cancelled and inventory restored successfully");
+      onRefresh();
+      
+    } else {
+      // For online orders, use regular cancellation
+      const cancelRes = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      
+      if (!cancelRes.ok) throw new Error((await cancelRes.json()).message);
+      
+      Alert.alert("Success", "Order cancelled successfully");
+      onRefresh();
+    }
+    
+  } catch (e) {
+    console.error('❌ Order cancellation failed:', e);
+    
+    // Provide user-friendly error messages
+    if (e.message.includes('Customer profile')) {
+      Alert.alert(
+        "Cancellation Not Available", 
+        "This offline order cannot be cancelled through the app. Please use the web admin panel or contact support.",
+        [{ text: "OK" }]
+      );
+    } else {
+      handleApiError(e, "Failed to cancel order");
+    }
+  }
+};
 
   const handleStatusChange = (orderId, selectedStatus) => {
     const allOrders = [...activeOrders, ...orderHistory, ...offlineOrders];
@@ -629,6 +785,16 @@ export default function AdminOrders() {
                     ]}>
                       {order.orderType === 'offline' ? 'Offline' : 'Online'}
                     </Text>
+                    {/* Cancelled Badge */}
+                    {order.orderStatus === 'cancelled' && (
+                      <View style={styles.cancelledBadge}>
+                        <MaterialIcons name="cancel" size={12} color="#FFF" />
+                        <Text style={styles.cancelledBadgeText}>Cancelled</Text>
+                        {order.cancellationReason && (
+                          <Text style={styles.cancellationReason}>({order.cancellationReason})</Text>
+                        )}
+                      </View>
+                    )}
                   </View>
                   <View
                     style={[
@@ -844,7 +1010,13 @@ export default function AdminOrders() {
                     <View style={styles.paymentSection}>
                       <Text style={styles.sectionTitleSmall}>Payment:</Text>
                       <Text style={styles.paymentText}>Method: {order.paymentMethod || "N/A"}</Text>
-                      <Text style={styles.paymentText}>Status: {order.paymentStatus || "N/A"}</Text>
+                      <Text style={[
+                        styles.paymentText, 
+                        order.paymentStatus === 'paid' ? {color: '#4CAF50', fontWeight: '600'} : {}
+                      ]}>
+                        Status: {order.paymentStatus || "N/A"}
+                        {order.orderType === 'offline' && order.paymentStatus === 'paid' && ' ✅'}
+                      </Text>
                       <Text style={styles.paymentText}>
                         Type: {order.orderType === 'offline' ? 'Offline Order' : 'Online Order'}
                       </Text>
@@ -918,7 +1090,22 @@ export default function AdminOrders() {
                         <MaterialIcons name="share" size={18} color={Colors.light.accent} />
                         <Text style={styles.actionButtonText}>Share Invoice</Text>
                       </TouchableOpacity>
-                      {order.orderStatus !== "cancelled" && order.orderStatus !== "delivered" && order.orderType === 'online' && (
+                      
+                      {/* ✅ OFFLINE ORDER CANCELLATION BUTTON */}
+                      {order.orderType === 'offline' && order.orderStatus !== 'cancelled' && (
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.cancelButton]}
+                          onPress={() => handleOfflineOrderCancel(order.orderId)}
+                        >
+                          <MaterialIcons name="undo" size={18} color="#F44336" />
+                          <Text style={[styles.actionButtonText, { color: "#F44336" }]}>
+                            Cancel Order
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      
+                      {/* REGULAR CANCELLATION FOR ONLINE ORDERS */}
+                      {order.orderType !== 'offline' && order.orderStatus !== "cancelled" && order.orderStatus !== "delivered" && (
                         <TouchableOpacity
                           style={[styles.actionButton, styles.cancelButton]}
                           onPress={() => cancelOrder(order.orderId)}
@@ -1110,6 +1297,27 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     backgroundColor: 'rgba(76, 175, 80, 0.1)',
   },
+  cancelledBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F44336",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+    marginTop: 4,
+  },
+  cancelledBadgeText: {
+    fontSize: 10,
+    color: "#FFF",
+    fontWeight: "600",
+  },
+  cancellationReason: {
+    fontSize: 9,
+    color: "#FFF",
+    fontStyle: "italic",
+    marginLeft: 2,
+  },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1288,7 +1496,12 @@ const styles = StyleSheet.create({
     marginRight: 8,
     justifyContent: "center",
   },
-  cancelButton: { backgroundColor: "rgba(244, 67, 54, 0.1)", marginRight: 0, marginLeft: 8 },
+  cancelButton: { 
+    backgroundColor: "rgba(244, 67, 54, 0.1)", 
+    marginRight: 0, 
+    marginLeft: 8,
+    zIndex: 10,
+  },
   actionButtonText: { marginLeft: 6, fontSize: 14, fontWeight: "600", color: Colors.light.accent },
   distanceSection: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 6 },
   distanceText: { fontSize: 13, color: Colors.light.accent, fontWeight: "600" },
