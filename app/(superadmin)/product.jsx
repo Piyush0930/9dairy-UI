@@ -144,22 +144,25 @@ export default function ProductsManagement() {
   // CATEGORIES MANAGEMENT FUNCTIONS
   // ──────────────────────────────────────────────────────────────
   const fetchCategories = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/catalog/categories`, {
-        headers: getAuthHeaders(),
-      });
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/catalog/categories`, {
+      headers: getAuthHeaders(),
+    });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch categories');
-      }
-
-      const data = await response.json();
-      setCategories(Array.isArray(data) ? data : data.categories || []);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      setCategories([]);
+    if (!response.ok) {
+      throw new Error('Failed to fetch categories');
     }
-  };
+
+    const data = await response.json();
+    const categoriesArray = Array.isArray(data) ? data : data.categories || [];
+    setCategories(categoriesArray);
+    return categoriesArray; // Return the categories for auto-selection
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    setCategories([]);
+    return [];
+  }
+};
 
   const openCategoryCreateModal = () => {
     setEditingCategory(null);
@@ -200,76 +203,82 @@ export default function ProductsManagement() {
   };
 
   const handleCategorySubmit = async (formValuesFromChild) => {
-    // If you’re using local form state inside CategoryForm, it will pass values here:
-    const formData = formValuesFromChild ?? categoryFormData;
+  const formData = formValuesFromChild ?? categoryFormData;
 
-    if (!formData.name.trim()) {
-      Alert.alert('Error', 'Category name is required.');
-      return;
-    }
+  if (!formData.name.trim()) {
+    Alert.alert('Error', 'Category name is required.');
+    return;
+  }
 
-    const isValid = await validateAuthBeforeCall();
-    if (!isValid) return;
+  const isValid = await validateAuthBeforeCall();
+  if (!isValid) return;
 
-    setIsSubmittingCategory(true);
+  setIsSubmittingCategory(true);
 
-    try {
-      // Build multipart form-data
-      const body = new FormData();
+  try {
+    const body = new FormData();
+    body.append('name', formData.name.trim());
+    body.append('description', formData.description?.trim() || '');
+    body.append('displayOrder', String(formData.displayOrder ?? 0));
 
-      body.append('name', formData.name.trim());
-      body.append('description', formData.description?.trim() || '');
-      body.append('displayOrder', String(formData.displayOrder ?? 0));
-
-      // Only append file if it's a local URI (file picked from gallery/camera)
-      if (formData.image && formData.image.startsWith('file:')) {
-        body.append('image', {
-          uri: formData.image,
-          type: 'image/jpeg',                 // or detect mime if you want
-          name: `category-${Date.now()}.jpg`,
-        });
-      }
-      // If image is just a URL string, your current controller ignores it.
-      // The backend will fall back to default '/images/default-category.jpg'.
-
-      const url = editingCategory
-        ? `${API_BASE_URL}/api/superadmin/categories/${editingCategory._id}`
-        : `${API_BASE_URL}/api/superadmin/categories`;
-
-      const method = editingCategory ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          // ❌ DO NOT set 'Content-Type' here for FormData
-        },
-        body,
+    if (formData.image && formData.image.startsWith('file:')) {
+      body.append('image', {
+        uri: formData.image,
+        type: 'image/jpeg',
+        name: `category-${Date.now()}.jpg`,
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        Alert.alert(
-          'Success',
-          `Category ${editingCategory ? 'updated' : 'created'} successfully!`
-        );
-        closeCategoryFormModal();
-        fetchCategories();
-      } else {
-        throw new Error(data.message || 'Failed to save category');
-      }
-    } catch (error) {
-      console.error('Category submit error:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to save category. Please try again.'
-      );
-    } finally {
-      setIsSubmittingCategory(false);
-      endOperation();
     }
-  };
+
+    const url = editingCategory
+      ? `${API_BASE_URL}/api/superadmin/categories/${editingCategory._id}`
+      : `${API_BASE_URL}/api/superadmin/categories`;
+
+    const method = editingCategory ? 'PUT' : 'POST';
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body,
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      Alert.alert(
+        'Success',
+        `Category ${editingCategory ? 'updated' : 'created'} successfully!`
+      );
+      
+      // Refresh categories list
+      await fetchCategories();
+      
+      // If we're creating a new category from the product form, auto-select it
+      if (!editingCategory && modalVisible) {
+        // The new category should be the last one in the list (or we can get it from response if available)
+        const newCategories = await fetchCategories();
+        if (newCategories.length > 0) {
+          const newCategory = newCategories[newCategories.length - 1];
+          setFormData(prev => ({ ...prev, category: newCategory._id }));
+        }
+      }
+      
+      closeCategoryFormModal();
+    } else {
+      throw new Error(data.message || 'Failed to save category');
+    }
+  } catch (error) {
+    console.error('Category submit error:', error);
+    Alert.alert(
+      'Error',
+      error.message || 'Failed to save category. Please try again.'
+    );
+  } finally {
+    setIsSubmittingCategory(false);
+    endOperation();
+  }
+};
 
 
   const handleCategoryDelete = async (categoryId, categoryName) => {
@@ -2123,34 +2132,55 @@ export default function ProductsManagement() {
                   />
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>
-                    Category * {autoFilledFields.has('category') && '✓'}
-                  </Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.chipScroll}
-                    contentContainerStyle={styles.chipScrollContent}
-                  >
-                    {categories.map((cat) => (
-                      <TouchableOpacity
-                        key={cat._id}
-                        style={[styles.chip, formData.category === cat._id && styles.chipSelected]}
-                        onPress={() => setFormData({ ...formData, category: cat._id })}
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            formData.category === cat._id && styles.chipTextSelected,
-                          ]}
-                        >
-                          {cat.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                {/* Category Selection with Create New Option */}
+<View style={styles.inputGroup}>
+  <Text style={styles.inputLabel}>
+    Category * {autoFilledFields.has('category') && '✓'}
+  </Text>
+  
+  {/* Categories Chip List */}
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    style={styles.chipScroll}
+    contentContainerStyle={styles.chipScrollContent}
+  >
+    {categories.map((cat) => (
+      <TouchableOpacity
+        key={cat._id}
+        style={[styles.chip, formData.category === cat._id && styles.chipSelected]}
+        onPress={() => setFormData({ ...formData, category: cat._id })}
+      >
+        <Text
+          style={[
+            styles.chipText,
+            formData.category === cat._id && styles.chipTextSelected,
+          ]}
+        >
+          {cat.name}
+        </Text>
+      </TouchableOpacity>
+    ))}
+  </ScrollView>
+
+  {/* Create New Category Button */}
+  <TouchableOpacity
+    style={styles.createCategoryButton}
+    onPress={() => {
+      setCategoryFormModalVisible(true);
+      setEditingCategory(null);
+      setCategoryFormData({
+        name: '',
+        description: '',
+        image: '',
+        displayOrder: categories.length,
+      });
+    }}
+  >
+    <Ionicons name="add-circle-outline" size={18} color={Colors.light.accent} />
+    <Text style={styles.createCategoryButtonText}>Create New Category</Text>
+  </TouchableOpacity>
+</View>
               </View>
 
               {/* Pricing Section */}
@@ -3054,6 +3084,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Create New Category Button Styles
+createCategoryButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#F0F8FF',
+  paddingVertical: 12,
+  paddingHorizontal: 16,
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: Colors.light.accent,
+  borderStyle: 'dashed',
+  marginTop: 8,
+  gap: 8,
+},
+createCategoryButtonText: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: Colors.light.accent,
+},
 
   // Header Styles
   professionalHeader: {
