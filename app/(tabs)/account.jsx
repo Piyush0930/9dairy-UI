@@ -52,7 +52,7 @@ const customerAPI = {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to update profile: ${response.status}`);
+        throw new Error(`currently in process...`);
       }
       return await response.json();
     } catch (error) {

@@ -530,7 +530,10 @@ export default function CategoriesScreen() {
 
     return (
       <TouchableOpacity 
-        style={styles.productCard}
+        style={[
+          styles.productCard,
+          availabilityStatus !== 'available' && styles.unavailableProductCard
+        ]}
         onPress={() => openProductDetail(product)}
         activeOpacity={0.9}
       >
@@ -546,35 +549,65 @@ export default function CategoriesScreen() {
           </View>
         )}
 
-        {/* Status Badge - Short Titles */}
-        {availabilityStatus === 'out_of_stock' && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>OUT OF STOCK</Text>
-          </View>
-        )}
-        {availabilityStatus === 'not_available' && (
-          <View style={[styles.statusBadge, styles.notAvailableBadge]}>
-            <Text style={styles.statusBadgeText}>NOT AVAILABLE</Text>
+        {/* Full Width Status Banner - For Unavailable Products */}
+        {availabilityStatus !== 'available' && (
+          <View style={[
+            styles.fullWidthStatusBanner,
+            availabilityStatus === 'out_of_stock' ? styles.outOfStockBanner : styles.notAvailableBanner
+          ]}>
+            <View style={styles.statusBannerContent}>
+              <Ionicons 
+                name={availabilityStatus === 'out_of_stock' ? "alert-circle" : "information-circle"} 
+                size={20} 
+                color="#FFFFFF" 
+              />
+              <Text style={styles.statusBannerText}>
+                {availabilityStatus === 'out_of_stock' ? 'OUT OF STOCK' : 'NOT AVAILABLE'}
+              </Text>
+            </View>
+            {availabilityStatus === 'not_available' && (
+              <Text style={styles.statusBannerSubtext}>
+                This product is not available from your retailer
+              </Text>
+            )}
           </View>
         )}
 
         {/* Product Content */}
-        <View style={styles.productContent}>
+        <View style={[
+          styles.productContent,
+          availabilityStatus !== 'available' && styles.unavailableProductContent
+        ]}>
           <View style={styles.productLeft}>
-            <Text style={styles.productName}>{product.name}</Text>
-            <Text style={styles.productUnit}>{product.unit}</Text>
+            <Text style={[
+              styles.productName,
+              availabilityStatus !== 'available' && styles.unavailableProductText
+            ]}>
+              {product.name}
+            </Text>
+            <Text style={[
+              styles.productUnit,
+              availabilityStatus !== 'available' && styles.unavailableProductText
+            ]}>
+              {product.unit}
+            </Text>
 
             {/* Dynamic Price Display */}
             <View style={styles.mainPriceContainer}>
               <View style={styles.priceRow}>
-                <Text style={styles.price}>₹{pricing.currentPrice}</Text>
-                {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && (
+                <Text style={[
+                  styles.price,
+                  availabilityStatus !== 'available' && styles.unavailableProductText
+                ]}>
+                  ₹{pricing.currentPrice}
+                </Text>
+                {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && availabilityStatus === 'available' && (
                   <Text style={styles.priceOriginal}>₹{pricing.basePrice}</Text>
                 )}
               </View>
               
               {/* Savings Badge - Show for both single piece and bulk discounts */}
-              {(pricing.savings > 0 || singlePieceSavings > 0) && (
+              {(pricing.savings > 0 || singlePieceSavings > 0) && availabilityStatus === 'available' && (
                 <Animated.View 
                   style={[
                     styles.savingsBadge,
@@ -596,11 +629,17 @@ export default function CategoriesScreen() {
             {product.image || product.imageUrl ? (
               <Image
                 source={getImageSource(product.image || product.imageUrl)}
-                style={styles.productImage}
+                style={[
+                  styles.productImage,
+                  availabilityStatus !== 'available' && styles.unavailableProductImage
+                ]}
                 resizeMode="cover"
               />
             ) : (
-              <View style={styles.productImagePlaceholder}>
+              <View style={[
+                styles.productImagePlaceholder,
+                availabilityStatus !== 'available' && styles.unavailableProductImage
+              ]}>
                 <Text style={styles.productImageText}>📦</Text>
               </View>
             )}
@@ -645,7 +684,7 @@ export default function CategoriesScreen() {
           </View>
         </View>
 
-        {/* Bulk Pricing Tiers */}
+        {/* Bulk Pricing Tiers - Only show for available products */}
         {availabilityStatus === 'available' && pricing.bulkPricingTiers.length > 0 && (
           <View style={styles.bulkPricingSection}>
             <View style={styles.bulkPricingHeader}>
@@ -792,6 +831,31 @@ export default function CategoriesScreen() {
 
             {/* Product Info */}
             <View style={styles.productInfoSection}>
+              {/* Full Width Status Banner in Modal */}
+              {availabilityStatus !== 'available' && (
+                <View style={[
+                  styles.fullWidthStatusBanner,
+                  styles.modalStatusBanner,
+                  availabilityStatus === 'out_of_stock' ? styles.outOfStockBanner : styles.notAvailableBanner
+                ]}>
+                  <View style={styles.statusBannerContent}>
+                    <Ionicons 
+                      name={availabilityStatus === 'out_of_stock' ? "alert-circle" : "information-circle"} 
+                      size={20} 
+                      color="#FFFFFF" 
+                    />
+                    <Text style={styles.statusBannerText}>
+                      {availabilityStatus === 'out_of_stock' ? 'OUT OF STOCK' : 'NOT AVAILABLE'}
+                    </Text>
+                  </View>
+                  {availabilityStatus === 'not_available' && (
+                    <Text style={styles.statusBannerSubtext}>
+                      This product is not available from your retailer
+                    </Text>
+                  )}
+                </View>
+              )}
+
               <View style={styles.productHeaderRow}>
                 <View style={styles.productTitleContainer}>
                   <Text style={styles.productDetailName}>{product.name}</Text>
@@ -802,7 +866,7 @@ export default function CategoriesScreen() {
                 <View style={styles.priceCounterContainer}>
                   <View style={styles.detailPriceContainer}>
                     <Text style={styles.detailPrice}>₹{pricing.currentPrice}</Text>
-                    {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && (
+                    {pricing.hasDiscount && pricing.currentPrice < pricing.basePrice && availabilityStatus === 'available' && (
                       <Text style={styles.detailPriceOriginal}>₹{pricing.basePrice}</Text>
                     )}
                   </View>
@@ -847,7 +911,7 @@ export default function CategoriesScreen() {
                 </View>
               </View>
 
-              {pricing.hasDiscount && (
+              {pricing.hasDiscount && availabilityStatus === 'available' && (
                 <View style={styles.detailDiscountBadge}>
                   <Text style={styles.detailDiscountBadgeText}>
                     {pricing.discountPercentage}% OFF
@@ -900,30 +964,60 @@ export default function CategoriesScreen() {
                       {similarProducts.map(similarProduct => {
                         const similarPricing = calculateProductPricing(similarProduct, similarProduct._inventory);
                         const similarCartQuantity = getItemQuantity(similarProduct._id);
+                        const similarAvailabilityStatus = getAvailabilityStatus(similarProduct);
                         
                         return (
-                          <View key={similarProduct._id} style={styles.similarProductCard}>
+                          <View key={similarProduct._id} style={[
+                            styles.similarProductCard,
+                            similarAvailabilityStatus !== 'available' && styles.unavailableSimilarProductCard
+                          ]}>
                             <TouchableOpacity 
                               onPress={() => {
                                 setSelectedProduct(similarProduct);
                               }}
                               activeOpacity={0.7}
                             >
+                              {/* Status Banner for Similar Products */}
+                              {similarAvailabilityStatus !== 'available' && (
+                                <View style={[
+                                  styles.similarProductStatusBanner,
+                                  similarAvailabilityStatus === 'out_of_stock' ? styles.outOfStockBanner : styles.notAvailableBanner
+                                ]}>
+                                  <Text style={styles.similarProductStatusText}>
+                                    {similarAvailabilityStatus === 'out_of_stock' ? 'OUT OF STOCK' : 'NOT AVAILABLE'}
+                                  </Text>
+                                </View>
+                              )}
+
                               <Image
                                 source={getImageSource(similarProduct.image || similarProduct.imageUrl)}
-                                style={styles.similarProductImage}
+                                style={[
+                                  styles.similarProductImage,
+                                  similarAvailabilityStatus !== 'available' && styles.unavailableProductImage
+                                ]}
                                 resizeMode="cover"
                               />
                               <View style={styles.similarProductInfo}>
-                                <Text style={styles.similarProductName} numberOfLines={2}>
+                                <Text style={[
+                                  styles.similarProductName,
+                                  similarAvailabilityStatus !== 'available' && styles.unavailableProductText
+                                ]} numberOfLines={2}>
                                   {similarProduct.name}
                                 </Text>
-                                <Text style={styles.similarProductUnit}>{similarProduct.unit}</Text>
+                                <Text style={[
+                                  styles.similarProductUnit,
+                                  similarAvailabilityStatus !== 'available' && styles.unavailableProductText
+                                ]}>
+                                  {similarProduct.unit}
+                                </Text>
                                 <View style={styles.similarProductPriceRow}>
-                                  <Text style={styles.similarProductPrice}>
+                                  <Text style={[
+                                    styles.similarProductPrice,
+                                    similarAvailabilityStatus !== 'available' && styles.unavailableProductText
+                                  ]}>
                                     ₹{similarPricing.currentPrice}
                                   </Text>
-                                  {similarPricing.hasDiscount && similarPricing.currentPrice < similarPricing.basePrice && (
+                                  {similarPricing.hasDiscount && similarPricing.currentPrice < similarPricing.basePrice && similarAvailabilityStatus === 'available' && (
                                     <Text style={styles.similarProductPriceOriginal}>
                                       ₹{similarPricing.basePrice}
                                     </Text>
@@ -931,36 +1025,38 @@ export default function CategoriesScreen() {
                                 </View>
                                 
                                 {/* Add to Cart in Similar Products */}
-                                <View style={styles.similarProductActions}>
-                                  {similarCartQuantity > 0 ? (
-                                    <View style={styles.similarQuantityControls}>
-                                      <TouchableOpacity 
-                                        style={styles.similarQtyBtn} 
-                                        onPress={() => removeFromCart(similarProduct._id)}
-                                      >
-                                        <Ionicons name="remove" size={16} color={Colors.light.tint} />
-                                      </TouchableOpacity>
-                                      <Text style={styles.similarQtyText}>{similarCartQuantity}</Text>
-                                      <TouchableOpacity 
-                                        style={styles.similarQtyBtn} 
+                                {similarAvailabilityStatus === 'available' && (
+                                  <View style={styles.similarProductActions}>
+                                    {similarCartQuantity > 0 ? (
+                                      <View style={styles.similarQuantityControls}>
+                                        <TouchableOpacity 
+                                          style={styles.similarQtyBtn} 
+                                          onPress={() => removeFromCart(similarProduct._id)}
+                                        >
+                                          <Ionicons name="remove" size={16} color={Colors.light.tint} />
+                                        </TouchableOpacity>
+                                        <Text style={styles.similarQtyText}>{similarCartQuantity}</Text>
+                                        <TouchableOpacity 
+                                          style={styles.similarQtyBtn} 
+                                          onPress={() => handleAddToCart(similarProduct)}
+                                        >
+                                          <Ionicons name="add" size={16} color={Colors.light.tint} />
+                                        </TouchableOpacity>
+                                      </View>
+                                    ) : (
+                                      <TouchableOpacity
+                                        style={styles.similarAddButton}
                                         onPress={() => handleAddToCart(similarProduct)}
+                                        activeOpacity={0.7}
                                       >
-                                        <Ionicons name="add" size={16} color={Colors.light.tint} />
+                                        <Text style={styles.similarAddButtonText}>ADD</Text>
                                       </TouchableOpacity>
-                                    </View>
-                                  ) : (
-                                    <TouchableOpacity
-                                      style={styles.similarAddButton}
-                                      onPress={() => handleAddToCart(similarProduct)}
-                                      activeOpacity={0.7}
-                                    >
-                                      <Text style={styles.similarAddButtonText}>ADD</Text>
-                                    </TouchableOpacity>
-                                  )}
-                                </View>
+                                    )}
+                                  </View>
+                                )}
 
                                 {/* Bulk Pricing in Similar Products */}
-                                {similarPricing.bulkPricingTiers.length > 0 && similarPricing.bulkPricingTiers.some(tier => tier.quantity > 1) && (
+                                {similarAvailabilityStatus === 'available' && similarPricing.bulkPricingTiers.length > 0 && similarPricing.bulkPricingTiers.some(tier => tier.quantity > 1) && (
                                   <View style={styles.similarBulkSection}>
                                     <Text style={styles.similarBulkTitle}>Bulk Save</Text>
                                     {similarPricing.bulkPricingTiers
@@ -992,7 +1088,7 @@ export default function CategoriesScreen() {
           </ScrollView>
 
           {/* Fixed Continue to Cart Button - Solid Red */}
-          {cartQuantity > 0 && (
+          {cartQuantity > 0 && availabilityStatus === 'available' && (
             <View style={styles.continueToCartContainer}>
               <TouchableOpacity 
                 style={styles.continueToCartButton}
@@ -1445,6 +1541,54 @@ const styles = StyleSheet.create({
     position: "relative",
     minHeight: 220,
   },
+  unavailableProductCard: {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E5E7EB',
+    borderWidth: 1,
+  },
+  // Full Width Status Banner
+  fullWidthStatusBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    zIndex: 3,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  modalStatusBanner: {
+    marginBottom: 16,
+    position: 'relative',
+    borderRadius: 12,
+  },
+  outOfStockBanner: {
+    backgroundColor: '#DC2626',
+  },
+  notAvailableBanner: {
+    backgroundColor: '#F59E0B',
+  },
+  statusBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  statusBannerText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  statusBannerSubtext: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 4,
+    opacity: 0.9,
+  },
   // Blue Discount Badge
   discountBadge: {
     position: "absolute",
@@ -1474,29 +1618,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
     opacity: 0.9,
   },
-  // Status Badges - Short Titles
-  statusBadge: {
-    position: "absolute",
-    right: 12,
-    top: 12,
-    backgroundColor: "#EF4444",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    zIndex: 2,
-  },
-  notAvailableBadge: {
-    backgroundColor: "#F59E0B",
-  },
-  statusBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
-  },
   productContent: {
     flexDirection: "row",
     gap: 16,
     marginTop: 8,
+  },
+  unavailableProductContent: {
+    opacity: 0.7,
   },
   productLeft: {
     flex: 1,
@@ -1513,6 +1641,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
     marginBottom: 12,
+  },
+  unavailableProductText: {
+    color: '#6B7280',
   },
   mainPriceContainer: {
     marginBottom: 12,
@@ -1557,6 +1688,9 @@ const styles = StyleSheet.create({
     height: 90,
     borderRadius: 8,
     backgroundColor: "#F5F5F5",
+  },
+  unavailableProductImage: {
+    opacity: 0.5,
   },
   productImagePlaceholder: {
     width: 90,
@@ -2013,6 +2147,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    position: 'relative',
+  },
+  unavailableSimilarProductCard: {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E5E7EB',
+    borderWidth: 1,
+  },
+  similarProductStatusBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    zIndex: 2,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  similarProductStatusText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   similarProductImage: {
     width: '100%',

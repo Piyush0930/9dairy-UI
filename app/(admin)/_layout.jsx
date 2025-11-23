@@ -98,9 +98,11 @@ export default function AdminLayout() {
         }}
       />
 
-      {/* HIDDEN ROUTES */}
+      {/* ------------- HIDDEN ROUTES (Not shown on Tab bar) ------------- */}
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="offline-order" options={{ href: null }} />
+      <Tabs.Screen name="offline-customer" options={{ href: null }} />
+
     </Tabs>
   );
 }

@@ -1,7 +1,6 @@
 // app/(admin)/orders.jsx
 
 import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { File } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
@@ -89,26 +88,63 @@ function getStatusBackgroundColor(status) {
   }
 }
 
-/* ---------- PRICE HELPER FUNCTIONS ---------- */
+/* ---------- ENHANCED PRICE CALCULATION FUNCTIONS ---------- */
 
-const getItemPrice = (item) => {
-  // 🔥 CRITICAL FIX: Always use the price stored in the order item (this is the final charged override price)
-  // NOT the product.price which is the default catalog price
-  return item.price || item.finalPrice || 0;
+const getItemOriginalPrice = (item) => {
+  return item.product?.price || item.originalPrice || item.price || 0;
+};
+
+const getItemFinalPrice = (item) => {
+  return item.price || item.finalPrice || item.product?.price || 0;
 };
 
 const isPriceOverridden = (item) => {
-  return item.isPriceOverridden || false;
+  return item.isPriceOverridden || 
+         (item.price && item.product?.price && item.price !== item.product.price);
+};
+
+const getItemQuantity = (item) => {
+  return item.quantity || 0;
+};
+
+const getItemSubtotal = (item) => {
+  const originalPrice = getItemOriginalPrice(item);
+  const quantity = getItemQuantity(item);
+  return originalPrice * quantity;
 };
 
 const getItemTotal = (item) => {
-  const price = getItemPrice(item); // This uses the override price
-  const quantity = item.quantity || 0;
-  return price * quantity;
+  const finalPrice = getItemFinalPrice(item);
+  const quantity = getItemQuantity(item);
+  return finalPrice * quantity;
 };
 
-const getOrderTotal = (order) => {
-  return order.finalAmount || order.totalAmount || 0;
+const getOrderSubtotal = (order) => {
+  if (!order.items || !order.items.length) return 0;
+  return order.items.reduce((sum, item) => sum + getItemSubtotal(item), 0);
+};
+
+const getOrderTotalBeforeDiscount = (order) => {
+  if (!order.items || !order.items.length) return 0;
+  return order.items.reduce((sum, item) => sum + getItemTotal(item), 0);
+};
+
+const getOrderDiscount = (order) => {
+  const subtotal = getOrderTotalBeforeDiscount(order);
+  const finalAmount = order.finalAmount || subtotal;
+  const discount = subtotal - finalAmount;
+  return Math.max(0, discount);
+};
+
+const getOrderFinalAmount = (order) => {
+  return order.finalAmount || getOrderTotalBeforeDiscount(order);
+};
+
+const calculateSavingsPercentage = (order) => {
+  const subtotal = getOrderTotalBeforeDiscount(order);
+  const finalAmount = getOrderFinalAmount(order);
+  if (subtotal <= 0 || finalAmount >= subtotal) return 0;
+  return ((subtotal - finalAmount) / subtotal * 100).toFixed(1);
 };
 
 /* ---------- MAIN COMPONENT ---------- */
@@ -118,7 +154,8 @@ export default function AdminOrders() {
   const { authToken, isLoading: authLoading, isAuthenticated, validateToken } = useAuth();
   const router = useRouter();
   
-  const [orders, setOrders] = useState([]);
+  const [activeOrders, setActiveOrders] = useState([]);
+  const [orderHistory, setOrderHistory] = useState([]);
   const [offlineOrders, setOfflineOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -141,150 +178,68 @@ export default function AdminOrders() {
     return true;
   };
 
-  const fetchOrders = async () => {
-    if (!(await validateAuthBeforeCall())) {
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
+  const processOrderData = (order) => {
+    const processedItems = order.items?.map(item => {
+      const originalPrice = getItemOriginalPrice(item);
+      const finalPrice = getItemFinalPrice(item);
+      const isOverridden = isPriceOverridden(item);
+      
+      return {
+        ...item,
+        originalPrice,
+        finalPrice,
+        isPriceOverridden: isOverridden,
+        itemSubtotal: getItemSubtotal(item),
+        itemTotal: getItemTotal(item),
+      };
+    }) || [];
+
+    const orderSubtotal = getOrderSubtotal({ ...order, items: processedItems });
+    const totalBeforeDiscount = getOrderTotalBeforeDiscount({ ...order, items: processedItems });
+    const discount = getOrderDiscount(order);
+    const finalAmount = getOrderFinalAmount(order);
+    const savingsPercentage = calculateSavingsPercentage(order);
+
+    return {
+      ...order,
+      items: processedItems,
+      orderSubtotal,
+      totalBeforeDiscount,
+      discount,
+      finalAmount,
+      savingsPercentage,
+      calculatedSubtotal: orderSubtotal,
+      calculatedTotal: finalAmount,
+      orderType: order.orderType || 'online'
+    };
+  };
+
+  /* ---------- FETCH ALL ORDER TYPES ---------- */
+  const fetchActiveOrders = async () => {
+    if (!(await validateAuthBeforeCall())) return [];
     try {
       const res = await fetch(`${API_BASE_URL}/orders/retailer/my-orders`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to fetch orders");
+      if (!res.ok) throw new Error(data.message || "Failed to fetch active orders");
       
-      console.log('📦 Raw orders data:', data.orders);
+      console.log('📦 Active orders:', data.orders?.length || 0);
       
-      // Process orders - ENSURE ONLY OVERRIDE PRICES ARE USED
-      const processedOrders = (data.orders || []).map(order => {
-        console.log(`🛒 Processing order ${order.orderId}:`, {
-          items: order.items,
-          totalAmount: order.totalAmount,
-          finalAmount: order.finalAmount,
-          priceSource: order.priceSource
-        });
-        
-        const processedItems = order.items?.map(item => {
-          const finalPrice = getItemPrice(item); // This is the override price
-          const isOverridden = isPriceOverridden(item);
-          
-          console.log(`📦 Order item ${item.product?.name}:`, {
-            storedPrice: item.price, // This should be the override price
-            productPrice: item.product?.price, // This is the default price (IGNORE THIS)
-            finalPrice: finalPrice,
-            isPriceOverridden: isOverridden,
-          });
-          
-          return {
-            ...item,
-            // 🔥 OVERRIDE the product price with the actual charged price
-            product: item.product ? {
-              ...item.product,
-              price: finalPrice // Replace product price with override price
-            } : item.product,
-            price: finalPrice,
-            finalPrice: finalPrice,
-            displayPrice: finalPrice,
-            isPriceOverridden: isOverridden,
-          };
-        }) || [];
-        
-        // Calculate totals based on override prices
-        const calculatedSubtotal = processedItems.reduce((sum, item) => sum + getItemTotal(item), 0);
-        const calculatedTotal = order.finalAmount || calculatedSubtotal;
-        
-        console.log(`💰 Order ${order.orderId} totals:`, {
-          calculatedSubtotal,
-          calculatedTotal,
-          storedFinalAmount: order.finalAmount,
-        });
-        
-        return {
-          ...order,
-          items: processedItems,
-          calculatedSubtotal,
-          calculatedTotal,
-          finalAmount: calculatedTotal,
-          totalAmount: calculatedSubtotal
-        };
-      });
+      // Filter only online orders for active tab
+      const onlineOrders = (data.orders || []).filter(order => 
+        order.orderType === 'online' || !order.orderType // include legacy orders without orderType
+      );
       
-      setOrders(processedOrders);
+      return onlineOrders.map(processOrderData);
     } catch (e) {
-      handleApiError(e, "Failed to fetch orders");
-      setOrders([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const fetchOfflineOrders = async () => {
-    if (!(await validateAuthBeforeCall())) {
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-    try {
-      const res = await fetch(`${API_BASE_URL}/orders/retailer/order-history?type=offline`, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to fetch offline orders");
-      
-      console.log('📦 Raw offline orders data:', data.orders);
-      
-      // Process offline orders - ENSURE ONLY OVERRIDE PRICES ARE USED
-      const processedOrders = (data.orders || []).map(order => {
-        const processedItems = order.items?.map(item => {
-          const finalPrice = getItemPrice(item);
-          const isOverridden = isPriceOverridden(item);
-          
-          return {
-            ...item,
-            // 🔥 OVERRIDE the product price with the actual charged price
-            product: item.product ? {
-              ...item.product,
-              price: finalPrice // Replace product price with override price
-            } : item.product,
-            price: finalPrice,
-            finalPrice: finalPrice,
-            displayPrice: finalPrice,
-            isPriceOverridden: isOverridden,
-          };
-        }) || [];
-        
-        // Calculate totals based on override prices
-        const calculatedSubtotal = processedItems.reduce((sum, item) => sum + getItemTotal(item), 0);
-        const calculatedTotal = order.finalAmount || calculatedSubtotal;
-        
-        return {
-          ...order,
-          items: processedItems,
-          calculatedSubtotal,
-          calculatedTotal,
-          finalAmount: calculatedTotal,
-          totalAmount: calculatedSubtotal
-        };
-      });
-      
-      setOfflineOrders(processedOrders);
-    } catch (e) {
-      handleApiError(e, "Failed to fetch offline orders");
-      setOfflineOrders([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      handleApiError(e, "Failed to fetch active orders");
+      return [];
     }
   };
 
   const fetchOrderHistory = async () => {
-    if (!(await validateAuthBeforeCall())) {
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
+    if (!(await validateAuthBeforeCall())) return [];
     try {
       const res = await fetch(`${API_BASE_URL}/orders/retailer/order-history`, {
         headers: { Authorization: `Bearer ${authToken}` },
@@ -292,45 +247,80 @@ export default function AdminOrders() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to fetch order history");
       
-      console.log('📦 Raw order history data:', data.orders);
+      console.log('📦 Raw order history:', data.orders?.length || 0);
       
-      // Process orders for history view - ENSURE ONLY OVERRIDE PRICES ARE USED
-      const processedOrders = (data.orders || []).map(order => {
-        const processedItems = order.items?.map(item => {
-          const finalPrice = getItemPrice(item);
-          const isOverridden = isPriceOverridden(item);
-          
-          return {
-            ...item,
-            // 🔥 OVERRIDE the product price with the actual charged price
-            product: item.product ? {
-              ...item.product,
-              price: finalPrice // Replace product price with override price
-            } : item.product,
-            price: finalPrice,
-            finalPrice: finalPrice,
-            displayPrice: finalPrice,
-            isPriceOverridden: isOverridden,
-          };
-        }) || [];
-        
-        const calculatedSubtotal = processedItems.reduce((sum, item) => sum + getItemTotal(item), 0);
-        const calculatedTotal = order.finalAmount || calculatedSubtotal;
-        
-        return {
-          ...order,
-          items: processedItems,
-          calculatedSubtotal,
-          calculatedTotal,
-          finalAmount: calculatedTotal,
-          totalAmount: calculatedSubtotal
-        };
+      // Filter only ONLINE orders that are delivered or cancelled
+      const onlineHistoryOrders = (data.orders || []).filter(order => {
+        const isOnline = order.orderType === 'online' || !order.orderType;
+        const isCompleted = order.orderStatus === 'delivered' || order.orderStatus === 'cancelled';
+        return isOnline && isCompleted;
       });
       
-      setOrders(processedOrders);
+      console.log('📦 Filtered online order history:', onlineHistoryOrders.length);
+      
+      return onlineHistoryOrders.map(processOrderData);
     } catch (e) {
       handleApiError(e, "Failed to fetch order history");
-      setOrders([]);
+      return [];
+    }
+  };
+
+  const fetchOfflineOrders = async () => {
+    if (!(await validateAuthBeforeCall())) return [];
+    try {
+      // Fetch ALL orders first
+      const res = await fetch(`${API_BASE_URL}/orders/retailer/order-history`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to fetch orders");
+      
+      console.log('📦 Raw all orders for offline filter:', data.orders?.length || 0);
+      
+      // Filter only OFFLINE orders (all statuses)
+      const offlineOrdersData = (data.orders || []).filter(order => 
+        order.orderType === 'offline'
+      );
+      
+      console.log('📦 Filtered offline orders:', offlineOrdersData.length);
+      
+      return offlineOrdersData.map(processOrderData);
+    } catch (e) {
+      handleApiError(e, "Failed to fetch offline orders");
+      return [];
+    }
+  };
+
+  const fetchAllOrders = async () => {
+    if (!(await validateAuthBeforeCall())) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Fetch all order types in parallel
+      const [active, history, offline] = await Promise.all([
+        fetchActiveOrders(),
+        fetchOrderHistory(),
+        fetchOfflineOrders()
+      ]);
+
+      console.log('📊 Final Orders Summary:', {
+        active: active.length,
+        history: history.length,
+        offline: offline.length
+      });
+
+      setActiveOrders(active);
+      setOrderHistory(history);
+      setOfflineOrders(offline);
+      
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      Alert.alert("Error", "Failed to load orders");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -339,37 +329,47 @@ export default function AdminOrders() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    if (activeFilter === "offline") {
-      await fetchOfflineOrders();
-    } else if (activeFilter === "history") {
-      await fetchOrderHistory();
-    } else {
-      await fetchOrders();
-    }
+    await fetchAllOrders();
   };
 
-  /* ---------- LOAD DATA ON FILTER CHANGE ---------- */
+  /* ---------- LOAD DATA ON MOUNT ---------- */
   useEffect(() => {
     if (!authLoading && authToken && isAuthenticated) {
-      setLoading(true);
-      if (activeFilter === "offline") {
-        fetchOfflineOrders();
-      } else if (activeFilter === "history") {
-        fetchOrderHistory();
-      } else {
-        fetchOrders();
-      }
+      fetchAllOrders();
     } else if (!authLoading) {
       setLoading(false);
     }
-  }, [activeFilter, authToken, authLoading, isAuthenticated]);
+  }, [authToken, authLoading, isAuthenticated]);
 
-  /* ---------- NAVIGATE TO OFFLINE ORDER PAGE WITH SCANNER AUTO-OPEN ---------- */
-  const navigateToOfflineOrder = () => {
-    router.push({
-      pathname: "/(admin)/offline-order",
-      params: { autoOpenScanner: "true" }
-    });
+  /* ---------- GET FILTERED ORDERS ---------- */
+  const getFilteredOrders = () => {
+    switch (activeFilter) {
+      case "orders":
+        // Active online orders (not delivered/cancelled)
+        return activeOrders.filter(order => 
+          order.orderStatus !== "delivered" && 
+          order.orderStatus !== "cancelled"
+        );
+      case "history":
+        // Online order history (delivered/cancelled)
+        return orderHistory;
+      case "offline":
+        // All offline orders
+        return offlineOrders;
+      default:
+        return [];
+    }
+  };
+
+  const filteredOrders = getFilteredOrders();
+
+  /* ---------- NAVIGATE TO OFFLINE ORDER PAGES ---------- */
+  const navigateToCreateBill = () => {
+    router.push("/(admin)/offline-order");
+  };
+
+  const navigateToWalkIn = () => {
+    router.push("/offline-customer");
   };
 
   /* ---------- ORDER STATUS ACTIONS ---------- */
@@ -386,7 +386,7 @@ export default function AdminOrders() {
       });
       if (!res.ok) throw new Error((await res.json()).message);
       Alert.alert("Success", "Status updated");
-      onRefresh(); // Refresh current view
+      onRefresh();
     } catch (e) {
       handleApiError(e);
     }
@@ -401,16 +401,15 @@ export default function AdminOrders() {
       });
       if (!res.ok) throw new Error((await res.json()).message);
       Alert.alert("Success", "Order cancelled");
-      onRefresh(); // Refresh current view
+      onRefresh();
     } catch (e) {
       handleApiError(e);
     }
   };
 
   const handleStatusChange = (orderId, selectedStatus) => {
-    const order = activeFilter === "offline"
-      ? offlineOrders.find(o => o.orderId === orderId)
-      : orders.find(o => o.orderId === orderId);
+    const allOrders = [...activeOrders, ...orderHistory, ...offlineOrders];
+    const order = allOrders.find(o => o.orderId === orderId);
     if (!order) return;
     const curIdx = statusOrder.indexOf(order.orderStatus);
     const selIdx = statusOrder.indexOf(selectedStatus);
@@ -431,61 +430,60 @@ export default function AdminOrders() {
     ]);
   };
 
-  /* ---------- FIXED SHARE FUNCTIONS (NO DEPRECATION) ---------- */
+  /* ---------- SHARE FUNCTIONS ---------- */
   const shareOrderInvoice = async (orderId) => {
-  if (!(await validateAuthBeforeCall())) return;
-  try {
-    const uri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
-    
-    // Use legacy downloadAsync temporarily
-    const dl = await downloadAsync(
-      `${API_BASE_URL}/orders/${orderId}/invoice`,
-      uri,
-      { headers: { Authorization: `Bearer ${authToken}` } }
-    );
-    
-    if (dl.status !== 200) throw new Error('Download failed');
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
-  } catch (e) {
-    handleApiError(e, "Failed to share invoice");
-  }
-};
+    if (!(await validateAuthBeforeCall())) return;
+    try {
+      const uri = FileSystem.documentDirectory + `invoice-${orderId}.pdf`;
+      
+      const dl = await downloadAsync(
+        `${API_BASE_URL}/orders/${orderId}/invoice`,
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      
+      if (dl.status !== 200) throw new Error('Download failed');
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share invoice");
+    }
+  };
 
-const shareOverallInvoice = async () => {
-  if (!(await validateAuthBeforeCall())) return;
-  try {
-    const uri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split("T")[0]}.pdf`;
-    
-    const dl = await downloadAsync(
-      `${API_BASE_URL}/admin/invoices/pdf`,
-      uri,
-      { headers: { Authorization: `Bearer ${authToken}` } }
-    );
-    
-    if (dl.status !== 200) throw new Error('Download failed');
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
-  } catch (e) {
-    handleApiError(e, "Failed to share invoice");
-  }
-};
+  const shareOverallInvoice = async () => {
+    if (!(await validateAuthBeforeCall())) return;
+    try {
+      const uri = FileSystem.documentDirectory + `overall-${new Date().toISOString().split("T")[0]}.pdf`;
+      
+      const dl = await downloadAsync(
+        `${API_BASE_URL}/admin/invoices/pdf`,
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      
+      if (dl.status !== 200) throw new Error('Download failed');
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share invoice");
+    }
+  };
 
-const shareOfflineOrders = async () => {
-  if (!(await validateAuthBeforeCall())) return;
-  try {
-    const uri = FileSystem.documentDirectory + `offline-orders-${new Date().toISOString().split("T")[0]}.pdf`;
-    
-    const dl = await downloadAsync(
-      `${API_BASE_URL}/admin/invoices/offline-orders`,
-      uri,
-      { headers: { Authorization: `Bearer ${authToken}` } }
-    );
-    
-    if (dl.status !== 200) throw new Error('Download failed');
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
-  } catch (e) {
-    handleApiError(e, "Failed to share offline orders");
-  }
-};
+  const shareOfflineOrders = async () => {
+    if (!(await validateAuthBeforeCall())) return;
+    try {
+      const uri = FileSystem.documentDirectory + `offline-orders-${new Date().toISOString().split("T")[0]}.pdf`;
+      
+      const dl = await downloadAsync(
+        `${API_BASE_URL}/admin/invoices/offline-orders`,
+        uri,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      
+      if (dl.status !== 200) throw new Error('Download failed');
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+    } catch (e) {
+      handleApiError(e, "Failed to share offline orders");
+    }
+  };
 
   const handleShareAll = () => {
     if (activeFilter === "history") {
@@ -494,14 +492,6 @@ const shareOfflineOrders = async () => {
       shareOfflineOrders();
     }
   };
-
-  /* ---------- FILTERED DATA ---------- */
-  const filteredOrders =
-    activeFilter === "orders"
-      ? (orders || []).filter(o => o.orderStatus !== "delivered" && o.orderStatus !== "cancelled")
-      : activeFilter === "history"
-        ? (orders || []).filter(o => o.orderStatus === "delivered")
-        : offlineOrders;
 
   if (authLoading) {
     return (
@@ -557,6 +547,25 @@ const shareOfflineOrders = async () => {
         </TouchableOpacity>
       </View>
 
+      {/* ACTION BUTTONS BAR */}
+      <View style={styles.actionButtonsContainer}>
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.createBillButton]}
+          onPress={navigateToCreateBill}
+        >
+          <MaterialIcons name="receipt-long" size={18} color="#000" />
+          <Text style={styles.actionButtonText}>Create Bill</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.walkInButton]}
+          onPress={navigateToWalkIn}
+        >
+          <MaterialIcons name="person" size={18} color="#000" />
+          <Text style={styles.actionButtonText}>Walk-in</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -570,13 +579,26 @@ const shareOfflineOrders = async () => {
           </View>
         ) : filteredOrders.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <MaterialIcons name="inventory" size={48} color={Colors.light.textSecondary} />
+            <MaterialIcons 
+              name={
+                activeFilter === "orders" ? "pending-actions" : 
+                activeFilter === "history" ? "history" : 
+                "point-of-sale"
+              } 
+              size={48} 
+              color={Colors.light.textSecondary} 
+            />
             <Text style={styles.emptyText}>
               {activeFilter === "orders"
-                ? "No active orders"
+                ? "No active online orders"
                 : activeFilter === "history"
-                  ? "No order history"
+                  ? "No online order history"
                   : "No offline orders"}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {activeFilter === "offline" 
+                ? "Create your first offline order using the buttons above" 
+                : "Pull down to refresh"}
             </Text>
             <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
               <Text style={styles.refreshButtonText}>Refresh</Text>
@@ -586,19 +608,6 @@ const shareOfflineOrders = async () => {
           filteredOrders.map(order => {
             if (!order) return null;
             const isExpanded = expandedOrder === order._id;
-            const finalAmount = getOrderTotal(order);
-            
-            console.log(`🎯 Rendering order ${order.orderId}:`, {
-              finalAmount,
-              calculatedTotal: order.calculatedTotal,
-              priceSource: order.priceSource,
-              items: order.items?.map(item => ({
-                name: item.product?.name,
-                price: item.price, // This is the override price
-                productPrice: item.product?.price, // This should now match the override price
-                isOverridden: item.isPriceOverridden,
-              }))
-            });
             
             return (
               <TouchableOpacity
@@ -651,8 +660,8 @@ const shareOfflineOrders = async () => {
                   </Text>
                 </View>
 
-                {/* DISTANCE */}
-                {order.distance && (
+                {/* DISTANCE - Only for online orders */}
+                {order.distance && order.orderType === 'online' && (
                   <View style={styles.distanceSection}>
                     <MaterialIcons name="location-pin" size={14} color={Colors.light.accent} />
                     <Text style={styles.distanceText}>{order.distance} km away</Text>
@@ -669,8 +678,7 @@ const shareOfflineOrders = async () => {
                       </Text>
                       <View style={styles.priceContainer}>
                         <Text style={styles.itemPriceText}>
-                          {/* 🔥 This now shows the override price consistently */}
-                          ₹{getItemPrice(it).toFixed(2)}
+                          ₹{getItemFinalPrice(it).toFixed(2)}
                         </Text>
                         {isPriceOverridden(it) && (
                           <View style={styles.overrideBadgeSmall}>
@@ -686,22 +694,32 @@ const shareOfflineOrders = async () => {
                   )}
                 </View>
 
-                {/* BILLING */}
+                {/* ENHANCED BILLING SUMMARY - ALWAYS VISIBLE */}
                 <View style={styles.billingSection}>
                   <View style={styles.billingRow}>
                     <Text style={styles.billingLabel}>Total Amount:</Text>
-                    <Text style={styles.totalValue}>₹{finalAmount.toFixed(2)}</Text>
+                    <Text style={styles.totalValue}>₹{order.finalAmount.toFixed(2)}</Text>
                   </View>
+                  {order.discount > 0 && (
+                    <View style={styles.billingRow}>
+                      <Text style={styles.billingLabel}>You Saved:</Text>
+                      <Text style={styles.savingsText}>
+                        ₹{order.discount.toFixed(2)} ({order.savingsPercentage}%)
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
-                {/* DELIVERY */}
-                <View style={styles.deliverySection}>
-                  <MaterialIcons name="schedule" size={14} color={Colors.light.textSecondary} />
-                  <Text style={styles.deliveryLabel}>
-                    Delivery: {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("en-IN") : "N/A"} at{" "}
-                    {order.deliveryTime || "N/A"}
-                  </Text>
-                </View>
+                {/* DELIVERY - Only for online orders */}
+                {order.orderType === 'online' && (
+                  <View style={styles.deliverySection}>
+                    <MaterialIcons name="schedule" size={14} color={Colors.light.textSecondary} />
+                    <Text style={styles.deliveryLabel}>
+                      Delivery: {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("en-IN") : "N/A"} at{" "}
+                      {order.deliveryTime || "N/A"}
+                    </Text>
+                  </View>
+                )}
 
                 {/* EXPAND BUTTON */}
                 <TouchableOpacity
@@ -719,7 +737,7 @@ const shareOfflineOrders = async () => {
                 {/* EXPANDED CONTENT */}
                 {isExpanded && (
                   <View style={styles.expandedContent}>
-                    {/* ALL ITEMS */}
+                    {/* ALL ITEMS WITH PRICE DETAILS */}
                     <View style={styles.detailedItemsSection}>
                       <Text style={styles.sectionTitleSmall}>All Items:</Text>
                       {order.items?.map((it, i) => (
@@ -735,9 +753,18 @@ const shareOfflineOrders = async () => {
                           </View>
                           <View style={styles.detailedItemPricing}>
                             <Text style={styles.detailedItemText}>
-                              {/* 🔥 This now shows the override price consistently */}
-                              {it.quantity}x {it.unit || "unit"} @ ₹{getItemPrice(it).toFixed(2)}
+                              {it.quantity}x {it.unit || "unit"} 
                             </Text>
+                            <View style={styles.priceComparison}>
+                              {isPriceOverridden(it) && (
+                                <Text style={styles.originalPriceText}>
+                                  ₹{getItemOriginalPrice(it).toFixed(2)}
+                                </Text>
+                              )}
+                              <Text style={styles.finalPriceText}>
+                                @ ₹{getItemFinalPrice(it).toFixed(2)}
+                              </Text>
+                            </View>
                             <Text style={styles.detailedItemTotal}>
                               ₹{getItemTotal(it).toFixed(2)}
                             </Text>
@@ -746,28 +773,58 @@ const shareOfflineOrders = async () => {
                       ))}
                     </View>
 
-                    {/* BILLING DETAIL */}
+                    {/* ENHANCED BILLING DETAIL */}
                     <View style={styles.detailedBillingSection}>
+                      <Text style={styles.billingSectionTitle}>Order Summary</Text>
+                      
                       <View style={styles.billingRow}>
-                        <Text style={styles.billingLabel}>Subtotal:</Text>
+                        <Text style={styles.billingLabel}>Subtotal (Original):</Text>
                         <Text style={styles.billingValue}>
-                          ₹{(order.calculatedSubtotal || order.totalAmount || 0).toFixed(2)}
+                          ₹{order.orderSubtotal.toFixed(2)}
                         </Text>
                       </View>
+
+                      {order.totalBeforeDiscount !== order.orderSubtotal && (
+                        <View style={styles.billingRow}>
+                          <Text style={styles.billingLabel}>Price Adjustments:</Text>
+                          <Text style={styles.adjustmentText}>
+                            -₹{(order.orderSubtotal - order.totalBeforeDiscount).toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View style={styles.billingRow}>
+                        <Text style={styles.billingLabel}>Total Before Discount:</Text>
+                        <Text style={styles.billingValue}>
+                          ₹{order.totalBeforeDiscount.toFixed(2)}
+                        </Text>
+                      </View>
+
                       {order.discount > 0 && (
                         <View style={styles.billingRow}>
                           <Text style={styles.billingLabel}>Discount:</Text>
-                          <Text style={styles.discountText}>-₹{order.discount.toFixed(2)}</Text>
+                          <Text style={styles.discountText}>
+                            -₹{order.discount.toFixed(2)}
+                          </Text>
                         </View>
                       )}
+
                       <View style={[styles.billingRow, styles.totalRow]}>
-                        <Text style={styles.totalLabel}>Total Amount:</Text>
-                        <Text style={styles.totalValue}>₹{finalAmount.toFixed(2)}</Text>
+                        <Text style={styles.totalLabel}>Final Amount:</Text>
+                        <Text style={styles.totalValue}>₹{order.finalAmount.toFixed(2)}</Text>
                       </View>
+
+                      {order.discount > 0 && (
+                        <View style={styles.savingsSection}>
+                          <Text style={styles.savingsLabel}>
+                            🎉 You saved ₹{order.discount.toFixed(2)} ({order.savingsPercentage}%) on this order!
+                          </Text>
+                        </View>
+                      )}
                     </View>
 
-                    {/* ADDRESS */}
-                    {order.deliveryAddress && (
+                    {/* ADDRESS - Only for online orders */}
+                    {order.deliveryAddress && order.orderType === 'online' && (
                       <View style={styles.addressSection}>
                         <Text style={styles.sectionTitleSmall}>Delivery Address:</Text>
                         <Text style={styles.addressText}>{order.deliveryAddress.addressLine1}</Text>
@@ -801,8 +858,8 @@ const shareOfflineOrders = async () => {
                       </View>
                     )}
 
-                    {/* PROGRESS BAR */}
-                    {activeFilter !== "offline" && order.orderStatus !== "cancelled" && (
+                    {/* PROGRESS BAR - Only for online orders */}
+                    {order.orderType === 'online' && order.orderStatus !== "cancelled" && activeFilter === "orders" && (
                       <View style={styles.progressContainer}>
                         <Text style={styles.sectionTitleSmall}>Order Progress:</Text>
                         <View style={styles.progressBar}>
@@ -861,7 +918,7 @@ const shareOfflineOrders = async () => {
                         <MaterialIcons name="share" size={18} color={Colors.light.accent} />
                         <Text style={styles.actionButtonText}>Share Invoice</Text>
                       </TouchableOpacity>
-                      {order.orderStatus !== "cancelled" && order.orderStatus !== "delivered" && (
+                      {order.orderStatus !== "cancelled" && order.orderStatus !== "delivered" && order.orderType === 'online' && (
                         <TouchableOpacity
                           style={[styles.actionButton, styles.cancelButton]}
                           onPress={() => cancelOrder(order.orderId)}
@@ -878,16 +935,11 @@ const shareOfflineOrders = async () => {
           })
         )}
       </ScrollView>
-
-      {/* Floating Scanner Button - Now navigates directly to offline order page with auto-open scanner */}
-      <TouchableOpacity style={styles.floatingScannerButton} onPress={navigateToOfflineOrder}>
-        <Ionicons name="barcode" size={24} color="#FFF" />
-      </TouchableOpacity>
     </View>
   );
 }
 
-/* ---------- STYLES ---------- */
+/* ---------- ENHANCED STYLES ---------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
   centered: { justifyContent: "center", alignItems: "center" },
@@ -926,11 +978,52 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(33, 150, 243, 0.2)',
   },
 
+  /* ACTION BUTTONS BAR */
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.light.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createBillButton: {
+    backgroundColor: '#E3F2FD', // Light blue background
+    borderWidth: 1,
+    borderColor: Colors.light.accent,
+  },
+  walkInButton: {
+    backgroundColor: '#E8F5E8', // Light green background
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  actionButtonText: {
+    color: '#000000', // Full black color for clear visibility
+    fontSize: 14,
+    fontWeight: '700', // Bold for better readability
+  },
+
   filterContainer: {
     flexDirection: "row",
     marginHorizontal: 16,
     marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 0,
     backgroundColor: "#FFF",
     borderRadius: 12,
     padding: 4,
@@ -942,7 +1035,13 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  filterButton: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 8 },
+  filterButton: { 
+    flex: 1, 
+    alignItems: "center", 
+    justifyContent: "center", 
+    paddingVertical: 10, 
+    borderRadius: 8,
+  },
   filterButtonActive: { backgroundColor: Colors.light.accent },
   filterButtonText: { fontSize: 14, fontWeight: "600", color: Colors.light.textSecondary },
   filterButtonTextActive: { color: "#FFF" },
@@ -950,12 +1049,31 @@ const styles = StyleSheet.create({
   scrollContent: { 
     paddingHorizontal: 16, 
     paddingTop: 8,
-    paddingBottom: 100 
+    paddingBottom: 20
   },
   loadingContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
   emptyContainer: { alignItems: "center", justifyContent: "center", padding: 40 },
-  emptyText: { marginTop: 16, fontSize: 16, color: Colors.light.textSecondary, textAlign: "center" },
-  refreshButton: { marginTop: 16, backgroundColor: Colors.light.accent, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  emptyText: { 
+    marginTop: 16, 
+    fontSize: 16, 
+    color: Colors.light.textSecondary, 
+    textAlign: "center",
+    fontWeight: '600'
+  },
+  emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    textAlign: "center",
+    opacity: 0.7
+  },
+  refreshButton: { 
+    marginTop: 16, 
+    backgroundColor: Colors.light.accent, 
+    paddingHorizontal: 20, 
+    paddingVertical: 10, 
+    borderRadius: 8 
+  },
   refreshButtonText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
   orderCard: {
     backgroundColor: "#FFF",
@@ -1022,14 +1140,25 @@ const styles = StyleSheet.create({
   },
   overrideTextSmall: { fontSize: 7, color: "#FFF", fontWeight: "600" },
   moreItemsText: { fontSize: 12, color: Colors.light.textSecondary, fontStyle: "italic" },
-  billingSection: { marginBottom: 12 },
+  
+  /* ENHANCED BILLING STYLES */
+  billingSection: { 
+    marginBottom: 12,
+    backgroundColor: 'rgba(33, 150, 243, 0.03)',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(33, 150, 243, 0.1)',
+  },
   billingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
   billingLabel: { fontSize: 14, color: Colors.light.textSecondary },
   billingValue: { fontSize: 14, color: Colors.light.text },
+  savingsText: { fontSize: 14, color: "#4CAF50", fontWeight: "600" },
   totalRow: { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 8, marginTop: 4 },
   totalLabel: { fontSize: 16, fontWeight: "600", color: Colors.light.text },
   totalValue: { fontSize: 16, fontWeight: "700", color: Colors.light.accent },
   discountText: { fontSize: 14, color: "#4CAF50", fontWeight: "600" },
+  
   deliverySection: { flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 6 },
   deliveryLabel: { fontSize: 14, color: Colors.light.textSecondary },
   expandButton: {
@@ -1054,7 +1183,18 @@ const styles = StyleSheet.create({
   detailedItemName: { fontSize: 14, color: Colors.light.text, marginBottom: 4, fontWeight: "600" },
   detailedItemPricing: { alignItems: "flex-end" },
   detailedItemText: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
-  detailedItemTotal: { fontSize: 14, fontWeight: "700", color: Colors.light.accent },
+  priceComparison: { flexDirection: "row", alignItems: "center", gap: 4 },
+  originalPriceText: { 
+    fontSize: 11, 
+    color: Colors.light.textSecondary, 
+    textDecorationLine: 'line-through' 
+  },
+  finalPriceText: { 
+    fontSize: 13, 
+    color: Colors.light.accent, 
+    fontWeight: "600" 
+  },
+  detailedItemTotal: { fontSize: 14, fontWeight: "700", color: Colors.light.accent, marginTop: 2 },
   overrideBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1064,8 +1204,11 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     gap: 2,
     alignSelf: 'flex-start',
+    marginTop: 2,
   },
   overrideText: { fontSize: 8, color: "#FFF", fontWeight: "600" },
+  
+  /* ENHANCED BILLING DETAILS */
   detailedBillingSection: {
     backgroundColor: "rgba(33, 150, 243, 0.05)",
     borderRadius: 8,
@@ -1074,6 +1217,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(33, 150, 243, 0.1)",
   },
+  billingSectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.light.text,
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  adjustmentText: {
+    fontSize: 14,
+    color: "#FF9800",
+    fontWeight: "600",
+  },
+  savingsSection: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: "rgba(76, 175, 80, 0.1)",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(76, 175, 80, 0.2)",
+  },
+  savingsLabel: {
+    fontSize: 12,
+    color: "#4CAF50",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  
   addressSection: { marginBottom: 16 },
   addressText: { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 2 },
   paymentSection: { marginBottom: 16 },
@@ -1122,21 +1292,4 @@ const styles = StyleSheet.create({
   actionButtonText: { marginLeft: 6, fontSize: 14, fontWeight: "600", color: Colors.light.accent },
   distanceSection: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 6 },
   distanceText: { fontSize: 13, color: Colors.light.accent, fontWeight: "600" },
-
-  floatingScannerButton: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    backgroundColor: Colors.light.accent,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 });

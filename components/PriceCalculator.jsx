@@ -1,33 +1,114 @@
-// components/PriceCalculator.js - FULLY UPDATED WITH EXTENDED RANGE LOGIC
+// components/PriceCalculator.js - UPDATED WITH PRICE VALIDATION
 import Colors from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
-const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
+const PriceCalculator = ({ inventoryItem, onPriceChange, authToken }) => {
   const [quantity, setQuantity] = useState(1);
   const [calculatedPrice, setCalculatedPrice] = useState(0);
   const [calculatedPriceInfo, setCalculatedPriceInfo] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [validatedPriceData, setValidatedPriceData] = useState(null);
+
+  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
   useEffect(() => {
-    calculatePrice(quantity);
-  }, [quantity, inventoryItem]);
+    validateAndFetchPrice();
+  }, [inventoryItem]);
+
+  useEffect(() => {
+    if (validatedPriceData) {
+      calculatePrice(quantity);
+    }
+  }, [quantity, validatedPriceData]);
+
+  // 🔥 NEW: Validate and fetch corrected price
+  const validateAndFetchPrice = async () => {
+    if (!inventoryItem || !inventoryItem._id || !authToken) return;
+
+    setLoading(true);
+    try {
+      console.log('🔄 Validating price for product:', inventoryItem.product?.name);
+      
+      const response = await fetch(
+        `${API_BASE_URL}/api/retailer/inventory/product-price/${inventoryItem.product?._id || inventoryItem.product}`,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setValidatedPriceData(result.data);
+        
+        console.log('✅ Price validation result:', {
+          productName: result.data.productName,
+          catalogPrice: result.data.catalogPrice,
+          retailerPrice: result.data.retailerPrice,
+          priceCorrected: result.data.priceCorrected,
+          discountedPrice: result.data.discountedPrice
+        });
+
+        if (result.data.priceCorrected) {
+          console.log('🔄 Price was auto-corrected');
+        }
+      } else {
+        // Fallback to original inventory data
+        setValidatedPriceData({
+          retailerPrice: inventoryItem.sellingPrice,
+          discountedPrice: inventoryItem.sellingPrice,
+          catalogPrice: inventoryItem.product?.price,
+          priceCorrected: false,
+          appliedDiscount: 0,
+          discountType: null,
+          pricingSlabs: inventoryItem.pricingSlabs || [],
+          hasQuantityPricing: inventoryItem.enableQuantityPricing
+        });
+      }
+    } catch (error) {
+      console.error('❌ Price validation failed:', error);
+      // Fallback to original data
+      setValidatedPriceData({
+        retailerPrice: inventoryItem.sellingPrice,
+        discountedPrice: inventoryItem.sellingPrice,
+        catalogPrice: inventoryItem.product?.price,
+        priceCorrected: false,
+        appliedDiscount: 0,
+        discountType: null,
+        pricingSlabs: inventoryItem.pricingSlabs || [],
+        hasQuantityPricing: inventoryItem.enableQuantityPricing
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const calculatePrice = (qty) => {
-    if (!inventoryItem || !inventoryItem._id) return;
+    if (!validatedPriceData) return;
 
     try {
-      const basePrice = inventoryItem.sellingPrice || 0;
+      const basePrice = validatedPriceData.retailerPrice || 0;
       const regularPrice = basePrice * qty;
       
-      if (!inventoryItem.enableQuantityPricing || !inventoryItem.pricingSlabs || inventoryItem.pricingSlabs.length === 0) {
+      if (!validatedPriceData.hasQuantityPricing || !validatedPriceData.pricingSlabs || validatedPriceData.pricingSlabs.length === 0) {
         const result = {
           finalPrice: regularPrice,
           finalUnitPrice: basePrice,
           appliedDiscount: 0,
           discountType: null,
           baseTotal: regularPrice,
-          hasDiscount: false
+          hasDiscount: false,
+          priceCorrected: validatedPriceData.priceCorrected
         };
         setCalculatedPrice(regularPrice);
         setCalculatedPriceInfo(result);
@@ -36,7 +117,7 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
       }
 
       // Get all active slabs sorted by minQuantity
-      const activeSlabs = inventoryItem.pricingSlabs
+      const activeSlabs = validatedPriceData.pricingSlabs
         .filter(slab => slab.isActive)
         .sort((a, b) => a.minQuantity - b.minQuantity);
 
@@ -47,7 +128,8 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
           appliedDiscount: 0,
           discountType: null,
           baseTotal: regularPrice,
-          hasDiscount: false
+          hasDiscount: false,
+          priceCorrected: validatedPriceData.priceCorrected
         };
         setCalculatedPrice(regularPrice);
         setCalculatedPriceInfo(result);
@@ -55,7 +137,7 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
         return;
       }
 
-      // ✅ NEW LOGIC: Find applicable slab or use last slab for extended quantities
+      // ✅ Find applicable slab or use last slab for extended quantities
       let applicableSlab = activeSlabs.find(slab => 
         qty >= slab.minQuantity && qty <= slab.maxQuantity
       );
@@ -75,7 +157,8 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
             appliedDiscount: 0,
             discountType: null,
             baseTotal: regularPrice,
-            hasDiscount: false
+            hasDiscount: false,
+            priceCorrected: validatedPriceData.priceCorrected
           };
           setCalculatedPrice(regularPrice);
           setCalculatedPriceInfo(result);
@@ -106,6 +189,7 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
         discountType: applicableSlab.discountType,
         baseTotal: Math.round(regularPrice * 100) / 100,
         hasDiscount: true,
+        priceCorrected: validatedPriceData.priceCorrected,
         discountDetails: {
           slab: applicableSlab,
           discountedPricePerPiece: Math.round(discountedPricePerPiece * 100) / 100,
@@ -124,7 +208,7 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
 
     } catch (error) {
       console.error('Price calculation error:', error);
-      const basePrice = inventoryItem?.sellingPrice || 0;
+      const basePrice = validatedPriceData?.retailerPrice || 0;
       const regularPrice = basePrice * qty;
       setCalculatedPrice(regularPrice);
       setCalculatedPriceInfo({
@@ -133,7 +217,8 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
         appliedDiscount: 0,
         discountType: null,
         baseTotal: regularPrice,
-        hasDiscount: false
+        hasDiscount: false,
+        priceCorrected: validatedPriceData?.priceCorrected || false
       });
       onPriceChange?.(regularPrice, qty, null);
     }
@@ -169,21 +254,44 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
       regularPrice,
       isExtendedRange,
       finalPrice: calculatedPriceInfo.finalPrice,
-      finalUnitPrice: calculatedPriceInfo.finalUnitPrice
+      finalUnitPrice: calculatedPriceInfo.finalUnitPrice,
+      priceCorrected: calculatedPriceInfo.priceCorrected
     };
   };
 
   const discountInfo = getDiscountInfo();
-  const basePrice = inventoryItem?.sellingPrice || 0;
-  const defaultPrice = inventoryItem?.product?.price || 0;
+  const basePrice = validatedPriceData?.retailerPrice || inventoryItem?.sellingPrice || 0;
+  const defaultPrice = validatedPriceData?.catalogPrice || inventoryItem?.product?.price || 0;
   const isPriceOverridden = basePrice !== defaultPrice;
+  const priceCorrected = validatedPriceData?.priceCorrected || false;
 
   // Get all active pricing slabs for display
-  const activeSlabs = inventoryItem?.pricingSlabs?.filter(slab => slab.isActive) || [];
+  const activeSlabs = validatedPriceData?.pricingSlabs?.filter(slab => slab.isActive) || inventoryItem?.pricingSlabs?.filter(slab => slab.isActive) || [];
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.light.accent} />
+          <Text style={styles.loadingText}>Validating price...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Quantity & Price Calculator</Text>
+      
+      {/* 🔥 NEW: Price Correction Alert */}
+      {priceCorrected && (
+        <View style={styles.correctionAlert}>
+          <Ionicons name="warning" size={16} color="#D32F2F" />
+          <Text style={styles.correctionText}>
+            Price was auto-corrected for accuracy
+          </Text>
+        </View>
+      )}
       
       {/* Price Information */}
       <View style={styles.priceInfoSection}>
@@ -198,6 +306,12 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
             {isPriceOverridden && (
               <View style={styles.overrideBadge}>
                 <Text style={styles.overrideBadgeText}>Custom</Text>
+              </View>
+            )}
+            {priceCorrected && (
+              <View style={styles.correctedBadge}>
+                <Ionicons name="checkmark" size={10} color="#FFF" />
+                <Text style={styles.correctedBadgeText}>Corrected</Text>
               </View>
             )}
           </View>
@@ -304,7 +418,7 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
         )}
 
         {/* Available Quantity Discounts */}
-        {inventoryItem?.enableQuantityPricing && activeSlabs.length > 0 && (
+        {validatedPriceData?.hasQuantityPricing && activeSlabs.length > 0 && (
           <View style={styles.slabsPreview}>
             <Text style={styles.slabsTitle}>Available Quantity Discounts:</Text>
             {activeSlabs
@@ -329,7 +443,7 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
           </View>
         )}
 
-        {!inventoryItem?.enableQuantityPricing && (
+        {!validatedPriceData?.hasQuantityPricing && (
           <View style={styles.noDiscountInfo}>
             <Text style={styles.noDiscountText}>
               Quantity-based pricing is not enabled for this product
@@ -338,16 +452,39 @@ const PriceCalculator = ({ inventoryItem, onPriceChange }) => {
         )}
 
         {/* Quick Quantity Examples */}
-        {inventoryItem?.enableQuantityPricing && activeSlabs.length > 0 && (
+        {validatedPriceData?.hasQuantityPricing && activeSlabs.length > 0 && (
           <View style={styles.quickExamples}>
             <Text style={styles.quickExamplesTitle}>Quick Examples:</Text>
             <View style={styles.quickExamplesGrid}>
               {[1, 5, 10, 20].map((exampleQty) => {
-                const examplePrice = calculatePrice(exampleQty);
+                // Calculate example price
+                const basePrice = validatedPriceData.retailerPrice || 0;
+                let exampleFinalPrice = basePrice * exampleQty;
+                
+                if (activeSlabs.length > 0) {
+                  let applicableSlab = activeSlabs.find(slab => 
+                    exampleQty >= slab.minQuantity && exampleQty <= slab.maxQuantity
+                  );
+
+                  if (!applicableSlab && exampleQty >= activeSlabs[activeSlabs.length - 1].minQuantity) {
+                    applicableSlab = activeSlabs[activeSlabs.length - 1];
+                  }
+
+                  if (applicableSlab) {
+                    let discountedPricePerPiece = basePrice;
+                    if (applicableSlab.discountType === 'FLAT') {
+                      discountedPricePerPiece = Math.max(0, basePrice - applicableSlab.discountValue);
+                    } else if (applicableSlab.discountType === 'PERCENTAGE') {
+                      discountedPricePerPiece = Math.max(0, basePrice - (basePrice * applicableSlab.discountValue) / 100);
+                    }
+                    exampleFinalPrice = discountedPricePerPiece * exampleQty;
+                  }
+                }
+
                 return (
                   <View key={exampleQty} style={styles.quickExampleItem}>
                     <Text style={styles.quickExampleQty}>{exampleQty} unit{exampleQty > 1 ? 's' : ''}</Text>
-                    <Text style={styles.quickExamplePrice}>₹{examplePrice?.toFixed(2) || '0.00'}</Text>
+                    <Text style={styles.quickExamplePrice}>₹{exampleFinalPrice.toFixed(2)}</Text>
                   </View>
                 );
               })}
@@ -368,12 +505,38 @@ const styles = StyleSheet.create({
     borderColor: Colors.light.border,
     marginVertical: 8,
   },
+  loadingContainer: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
   title: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.light.text,
     marginBottom: 16,
     textAlign: 'center',
+  },
+  correctionAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+    gap: 8,
+  },
+  correctionText: {
+    fontSize: 12,
+    color: '#D32F2F',
+    fontWeight: '500',
+    flex: 1,
   },
   priceInfoSection: {
     backgroundColor: '#F8F9FA',
@@ -417,6 +580,20 @@ const styles = StyleSheet.create({
   },
   overrideBadgeText: {
     fontSize: 10,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  correctedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 2,
+  },
+  correctedBadgeText: {
+    fontSize: 8,
     color: '#FFF',
     fontWeight: '600',
   },
